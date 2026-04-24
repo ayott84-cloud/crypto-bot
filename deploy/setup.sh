@@ -67,6 +67,12 @@ else
   echo "  User '${BOT_USER}' already exists — skipping."
 fi
 
+# Passwordless sudo for bot — the user has no password (SSH-key-only) so
+# sudo would otherwise prompt forever. Idempotent: overwrites on re-run.
+echo "${BOT_USER} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${BOT_USER}"
+chmod 440 "/etc/sudoers.d/${BOT_USER}"
+echo "  Enabled passwordless sudo for '${BOT_USER}'."
+
 # ─── 3. SSH hardening ───────────────────────────────────────────────
 echo ""
 echo "[3/9] Hardening SSH (disabling root login + password auth)..."
