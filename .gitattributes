@@ -1,0 +1,14 @@
+# Force LF line endings for anything that runs on Linux — CRLF breaks
+# #!/usr/bin/env bash shebangs and confuses systemd unit parsers.
+*.sh                   text eol=lf
+*.service              text eol=lf
+*.timer                text eol=lf
+deploy/logrotate-*     text eol=lf
+requirements.txt       text eol=lf
+
+# Python: Linux too (bot runs on Ubuntu). Keep LF everywhere.
+*.py                   text eol=lf
+
+# Docs: allow either (Windows editors tend to add CRLF)
+*.md                   text
+*.json                 text

@@ -1,0 +1,21 @@
+/home/bot/crypto-bot/bot.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 bot bot
+    sharedstate /home/bot/crypto-bot/.logrotate-state
+}
+
+/home/bot/crypto-bot/whale_signals.jsonl {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 bot bot
+    sharedstate /home/bot/crypto-bot/.logrotate-state
+}

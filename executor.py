@@ -279,6 +279,85 @@ class Executor:
             action_desc=f"CANCEL ALL PENDING {symbol}"
         )
 
+    # ── SHORT-side operations (used by whale bot) ────────────────────────
+
+    def open_short(self, symbol: str, quantity: str,
+                   sl_trigger_price: str = None) -> dict:
+        """Open a SHORT position with a market order."""
+        body: dict = {
+            "symbol": symbol,
+            "side": "SELL",
+            "positionSide": "SHORT",
+            "type": "MARKET",
+            "quantity": quantity,
+            "newClientOrderId": f"bot-{int(time.time()*1000)}-open-s",
+        }
+        if sl_trigger_price:
+            body["slTriggerPrice"] = sl_trigger_price
+            body["slWorkingType"] = "MARK_PRICE"
+
+        return self._mutating_call(
+            "transaction.place_order", body=body,
+            action_desc=f"OPEN SHORT {symbol} qty={quantity}"
+        )
+
+    def close_short_full(self, symbol: str) -> dict:
+        """Fully close a SHORT position."""
+        body = {
+            "symbol": symbol,
+            "positionSide": "SHORT",
+        }
+        return self._mutating_call(
+            "transaction.close_positions", body=body,
+            action_desc=f"FULL CLOSE SHORT {symbol}"
+        )
+
+    def place_sl_order_short(self, symbol: str, trigger_price: str,
+                             quantity: str) -> dict:
+        """Place a stop-loss on a SHORT position (buy to close when price rises)."""
+        body = {
+            "symbol": symbol,
+            "positionSide": "SHORT",
+            "side": "BUY",
+            "planType": "STOP_LOSS",
+            "triggerPrice": trigger_price,
+            "workingType": "MARK_PRICE",
+            "quantity": quantity,
+            "type": "MARKET",
+        }
+        return self._mutating_call(
+            "transaction.place_tp_sl_order", body=body,
+            action_desc=f"SL ORDER SHORT {symbol} trigger={trigger_price}"
+        )
+
+    def place_tp_order(self, symbol: str, direction: str, trigger_price: str,
+                       quantity: str) -> dict:
+        """Place a take-profit conditional order for a LONG or SHORT position.
+
+        direction: "LONG" or "SHORT" — determines side used to close.
+        """
+        if direction == "LONG":
+            position_side, side = "LONG", "SELL"
+        elif direction == "SHORT":
+            position_side, side = "SHORT", "BUY"
+        else:
+            raise ValueError(f"direction must be LONG or SHORT, got {direction}")
+
+        body = {
+            "symbol": symbol,
+            "positionSide": position_side,
+            "side": side,
+            "planType": "TAKE_PROFIT",
+            "triggerPrice": trigger_price,
+            "workingType": "MARK_PRICE",
+            "quantity": quantity,
+            "type": "MARKET",
+        }
+        return self._mutating_call(
+            "transaction.place_tp_sl_order", body=body,
+            action_desc=f"TP ORDER {direction} {symbol} trigger={trigger_price}"
+        )
+
     # ── Contract Info Cache ──────────────────────────────────────────────
 
     def load_contract_info(self, symbols: List[str]) -> None:

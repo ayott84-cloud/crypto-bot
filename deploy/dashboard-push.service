@@ -1,0 +1,20 @@
+[Unit]
+Description=Push dashboard.html to render-dashboard branch
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=bot
+Group=bot
+WorkingDirectory=/home/bot/crypto-bot
+ExecStart=/bin/bash /home/bot/crypto-bot/deploy/push_dashboard.sh
+
+# If git push fails (auth, network), just exit cleanly — we'll retry next tick.
+SuccessExitStatus=0 1
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dashboard-push
+
+NoNewPrivileges=true
+PrivateTmp=true

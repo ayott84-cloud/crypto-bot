@@ -2,6 +2,17 @@
 
 Manages the 8-slot position limit, tracks entry metadata,
 persists state to state.json, and implements rotation logic.
+
+Concurrency model (two-bot coexistence):
+    Both the momentum bot (main.py) and the whale bot (whale_main.py) share
+    the same state.json. To avoid clobbering each other's concurrent writes,
+    save_state acquires a cross-process lock file (state.json.lock) and
+    merges per-namespace:
+      - Positions with key prefix "WHALE_" belong to the whale bot.
+      - All other position keys belong to the momentum bot.
+      - Top-level keys (last_processed_candle, signal_status, ...) belong
+        to the momentum bot; whale_cooldowns belongs to the whale bot.
+    Each save preserves the other bot's namespace from disk.
 """
 
 from __future__ import annotations
@@ -11,9 +22,10 @@ import logging
 import math
 import os
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Iterator, Optional, Tuple
 
 from config import STATE_FILE, MARGIN_PER_TRADE, MAX_POSITIONS, DEFAULT_LEVERAGE
 
@@ -27,15 +39,81 @@ DEFAULT_STATE = {
     "last_dashboard_update": None,
 }
 
+# ─── Namespace rules ────────────────────────────────────────────────────────
 
-def load_state() -> dict:
-    """Load state from disk. Returns default if missing/corrupt."""
+_WHALE_PREFIX = "WHALE_"
+_MOMENTUM_TOPLEVEL = {
+    "last_processed_candle", "signal_status", "last_dashboard_update",
+}
+_WHALE_TOPLEVEL = {"whale_cooldowns"}
+
+
+def _is_whale_key(position_key: str) -> bool:
+    return position_key.startswith(_WHALE_PREFIX)
+
+
+# ─── Cross-process file lock (stdlib only) ──────────────────────────────────
+
+_LOCK_TIMEOUT_S = 10.0
+_LOCK_STALE_S = 60.0
+
+
+@contextmanager
+def _state_file_lock() -> Iterator[None]:
+    """Cross-process lock for state.json. Uses O_CREAT|O_EXCL on a .lock file.
+
+    On crash the lock file is left behind; we detect staleness by mtime age
+    (>60s) and break it. Not perfect — but good enough for two cooperating
+    Python processes on one machine.
+    """
+    lock_path = str(STATE_FILE) + ".lock"
+    start = time.time()
+    fd = None
+    while fd is None:
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            try:
+                os.write(fd, f"{os.getpid()} {time.time():.2f}".encode("ascii"))
+            finally:
+                os.close(fd)
+            break
+        except FileExistsError:
+            # Stale-lock recovery: if the lock file is older than the staleness
+            # threshold, break it and retry.
+            try:
+                age = time.time() - os.path.getmtime(lock_path)
+                if age > _LOCK_STALE_S:
+                    logger.warning("Breaking stale state lock (age %.1fs)", age)
+                    try:
+                        os.unlink(lock_path)
+                    except OSError:
+                        pass
+                    continue
+            except OSError:
+                pass
+            if time.time() - start > _LOCK_TIMEOUT_S:
+                raise TimeoutError(
+                    f"Could not acquire state lock {lock_path} after "
+                    f"{_LOCK_TIMEOUT_S}s — another process may be stuck."
+                )
+            time.sleep(0.05)
+        fd = None if fd == -1 else fd  # defensive; normally fd is a valid int
+    try:
+        yield
+    finally:
+        try:
+            os.unlink(lock_path)
+        except OSError:
+            pass
+
+
+# ─── Raw I/O (no lock — callers are responsible) ────────────────────────────
+
+def _load_state_no_lock() -> dict:
     if not STATE_FILE.exists():
-        logger.info("No state file found, starting fresh")
         return json.loads(json.dumps(DEFAULT_STATE))
     try:
         data = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-        # Ensure all required keys exist
         for key in DEFAULT_STATE:
             if key not in data:
                 data[key] = DEFAULT_STATE[key]
@@ -45,12 +123,92 @@ def load_state() -> dict:
         return json.loads(json.dumps(DEFAULT_STATE))
 
 
-def save_state(state: dict) -> None:
-    """Atomically save state to disk (write tmp, then rename)."""
+def _atomic_write_no_lock(state: dict) -> None:
     tmp = STATE_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(state, indent=2, default=str), encoding="utf-8")
+    tmp.replace(STATE_FILE)
+
+
+# ─── Namespace-aware merge ──────────────────────────────────────────────────
+
+def _merge_state(ours: dict, disk: dict, owner: str) -> dict:
+    """Merge our in-memory state with the on-disk state by namespace.
+
+    Rules:
+        - Positions owned by `owner` are taken from `ours`.
+        - Positions owned by the OTHER bot are preserved from `disk`
+          (we don't touch them — the other bot may have just written them).
+        - Top-level keys owned by `owner` come from `ours`; the other bot's
+          top-level keys come from `disk`.
+    """
+    result = dict(ours)  # start from our state
+
+    # Positions: split by prefix, pick from the right source
+    our_positions = ours.get("positions", {})
+    disk_positions = disk.get("positions", {})
+    merged_positions = {}
+    for k, v in our_positions.items():
+        is_whale = _is_whale_key(k)
+        owned_by_us = (is_whale and owner == "whale") or (not is_whale and owner == "momentum")
+        if owned_by_us:
+            merged_positions[k] = v
+    for k, v in disk_positions.items():
+        if k in merged_positions:
+            continue
+        is_whale = _is_whale_key(k)
+        owned_by_them = (is_whale and owner != "whale") or (not is_whale and owner != "momentum")
+        if owned_by_them:
+            merged_positions[k] = v
+    result["positions"] = merged_positions
+
+    # Top-level keys: preserve the other bot's keys from disk
+    if owner == "momentum":
+        for k in _WHALE_TOPLEVEL:
+            if k in disk:
+                result[k] = disk[k]
+    else:  # "whale"
+        for k in _MOMENTUM_TOPLEVEL:
+            if k in disk:
+                result[k] = disk[k]
+        # Also preserve momentum-owned position keys already handled above.
+
+    return result
+
+
+# ─── Public API ─────────────────────────────────────────────────────────────
+
+def load_state() -> dict:
+    """Load state from disk under a brief lock to avoid reading mid-write."""
+    if not STATE_FILE.exists():
+        logger.info("No state file found, starting fresh")
+        return json.loads(json.dumps(DEFAULT_STATE))
     try:
-        tmp.write_text(json.dumps(state, indent=2, default=str), encoding="utf-8")
-        tmp.replace(STATE_FILE)
+        with _state_file_lock():
+            return _load_state_no_lock()
+    except TimeoutError as e:
+        # Lock stuck — fall back to unlocked read. Better to get stale data
+        # than to crash. Subsequent save will still merge-safely.
+        logger.warning("load_state lock timeout, reading without lock: %s", e)
+        return _load_state_no_lock()
+
+
+def save_state(state: dict, owner: str = "momentum") -> None:
+    """Merge-safe save: under a lock, re-read disk and only overwrite our namespace.
+
+    owner: "momentum" (bot 1 / main.py) or "whale" (bot 2 / whale_main.py).
+           Default "momentum" keeps backward compatibility for existing callers.
+    """
+    try:
+        with _state_file_lock():
+            disk = _load_state_no_lock()
+            merged = _merge_state(state, disk, owner)
+            _atomic_write_no_lock(merged)
+    except TimeoutError as e:
+        logger.error("save_state lock timeout — last-resort non-merged write: %s", e)
+        try:
+            _atomic_write_no_lock(state)
+        except IOError as ee:
+            logger.error("Failed to save state: %s", ee)
     except IOError as e:
         logger.error("Failed to save state: %s", e)
 
@@ -190,39 +348,60 @@ def calculate_position_quantity(
     return f"{qty:.{decimals}f}"
 
 
-def reconcile_with_exchange(state: dict, executor) -> None:
+def reconcile_with_exchange(state: dict, executor, owner: str = "momentum") -> None:
     """Sync state.json with actual exchange positions on startup.
 
-    State keys are now asset_name (e.g. "XRP", "XRP_4H") which may both
-    map to the same exchange symbol (XRPUSDT). We reconcile by symbol
-    but cleanup by state_key.
+    Matches by (symbol, direction) to support hedge mode (where the momentum bot
+    can hold BTCUSDT LONG while the whale bot holds BTCUSDT SHORT on the same
+    account). Only reconciles state entries owned by `owner`; the other bot's
+    positions are left alone.
+
+    owner: "momentum" reconciles non-WHALE_* keys; "whale" reconciles WHALE_* keys.
     """
     exchange_positions = executor.get_all_positions()
-    exchange_symbols = set()
 
+    # Build set of (symbol, "LONG"|"SHORT") currently held on exchange
+    exchange_set: set = set()
     for pos in exchange_positions:
         sym = pos.get("symbol", "")
         amt = float(pos.get("positionAmt", "0"))
-        if amt != 0:
-            exchange_symbols.add(sym)
+        if amt > 0:
+            exchange_set.add((sym, "LONG"))
+        elif amt < 0:
+            exchange_set.add((sym, "SHORT"))
 
-    # Build a map of state_key → exchange_symbol from state
     state_positions = state.get("positions", {})
-    state_key_to_symbol = {
-        k: v.get("symbol", k) for k, v in state_positions.items()
-    }
-    state_symbols = set(state_key_to_symbol.values())
 
-    # Positions on exchange but not in state (manual trades)
-    for sym in exchange_symbols - state_symbols:
-        logger.warning("Exchange has position for %s not tracked in state "
-                       "(manual trade?). Ignoring.", sym)
+    # Determine which state keys this owner is responsible for
+    def _owned(key: str) -> bool:
+        return (_is_whale_key(key) if owner == "whale" else not _is_whale_key(key))
 
-    # State entries whose exchange symbol isn't on exchange → cleanup
-    for state_key, sym in list(state_key_to_symbol.items()):
-        if sym not in exchange_symbols:
-            logger.warning("State has position for %s (%s) but exchange does not. "
-                           "Cleaning up (closed externally?).", state_key, sym)
+    # Log unknown positions on exchange (only for our owner's set of expected symbols)
+    state_sig_set = set()
+    for k, p in state_positions.items():
+        if not _owned(k):
+            continue
+        sym = p.get("symbol", k)
+        direction = p.get("direction", "LONG")  # legacy momentum entries default to LONG
+        state_sig_set.add((sym, direction))
+    for sym, direction in exchange_set - state_sig_set:
+        # Untracked exchange position. Might belong to the OTHER bot — only warn
+        # if neither bot tracks it. (Simple heuristic: we can't fully verify here.)
+        logger.info("Exchange position %s %s not tracked in %s namespace "
+                    "(could belong to the other bot or be a manual trade).",
+                    sym, direction, owner)
+
+    # Clean up state entries whose (symbol, direction) is not on exchange
+    for state_key in list(state_positions.keys()):
+        if not _owned(state_key):
+            continue
+        pos = state_positions[state_key]
+        sym = pos.get("symbol", state_key)
+        direction = pos.get("direction", "LONG")
+        if (sym, direction) not in exchange_set:
+            logger.warning("State has %s %s (%s) but exchange does not. "
+                           "Cleaning up (closed externally?).",
+                           state_key, direction, sym)
             register_exit(state, state_key)
 
-    save_state(state)
+    save_state(state, owner=owner)

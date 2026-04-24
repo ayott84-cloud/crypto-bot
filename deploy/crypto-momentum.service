@@ -1,0 +1,38 @@
+[Unit]
+Description=Crypto Momentum Bot (main.py — 4H/1D strategies on WEEX)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bot
+Group=bot
+WorkingDirectory=/home/bot/crypto-bot
+EnvironmentFile=-/home/bot/crypto-bot/.env
+ExecStart=/home/bot/crypto-bot/venv/bin/python /home/bot/crypto-bot/main.py
+
+# Restart on any exit — transient WEEX 5xx, network blips, etc.
+Restart=always
+RestartSec=30
+
+# Log to journald (view with: journalctl -u crypto-momentum -f)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=crypto-momentum
+
+# Resource caps — 1 GB droplet, bot 1 should stay under 300 MB
+MemoryMax=350M
+MemoryHigh=300M
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/bot/crypto-bot
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

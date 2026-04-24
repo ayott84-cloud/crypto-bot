@@ -167,7 +167,7 @@ def run():
     # Reconcile with exchange
     logger.info("Reconciling state with exchange positions...")
     try:
-        reconcile_with_exchange(state, executor)
+        reconcile_with_exchange(state, executor, owner="momentum")
     except SystemExit as e:
         if DRY_RUN:
             logger.warning("Skipping exchange reconciliation (no credentials, DRY_RUN): %s", e)
@@ -258,7 +258,7 @@ def run():
                         **analysis,
                     }
                     # Persist diagnostics immediately so dashboard always has fresh data
-                    save_state(state)
+                    save_state(state, owner="momentum")
                 except Exception as e:
                     logger.error("[%s] Diagnostic computation failed: %s", asset_name, e)
                     analysis = None
@@ -518,7 +518,7 @@ def run():
 
                         trade_occurred = True
 
-                save_state(state)
+                save_state(state, owner="momentum")
 
             except Exception as e:
                 logger.error("[%s] Error processing: %s", asset_name, e, exc_info=True)

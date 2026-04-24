@@ -1,0 +1,36 @@
+[Unit]
+Description=Crypto Whale-Tracking Bot (whale_main.py — Hyperliquid smart-money)
+After=network-online.target crypto-momentum.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bot
+Group=bot
+WorkingDirectory=/home/bot/crypto-bot
+EnvironmentFile=-/home/bot/crypto-bot/.env
+ExecStart=/home/bot/crypto-bot/venv/bin/python /home/bot/crypto-bot/whale_main.py
+
+Restart=always
+RestartSec=30
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=crypto-whale
+
+# Whale bot is lighter — no pandas hot path — but cap it anyway
+MemoryMax=200M
+MemoryHigh=150M
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/bot/crypto-bot
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

@@ -15,16 +15,31 @@ env/
 
 # Runtime state / logs / journals
 state.json
+state.json.tmp
+state.json.lock
 bot.log
 *.log
 logs/
 Trading_Journal.xlsx
 *.xlsx
 
-# Generated dashboard / previews
+# Whale bot runtime caches + snapshots (regenerated each cycle)
+.whale_weex_symbols.json
+.whale_top100.json
+.whale_prev_positions.json
+whale_signals.jsonl
+
+# Generated dashboard / previews (dashboard.html is force-pushed to
+# render-dashboard branch instead; main branch keeps source only)
 dashboard.html
 gen_preview_*.png
 palette_preview.png
+
+# Backtest artifacts (large, regenerable)
+backtest_whale_proxy_trades.csv
+
+# Pytest cache
+.pytest_cache/
 
 # IDE / OS
 .vscode/

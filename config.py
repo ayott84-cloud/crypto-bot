@@ -34,9 +34,13 @@ SMTP_PASS = os.getenv("SMTP_PASS", "")       # Gmail App Password (16 chars)
 # ─── Trading Parameters ─────────────────────────────────────────────────────
 INITIAL_CAPITAL = 5000.0          # WEEX account seed
 MARGIN_PER_TRADE = 50.0           # USD margin per position
-MAX_POSITIONS = 8                  # max simultaneous open positions
+MAX_POSITIONS = 8                  # max simultaneous open positions (shared across bots)
 DEFAULT_LEVERAGE = 10              # 10x leverage -> $500 notional per trade
 DRY_RUN = True                     # master kill switch — set False for live
+# Global trading enable flag. When False, both momentum and whale bots skip
+# all new entries (existing positions still run their SL/TP).
+# Set TRADING_ENABLED=false in .env to pause all new trades without editing code.
+TRADING_ENABLED = os.getenv("TRADING_ENABLED", "true").lower() in ("true", "1", "yes")
 
 # Backtest reference for yearly projection math
 BACKTEST_YEARS = 5.3               # Dec 2020 → Apr 2026 window used in TradingView

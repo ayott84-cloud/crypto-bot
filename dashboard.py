@@ -27,6 +27,18 @@ from config import (
     BACKTEST_YEARS, BACKTEST_CAPITAL, BACKTEST_QTY_PCT,
 )
 
+# Whale bot data (optional — dashboard still renders if whale_config missing)
+try:
+    from whale_config import (
+        WHALE_SIGNAL_LOG, WHALE_STATE_KEY_PREFIX, WHALE_STRATEGY_TAG,
+    )
+    WHALE_AVAILABLE = True
+except ImportError:
+    WHALE_SIGNAL_LOG = None
+    WHALE_STATE_KEY_PREFIX = "WHALE_"
+    WHALE_STRATEGY_TAG = "Whale Track"
+    WHALE_AVAILABLE = False
+
 logger = logging.getLogger("crypto_bot.dashboard")
 
 
@@ -185,16 +197,63 @@ def gather_dashboard_data(executor, state: dict) -> Dict[str, Any]:
     # v2: Signal status per asset (for Entry Signal Diagnostics panel)
     data["signal_status"] = state.get("signal_status", {})
 
+    # Whale bot data (open whale positions + most recent signal snapshot)
+    whale_positions = []
+    for key, pos in state.get("positions", {}).items():
+        if not key.startswith(WHALE_STATE_KEY_PREFIX):
+            continue
+        whale_positions.append({
+            "state_key": key,
+            "coin": key.replace(WHALE_STATE_KEY_PREFIX, ""),
+            "symbol": pos.get("symbol", ""),
+            "direction": pos.get("direction", "LONG"),
+            "entry_price": pos.get("entry_price", 0.0),
+            "quantity": pos.get("quantity", 0),
+            "sl": pos.get("sl"),
+            "tp": pos.get("tp"),
+            "signal_type": pos.get("signal_type", ""),
+            "confidence": pos.get("confidence", 0),
+            "entry_time": pos.get("entry_time", ""),
+            "strategy": pos.get("strategy", ""),
+            "margin_usd": pos.get("margin_usd", 0),
+        })
+    data["whale_positions"] = whale_positions
+
+    # Most recent whale signal scan (latest timestamp in JSONL)
+    whale_signals_latest = []
+    whale_signals_ts = None
+    if WHALE_SIGNAL_LOG and WHALE_SIGNAL_LOG.exists():
+        try:
+            with open(WHALE_SIGNAL_LOG, "r", encoding="utf-8") as f:
+                lines = f.readlines()[-200:]  # last 200 records
+            recs = [json.loads(l) for l in lines if l.strip()]
+            if recs:
+                whale_signals_ts = recs[-1].get("timestamp")
+                whale_signals_latest = [r for r in recs if r.get("timestamp") == whale_signals_ts]
+        except Exception as e:
+            logger.warning("Could not read whale signal log: %s", e)
+    data["whale_signals_latest"] = whale_signals_latest
+    data["whale_signals_ts"] = whale_signals_ts or "never"
+
+    # Whale-specific trade stats (filtered journal)
+    whale_trades = [t for t in trades if isinstance(t.get("strategy"), str)
+                    and t["strategy"].startswith(WHALE_STRATEGY_TAG)]
+    data["whale_trades"] = whale_trades
+    data["whale_metrics"] = _compute_metrics(whale_trades)
+
     # Show timestamp in Central Time (auto-handles CST/CDT)
     data["timestamp"] = datetime.now(CENTRAL_TZ).strftime("%Y-%m-%d %H:%M %Z")
     return data
 
 
 def _render_signal_status_rows(signal_status: dict) -> str:
-    """Render the Entry Signal Diagnostics rows (one per asset)."""
-    if not signal_status:
-        return '<tr><td colspan="99" style="text-align:center;opacity:0.6;">Waiting for first cycle to populate signals…</td></tr>'
+    """Render the Entry Signal Diagnostics rows.
 
+    Iterates over the authoritative ASSETS config so every monitored asset gets
+    a row, even if its signal_status entry is missing or stale. This keeps the
+    diagnostics table complete during partial bot-1 outages (e.g. DRY_RUN
+    without WEEX creds where only some assets fetch cleanly).
+    """
     # Column order matters — keep consistent with header
     FILTER_COLUMNS = [
         ("trend", "Trend"),
@@ -216,37 +275,46 @@ def _render_signal_status_rows(signal_status: dict) -> str:
             return '<td style="text-align:center;color:#f87171;font-size:1.2em;">✗</td>'
         return '<td style="text-align:center;opacity:0.35;">—</td>'
 
-    rows = ""
-    for asset_name, info in signal_status.items():
-        status_color = "#4ade80" if info.get("would_enter") else "#9ca3af"
-        status_text = "READY 🟢" if info.get("would_enter") else "WAITING"
-        blocked = info.get("blocked_by") or ""
-        filters = info.get("filters", {})
-        values = info.get("values", {})
-        strategy = info.get("strategy_name", "")
-        interval = info.get("interval", "")
+    # Sort asset keys to group by symbol for readability
+    ordered_keys = sorted(ASSETS.keys(), key=lambda k: (ASSETS[k].get("symbol", ""), k))
 
-        # Clean display label — strip _4H / _1D suffix since interval shown separately
+    rows = ""
+    for asset_name in ordered_keys:
+        cfg = ASSETS.get(asset_name, {})
+        info = signal_status.get(asset_name) or {}
+        interval = info.get("interval") or cfg.get("interval", "")
+
+        # Clean display label — strip _4H / _1D suffix since interval is shown separately
         display_label = asset_name
         for suffix in ("_4H", "_1D", "_1d", "_4h"):
             if display_label.endswith(suffix):
                 display_label = display_label[: -len(suffix)]
                 break
 
-        cells = "".join(cell(filters.get(k)) for k, _ in FILTER_COLUMNS)
-
-        # Small values tooltip
-        val_snippet = []
-        if values.get("rsi") is not None:
-            val_snippet.append(f"RSI {values['rsi']:.1f}")
-        if values.get("mfi") is not None:
-            val_snippet.append(f"MFI {values['mfi']:.1f}")
-        if values.get("adx") is not None:
-            val_snippet.append(f"ADX {values['adx']:.1f}")
-        if values.get("btc_close") is not None and values.get("btc_ema") is not None:
-            btc_state = "↑" if values["btc_close"] > values["btc_ema"] else "↓"
-            val_snippet.append(f"BTC {btc_state}")
-        val_str = " · ".join(val_snippet) if val_snippet else "—"
+        if info:
+            status_color = "#4ade80" if info.get("would_enter") else "#9ca3af"
+            status_text = "READY 🟢" if info.get("would_enter") else "WAITING"
+            blocked = info.get("blocked_by") or ""
+            filters = info.get("filters", {})
+            values = info.get("values", {})
+            cells = "".join(cell(filters.get(k)) for k, _ in FILTER_COLUMNS)
+            val_snippet = []
+            if values.get("rsi") is not None:
+                val_snippet.append(f"RSI {values['rsi']:.1f}")
+            if values.get("mfi") is not None:
+                val_snippet.append(f"MFI {values['mfi']:.1f}")
+            if values.get("adx") is not None:
+                val_snippet.append(f"ADX {values['adx']:.1f}")
+            if values.get("btc_close") is not None and values.get("btc_ema") is not None:
+                btc_state = "↑" if values["btc_close"] > values["btc_ema"] else "↓"
+                val_snippet.append(f"BTC {btc_state}")
+            val_str = " · ".join(val_snippet) if val_snippet else "—"
+        else:
+            status_color = "#64748b"
+            status_text = "NO DATA"
+            blocked = "awaiting next cycle"
+            cells = "".join(cell(None) for _ in FILTER_COLUMNS)
+            val_str = "—"
 
         rows += f"""<tr>
             <td><strong>{display_label}</strong> <span style="opacity:0.5;font-size:0.85em;">{interval}</span></td>
@@ -330,6 +398,90 @@ def _render_yearly_projection_rows(proj: dict) -> str:
             <td class="red">{r['dd_pct']:.2f}%</td>
         </tr>"""
     return html
+
+
+def _render_whale_signals_rows(signals: list) -> str:
+    """Render the Whale Bot signals table rows (with Tier 1 confluence)."""
+    if not signals:
+        return '<tr><td colspan="13" style="text-align:center;opacity:0.6;">No whale signals recorded yet — waiting for first poll.</td></tr>'
+
+    rows = ""
+    for s in signals[:25]:
+        sig_type = s.get("signal", "")
+        direction = s.get("direction", "")
+        dir_class = "badge-green" if direction == "LONG" else "badge-red"
+        sig_class = "badge-yellow" if sig_type.startswith("DIVERGENCE") else "badge-blue"
+        conf = s.get("confidence", 0)
+        conf_color = "#4ade80" if conf >= 7 else ("#facc15" if conf >= 5 else "#f87171")
+
+        # Tier 1 confluence fields (may be absent on pre-enrichment signals)
+        funding_pct = s.get("funding_annual_pct")
+        funding_cell = "—"
+        if funding_pct is not None:
+            funding_color = "#4ade80" if (direction == "LONG" and funding_pct < 0) or (direction == "SHORT" and funding_pct > 0) else ("#f87171" if abs(funding_pct) > 20 else "#a0a0a8")
+            funding_cell = f'<span style="color:{funding_color}">{funding_pct:+.1f}%</span>'
+
+        liq_adverse = s.get("liq_adverse_usd", 0) or 0
+        liq_fuel = s.get("liq_fuel_usd", 0) or 0
+        liq_cell = "—"
+        if liq_adverse > 0 or liq_fuel > 0:
+            liq_cell = (
+                f'<span style="color:#f87171">-${liq_adverse/1e6:.1f}M</span> '
+                f'<span style="color:#4ade80">+${liq_fuel/1e6:.1f}M</span>'
+            )
+
+        new_c = s.get("recency_new_count", 0) or 0
+        grow_c = s.get("recency_growth_count", 0) or 0
+        exit_c = s.get("recency_exit_count", 0) or 0
+        recency_bits = []
+        if new_c: recency_bits.append(f'<span style="color:#4ade80">+{new_c} new</span>')
+        if grow_c: recency_bits.append(f'<span style="color:#4ade80">↑{grow_c}</span>')
+        if exit_c: recency_bits.append(f'<span style="color:#f87171">-{exit_c} out</span>')
+        recency_cell = " ".join(recency_bits) if recency_bits else "—"
+
+        rows += f"""<tr>
+            <td><b>{s.get('coin', '?')}</b></td>
+            <td style="opacity:0.7;font-size:0.85em;">{s.get('weex_symbol', '')}</td>
+            <td><span class="badge {sig_class}">{sig_type}</span></td>
+            <td><span class="badge {dir_class}">{direction}</span></td>
+            <td style="text-align:right;color:{conf_color};font-weight:700;">{conf}/10</td>
+            <td style="text-align:right;">{s.get('smart_long_pct', 0):.0f}%</td>
+            <td style="text-align:right;">{s.get('smart_short_pct', 0):.0f}%</td>
+            <td style="text-align:right;">{s.get('smart_n', 0)}</td>
+            <td style="text-align:right;font-size:0.9em;">{funding_cell}</td>
+            <td style="text-align:right;font-size:0.85em;">{liq_cell}</td>
+            <td style="text-align:right;font-size:0.85em;">{recency_cell}</td>
+            <td style="opacity:0.8;font-size:0.85em;">{s.get('reasoning', '')}</td>
+        </tr>"""
+    return rows
+
+
+def _render_whale_positions_rows(positions: list) -> str:
+    """Render the open whale positions table rows."""
+    if not positions:
+        return '<tr><td colspan="9" style="text-align:center;opacity:0.6;">No open whale positions.</td></tr>'
+
+    rows = ""
+    for p in positions:
+        direction = p.get("direction", "LONG")
+        dir_class = "badge-green" if direction == "LONG" else "badge-red"
+        entry = p.get("entry_price", 0)
+        sl = p.get("sl") or 0
+        tp = p.get("tp") or 0
+        sig_type = p.get("signal_type", "")
+        sig_class = "badge-yellow" if sig_type.startswith("DIVERGENCE") else "badge-blue"
+        rows += f"""<tr>
+            <td><b>{p.get('coin', '?')}</b></td>
+            <td style="opacity:0.7;font-size:0.85em;">{p.get('symbol', '')}</td>
+            <td><span class="badge {dir_class}">{direction}</span></td>
+            <td style="text-align:right;">${entry:,.4f}</td>
+            <td style="text-align:right;">{p.get('quantity', 0)}</td>
+            <td style="text-align:right;color:#f87171;">${sl:,.4f}</td>
+            <td style="text-align:right;color:#4ade80;">${tp:,.4f}</td>
+            <td><span class="badge {sig_class}">{sig_type}</span></td>
+            <td style="text-align:right;">${p.get('margin_usd', 0):.0f}</td>
+        </tr>"""
+    return rows
 
 
 def generate_dashboard(data: dict, output_path: str = None) -> None:
@@ -478,6 +630,18 @@ def generate_dashboard(data: dict, output_path: str = None) -> None:
     proj_total_annual = projection["total_annual"]
     proj_total_class = "green" if proj_total_annual >= 0 else "red"
     proj_total_pct = (proj_total_annual / INITIAL_CAPITAL * 100) if INITIAL_CAPITAL > 0 else 0
+
+    # Whale bot rendering
+    whale_signals_rows = _render_whale_signals_rows(data.get("whale_signals_latest", []))
+    whale_positions_rows = _render_whale_positions_rows(data.get("whale_positions", []))
+    whale_metrics = data.get("whale_metrics", {})
+    whale_trade_count = whale_metrics.get("total_trades", 0)
+    whale_win_rate = whale_metrics.get("win_rate", 0)
+    whale_pf = whale_metrics.get("profit_factor", 0)
+    whale_net_pnl = sum(float(t.get("net_pnl") or 0) for t in data.get("whale_trades", []))
+    whale_net_class = "green" if whale_net_pnl >= 0 else "red"
+    whale_signals_ts = data.get("whale_signals_ts", "never")
+    whale_open_count = len(data.get("whale_positions", []))
     proj_trades_per_year = projection["total_trades_per_year"]
 
     html = f"""<!DOCTYPE html>
@@ -565,8 +729,9 @@ canvas {{ max-height: 300px; }}
 <!-- Tab Navigation -->
 <div class="tab-bar">
     <button class="tab-btn active" onclick="switchTab('dashboard')">Dashboard</button>
-    <button class="tab-btn" onclick="switchTab('tradelog')">Trade Log</button>
     <button class="tab-btn" onclick="switchTab('projection')">Yearly Projection</button>
+    <button class="tab-btn" onclick="switchTab('whale')">Whale Bot</button>
+    <button class="tab-btn" onclick="switchTab('tradelog')">Trade Log</button>
 </div>
 
 <!-- ═══════════════════ TAB 1: DASHBOARD ═══════════════════ -->
@@ -812,6 +977,100 @@ canvas {{ max-height: 300px; }}
 </div>
 
 </div><!-- end tab-projection -->
+
+<!-- ═══════════════════ TAB 4: WHALE BOT ═══════════════════ -->
+<div id="tab-whale" class="tab-content">
+
+<div class="stats-bar">
+    <div class="stat-card">
+        <div class="label">Whale Trades</div>
+        <div class="value">{whale_trade_count}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Win Rate</div>
+        <div class="value">{whale_win_rate}%</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Profit Factor</div>
+        <div class="value">{whale_pf:.2f}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Net PnL</div>
+        <div class="value {whale_net_class}">${whale_net_pnl:+,.2f}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Open Positions</div>
+        <div class="value">{whale_open_count}</div>
+    </div>
+</div>
+
+<div class="section">
+    <h2>Open Whale Positions</h2>
+    <p style="opacity:0.6;font-size:0.85em;margin-top:-8px;">
+        Live positions opened by the whale-tracking bot. Exits trigger on SL, TP, or smart-money signal flip.
+    </p>
+    <div class="scroll-table">
+    <table>
+        <tr>
+            <th>Coin</th>
+            <th>Symbol</th>
+            <th>Direction</th>
+            <th style="text-align:right;">Entry</th>
+            <th style="text-align:right;">Qty</th>
+            <th style="text-align:right;">SL</th>
+            <th style="text-align:right;">TP</th>
+            <th>Signal Type</th>
+            <th style="text-align:right;">Margin</th>
+        </tr>
+        {whale_positions_rows}
+    </table>
+    </div>
+</div>
+
+<div class="section">
+    <h2>Latest Whale Signal Scan</h2>
+    <p style="opacity:0.6;font-size:0.85em;margin-top:-8px;">
+        Last scan at <b>{whale_signals_ts}</b>.
+        <span class="badge badge-yellow">DIVERGENCE</span> = smart vs rekt opposite (higher conviction, 1.5× size).
+        <span class="badge badge-blue">CONSENSUS</span> = ≥80% smart-money agreement. Crowded-trade + edge-decay filters applied.
+    </p>
+    <div class="scroll-table">
+    <table style="font-size:0.9em;">
+        <tr>
+            <th>Coin</th>
+            <th>WEEX Symbol</th>
+            <th>Signal</th>
+            <th>Direction</th>
+            <th style="text-align:right;">Confidence</th>
+            <th style="text-align:right;">Smart Long%</th>
+            <th style="text-align:right;">Smart Short%</th>
+            <th style="text-align:right;">#Traders</th>
+            <th style="text-align:right;" title="HL funding rate annualized. Green = confirms our direction; red = extremely crowded.">Funding</th>
+            <th style="text-align:right;" title="Whale liquidation clusters near entry. Red = adverse (stop-hunt risk); green = fuel in our favor.">Liq Risk / Fuel</th>
+            <th style="text-align:right;" title="Position changes since last poll: new entries, size growth, exits.">Recency</th>
+            <th>Reasoning</th>
+        </tr>
+        {whale_signals_rows}
+    </table>
+    </div>
+</div>
+
+<div class="section">
+    <h2>How this bot trades</h2>
+    <p style="opacity:0.75;line-height:1.6;">
+        <b>Source:</b> Hyperliquid public API (leaderboard + clearinghouseState). 15-min poll cadence.<br>
+        <b>Signal:</b> Smart-money basket (top 20 by all-time PnL) vs rekt basket (worst 20 monthly, $1k+ accounts).
+        A coin classifies as <b>DIVERGENCE</b> when ≥70% of smart money and ≥70% of rekt sit on opposite sides.
+        It classifies as <b>CONSENSUS</b> when ≥80% of smart money agrees, regardless of rekt.<br>
+        <b>Filters:</b> min 5 smart-money traders per coin · smart basket must be winning on the coin (edge-decay guard) ·
+        skip if both smart AND rekt are crowded on the same side · coin must be listed on WEEX.<br>
+        <b>Sizing:</b> Consensus $500 notional ($50 × 10x), Divergence $750 ($75 × 10x).
+        Stops: 1.5× ATR(14,4H), Targets: 3.0× ATR (2R reward:risk). Early exit if smart-money consensus drops below 55%.<br>
+        <b>Caveat:</b> Whale edge decays. Expect 30–80% Y1, 10–30% Y2, 0–15% Y3 without re-tuning. Retune thresholds quarterly.
+    </p>
+</div>
+
+</div><!-- end tab-whale -->
 
 <script>
 // ── Tab Switching ──
