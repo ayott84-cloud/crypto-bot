@@ -1,0 +1,36 @@
+# Secrets / env
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+.Python
+
+# Runtime state / logs / journals
+state.json
+bot.log
+*.log
+logs/
+Trading_Journal.xlsx
+*.xlsx
+
+# Generated dashboard / previews
+dashboard.html
+gen_preview_*.png
+palette_preview.png
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code local settings
+.claude/settings.local.json

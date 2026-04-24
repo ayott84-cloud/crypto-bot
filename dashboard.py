@@ -1,0 +1,926 @@
+"""Dashboard generator — produces a dark-themed HTML dashboard.
+
+Pulls data from WEEX API and the Trading Journal, then writes
+a self-contained dashboard.html with Chart.js charts.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from datetime import datetime, timezone
+from typing import Any, Dict, List
+
+from openpyxl import load_workbook
+
+try:
+    from zoneinfo import ZoneInfo
+    CENTRAL_TZ = ZoneInfo("America/Chicago")
+except ImportError:
+    # Fallback for Python <3.9 (should not be needed but safe)
+    import pytz
+    CENTRAL_TZ = pytz.timezone("America/Chicago")
+
+from config import (
+    JOURNAL_FILE, DASHBOARD_FILE, INITIAL_CAPITAL,
+    ASSETS, MARGIN_PER_TRADE, DEFAULT_LEVERAGE, MAX_POSITIONS,
+    BACKTEST_YEARS, BACKTEST_CAPITAL, BACKTEST_QTY_PCT,
+)
+
+logger = logging.getLogger("crypto_bot.dashboard")
+
+
+def _read_journal_trades(max_rows: int = 500) -> List[dict]:
+    """Read all trades from the Trading Journal."""
+    try:
+        wb = load_workbook(str(JOURNAL_FILE), data_only=True)
+        ws = wb["Trade Log"]
+        trades = []
+        for row in range(2, max_rows + 2):
+            date_opened = ws.cell(row=row, column=2).value
+            if date_opened is None:
+                break
+            trades.append({
+                "date_opened": str(date_opened) if date_opened else "",
+                "date_closed": str(ws.cell(row=row, column=3).value or ""),
+                "symbol": ws.cell(row=row, column=4).value or "",
+                "direction": ws.cell(row=row, column=5).value or "",
+                "entry_price": ws.cell(row=row, column=6).value or 0,
+                "exit_price": ws.cell(row=row, column=7).value or 0,
+                "quantity": ws.cell(row=row, column=8).value or 0,
+                "leverage": ws.cell(row=row, column=9).value or 1,
+                "gross_pnl": ws.cell(row=row, column=10).value or 0,
+                "fees": ws.cell(row=row, column=11).value or 0,
+                "net_pnl": ws.cell(row=row, column=12).value or 0,
+                "strategy": ws.cell(row=row, column=14).value or "",
+                "exit_reason": ws.cell(row=row, column=16).value or "",
+                "result": ws.cell(row=row, column=18).value or "",
+            })
+        wb.close()
+        return trades
+    except Exception as e:
+        logger.error("Failed to read journal: %s", e)
+        return []
+
+
+def _compute_metrics(trades: List[dict]) -> dict:
+    """Compute performance metrics from trade history."""
+    if not trades:
+        return {
+            "win_rate": 0, "profit_factor": 0, "avg_win": 0, "avg_loss": 0,
+            "best_trade": 0, "worst_trade": 0, "max_drawdown": 0,
+            "sharpe": 0, "expectancy": 0, "total_trades": 0,
+        }
+
+    wins = [t for t in trades if (t.get("net_pnl") or 0) > 0]
+    losses = [t for t in trades if (t.get("net_pnl") or 0) < 0]
+    pnls = [float(t.get("net_pnl") or 0) for t in trades]
+
+    total = len(trades)
+    win_count = len(wins)
+    win_rate = (win_count / total * 100) if total > 0 else 0
+
+    gross_profit = sum(float(t.get("net_pnl") or 0) for t in wins)
+    gross_loss = abs(sum(float(t.get("net_pnl") or 0) for t in losses))
+    profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else 999
+
+    avg_win = (gross_profit / win_count) if win_count > 0 else 0
+    avg_loss = (gross_loss / len(losses)) if losses else 0
+
+    best = max(pnls) if pnls else 0
+    worst = min(pnls) if pnls else 0
+
+    # Max drawdown from equity curve
+    equity = INITIAL_CAPITAL
+    peak = equity
+    max_dd = 0
+    for pnl in pnls:
+        equity += pnl
+        peak = max(peak, equity)
+        dd = (peak - equity) / peak * 100 if peak > 0 else 0
+        max_dd = max(max_dd, dd)
+
+    # Sharpe approximation (annualized, assuming 6 trades/month)
+    import statistics
+    if len(pnls) > 1:
+        mean_pnl = statistics.mean(pnls)
+        std_pnl = statistics.stdev(pnls)
+        sharpe = (mean_pnl / std_pnl * (72 ** 0.5)) if std_pnl > 0 else 0
+    else:
+        sharpe = 0
+
+    expectancy = statistics.mean(pnls) if pnls else 0
+
+    return {
+        "win_rate": round(win_rate, 1),
+        "profit_factor": round(profit_factor, 2),
+        "avg_win": round(avg_win, 2),
+        "avg_loss": round(avg_loss, 2),
+        "best_trade": round(best, 2),
+        "worst_trade": round(worst, 2),
+        "max_drawdown": round(max_dd, 1),
+        "sharpe": round(sharpe, 2),
+        "expectancy": round(expectancy, 2),
+        "total_trades": total,
+    }
+
+
+def gather_dashboard_data(executor, state: dict) -> Dict[str, Any]:
+    """Gather all data needed for the dashboard."""
+    data: Dict[str, Any] = {}
+
+    # Account balance
+    bal = executor.get_account_balance()
+    data["balance"] = bal
+    data["equity"] = float(bal.get("balance", 0) or 0)
+    data["available"] = float(bal.get("availableBalance", 0) or 0)
+    data["unrealized_pnl"] = float(bal.get("unrealizePnl", 0) or 0)
+
+    # Open positions
+    positions = executor.get_all_positions()
+    data["positions"] = positions
+
+    # Funding rates (top 10)
+    rates = executor.get_funding_rate()
+    for r in rates:
+        r["abs_rate"] = abs(float(r.get("lastFundingRate", "0")))
+        rate_val = float(r.get("lastFundingRate", "0"))
+        r["annualized"] = round(rate_val * 3 * 365 * 100, 1)
+        r["direction"] = "SHORT" if rate_val > 0 else "LONG"
+    rates.sort(key=lambda x: x["abs_rate"], reverse=True)
+    data["funding_rates"] = rates[:10]
+
+    # Journal trades
+    trades = _read_journal_trades()
+    data["trades"] = trades
+    data["recent_trades"] = trades[-20:] if trades else []
+
+    # Performance metrics
+    data["metrics"] = _compute_metrics(trades)
+
+    # Daily PnL (last 30 days)
+    daily_pnl: Dict[str, float] = {}
+    for t in trades:
+        date_str = str(t.get("date_closed", ""))[:10]
+        if date_str:
+            daily_pnl[date_str] = daily_pnl.get(date_str, 0) + float(t.get("net_pnl") or 0)
+    sorted_days = sorted(daily_pnl.items())[-30:]
+    data["daily_pnl_labels"] = [d[0] for d in sorted_days]
+    data["daily_pnl_values"] = [round(d[1], 2) for d in sorted_days]
+
+    # Equity curve
+    equity_curve = [INITIAL_CAPITAL]
+    for t in trades:
+        equity_curve.append(round(equity_curve[-1] + float(t.get("net_pnl") or 0), 2))
+    data["equity_curve"] = equity_curve
+
+    # Portfolio allocation
+    allocation: Dict[str, float] = {}
+    for p in positions:
+        sym = p.get("symbol", "?")
+        margin = float(p.get("positionInitialMargin", 0) or 0)
+        allocation[sym] = allocation.get(sym, 0) + margin
+    data["allocation"] = allocation
+
+    # v2: Signal status per asset (for Entry Signal Diagnostics panel)
+    data["signal_status"] = state.get("signal_status", {})
+
+    # Show timestamp in Central Time (auto-handles CST/CDT)
+    data["timestamp"] = datetime.now(CENTRAL_TZ).strftime("%Y-%m-%d %H:%M %Z")
+    return data
+
+
+def _render_signal_status_rows(signal_status: dict) -> str:
+    """Render the Entry Signal Diagnostics rows (one per asset)."""
+    if not signal_status:
+        return '<tr><td colspan="99" style="text-align:center;opacity:0.6;">Waiting for first cycle to populate signals…</td></tr>'
+
+    # Column order matters — keep consistent with header
+    FILTER_COLUMNS = [
+        ("trend", "Trend"),
+        ("close_above_ema", "Price > EMA"),
+        ("atr_regime", "ATR Regime"),
+        ("rsi_crossover", "RSI Cross"),
+        ("macd", "MACD"),
+        ("pmo", "PMO"),
+        ("volume", "Volume"),
+        ("mfi", "MFI"),
+        ("adx", "ADX"),
+        ("btc_filter", "BTC Filter"),
+    ]
+
+    def cell(v):
+        if v is True:
+            return '<td style="text-align:center;color:#4ade80;font-size:1.2em;">✓</td>'
+        if v is False:
+            return '<td style="text-align:center;color:#f87171;font-size:1.2em;">✗</td>'
+        return '<td style="text-align:center;opacity:0.35;">—</td>'
+
+    rows = ""
+    for asset_name, info in signal_status.items():
+        status_color = "#4ade80" if info.get("would_enter") else "#9ca3af"
+        status_text = "READY 🟢" if info.get("would_enter") else "WAITING"
+        blocked = info.get("blocked_by") or ""
+        filters = info.get("filters", {})
+        values = info.get("values", {})
+        strategy = info.get("strategy_name", "")
+        interval = info.get("interval", "")
+
+        # Clean display label — strip _4H / _1D suffix since interval shown separately
+        display_label = asset_name
+        for suffix in ("_4H", "_1D", "_1d", "_4h"):
+            if display_label.endswith(suffix):
+                display_label = display_label[: -len(suffix)]
+                break
+
+        cells = "".join(cell(filters.get(k)) for k, _ in FILTER_COLUMNS)
+
+        # Small values tooltip
+        val_snippet = []
+        if values.get("rsi") is not None:
+            val_snippet.append(f"RSI {values['rsi']:.1f}")
+        if values.get("mfi") is not None:
+            val_snippet.append(f"MFI {values['mfi']:.1f}")
+        if values.get("adx") is not None:
+            val_snippet.append(f"ADX {values['adx']:.1f}")
+        if values.get("btc_close") is not None and values.get("btc_ema") is not None:
+            btc_state = "↑" if values["btc_close"] > values["btc_ema"] else "↓"
+            val_snippet.append(f"BTC {btc_state}")
+        val_str = " · ".join(val_snippet) if val_snippet else "—"
+
+        rows += f"""<tr>
+            <td><strong>{display_label}</strong> <span style="opacity:0.5;font-size:0.85em;">{interval}</span></td>
+            <td style="color:{status_color};font-weight:600;">{status_text}</td>
+            <td style="opacity:0.7;font-size:0.85em;">{blocked}</td>
+            {cells}
+            <td style="font-size:0.8em;opacity:0.7;">{val_str}</td>
+        </tr>"""
+    return rows
+
+
+def _compute_yearly_projection() -> dict:
+    """Build per-strategy yearly profit projection.
+
+    Scales backtested $ P&L to user's live sizing:
+        scale = (MARGIN_PER_TRADE * DEFAULT_LEVERAGE) / (BACKTEST_CAPITAL * BACKTEST_QTY_PCT/100)
+    Annualizes by dividing the backtest total by BACKTEST_YEARS.
+    """
+    live_notional = MARGIN_PER_TRADE * DEFAULT_LEVERAGE
+    backtest_notional = BACKTEST_CAPITAL * (BACKTEST_QTY_PCT / 100)
+    scale = live_notional / backtest_notional
+
+    rows = []
+    total_annual = 0.0
+    total_trades_per_year = 0.0
+    for key, cfg in ASSETS.items():
+        stats = cfg.get("backtest_stats")
+        if not stats:
+            continue
+        pf = stats.get("pf", 0)
+        trades = stats.get("trades", 0)
+        pnl_pct = stats.get("pnl_pct", 0)
+        dd = stats.get("dd_pct", 0)
+
+        total_pnl_backtest = (pnl_pct / 100.0) * BACKTEST_CAPITAL
+        annual_pnl_backtest = total_pnl_backtest / BACKTEST_YEARS
+        annual_pnl_live = annual_pnl_backtest * scale
+        trades_per_year = trades / BACKTEST_YEARS
+
+        rows.append({
+            "key": key,
+            "name": cfg.get("strategy_name", key),
+            "symbol": cfg.get("symbol", ""),
+            "interval": cfg.get("interval", ""),
+            "pf": pf,
+            "trades_per_year": trades_per_year,
+            "annual_pct_backtest": pnl_pct / BACKTEST_YEARS,
+            "annual_pnl_live": annual_pnl_live,
+            "dd_pct": dd,
+        })
+        total_annual += annual_pnl_live
+        total_trades_per_year += trades_per_year
+
+    rows.sort(key=lambda r: r["annual_pnl_live"], reverse=True)
+    return {
+        "rows": rows,
+        "total_annual": total_annual,
+        "total_trades_per_year": total_trades_per_year,
+        "live_notional": live_notional,
+        "scale": scale,
+    }
+
+
+def _render_yearly_projection_rows(proj: dict) -> str:
+    rows = proj["rows"]
+    if not rows:
+        return '<tr><td colspan="7" class="empty">No strategies with backtest stats configured</td></tr>'
+
+    html = ""
+    for r in rows:
+        pnl_class = "green" if r["annual_pnl_live"] >= 0 else "red"
+        display_name = r["name"]
+        html += f"""<tr>
+            <td><strong>{display_name}</strong></td>
+            <td>{r['symbol']}</td>
+            <td>{r['interval']}</td>
+            <td>{r['pf']:.2f}</td>
+            <td>{r['trades_per_year']:.1f}</td>
+            <td>{r['annual_pct_backtest']:+.2f}%</td>
+            <td class="{pnl_class}"><strong>${r['annual_pnl_live']:+,.2f}</strong></td>
+            <td class="red">{r['dd_pct']:.2f}%</td>
+        </tr>"""
+    return html
+
+
+def generate_dashboard(data: dict, output_path: str = None) -> None:
+    """Generate the HTML dashboard file with two tabs: Dashboard + Trade Log."""
+    path = output_path or str(DASHBOARD_FILE)
+
+    # Prepare chart data
+    daily_labels = json.dumps(data.get("daily_pnl_labels", []))
+    daily_values = json.dumps(data.get("daily_pnl_values", []))
+    equity_curve = json.dumps(data.get("equity_curve", [INITIAL_CAPITAL]))
+    alloc_labels = json.dumps(list(data.get("allocation", {}).keys()) + ["Available"])
+    alloc_values = json.dumps(list(data.get("allocation", {}).values()) + [data.get("available", 0)])
+
+    # v2: Signal Status rows for the Entry Signal Diagnostics panel
+    signal_rows = _render_signal_status_rows(data.get("signal_status", {}))
+
+    # Build positions rows
+    pos_rows = ""
+    for p in data.get("positions", []):
+        sym = p.get("symbol", "?")
+        amt = float(p.get("positionAmt", 0))
+        side = "LONG" if amt > 0 else "SHORT"
+        side_class = "badge-green" if side == "LONG" else "badge-red"
+        entry = p.get("entryPrice", "?")
+        mark = p.get("markPrice", "?")
+        lev = p.get("leverage", "?")
+        upnl = float(p.get("unrealizedProfit", 0) or 0)
+        pnl_class = "green" if upnl >= 0 else "red"
+        margin = float(p.get("positionInitialMargin", 0) or 0)
+        roe = (upnl / margin * 100) if margin > 0 else 0
+        liq = p.get("liquidationPrice", "N/A")
+        pos_rows += f"""<tr>
+            <td>{sym}</td>
+            <td><span class="{side_class}">{side}</span></td>
+            <td>{abs(amt)}</td>
+            <td>{entry}</td>
+            <td>{mark}</td>
+            <td>{lev}x</td>
+            <td class="{pnl_class}">${upnl:+.2f}</td>
+            <td class="{pnl_class}">{roe:+.1f}%</td>
+            <td>{liq}</td>
+        </tr>"""
+
+    if not pos_rows:
+        pos_rows = '<tr><td colspan="9" class="empty">No open positions</td></tr>'
+
+    # Build recent trade rows (dashboard tab — last 20)
+    trade_rows = ""
+    for t in reversed(data.get("recent_trades", [])):
+        pnl = float(t.get("net_pnl") or 0)
+        pnl_class = "green" if pnl > 0 else ("red" if pnl < 0 else "")
+        exit_r = t.get("exit_reason", "")
+        action = exit_r if exit_r else "OPEN"
+        action_class = "badge-magenta"
+        if "TP" in action:
+            action_class = "badge-green"
+        elif "SL" in action:
+            action_class = "badge-red"
+        elif "Stale" in action:
+            action_class = "badge-gold"
+        trade_rows += f"""<tr>
+            <td>{t.get('date_closed', '')[:16]}</td>
+            <td><span class="{action_class}">{action}</span></td>
+            <td>{t.get('symbol', '')}</td>
+            <td>{t.get('strategy', '')}</td>
+            <td class="{pnl_class}">${pnl:+.2f}</td>
+        </tr>"""
+
+    if not trade_rows:
+        trade_rows = '<tr><td colspan="5" class="empty">No trades yet</td></tr>'
+
+    # Build FULL trade log rows (trade log tab — all trades, matching Excel columns)
+    all_trades = data.get("trades", [])
+    full_log_rows = ""
+    for i, t in enumerate(reversed(all_trades), 1):
+        pnl = float(t.get("net_pnl") or 0)
+        gross = float(t.get("gross_pnl") or 0)
+        fees = float(t.get("fees") or 0)
+        entry_p = t.get("entry_price", 0)
+        exit_p = t.get("exit_price", 0)
+        qty = t.get("quantity", 0)
+        lev = t.get("leverage", 1)
+        margin = (float(entry_p) * float(qty) / int(lev)) if float(entry_p) and float(qty) and int(lev) else 0
+        pnl_pct = (pnl / margin * 100) if margin > 0 else 0
+        pnl_class = "green" if pnl > 0 else ("red" if pnl < 0 else "")
+        result = "WIN" if pnl > 0 else ("LOSS" if pnl < 0 else "FLAT")
+        result_class = "badge-green" if pnl > 0 else ("badge-red" if pnl < 0 else "badge-gold")
+        exit_r = t.get("exit_reason", "")
+        exit_badge = "badge-green" if "TP" in exit_r else ("badge-red" if "SL" in exit_r else ("badge-gold" if "Stale" in exit_r else "badge-magenta"))
+        full_log_rows += f"""<tr>
+            <td>{len(all_trades) - i + 1}</td>
+            <td>{t.get('date_opened', '')[:16]}</td>
+            <td>{t.get('date_closed', '')[:16]}</td>
+            <td>{t.get('symbol', '')}</td>
+            <td>{t.get('direction', '')}</td>
+            <td>{entry_p}</td>
+            <td>{exit_p}</td>
+            <td>{qty}</td>
+            <td>{lev}x</td>
+            <td>${gross:+.2f}</td>
+            <td>${fees:.2f}</td>
+            <td class="{pnl_class}">${pnl:+.2f}</td>
+            <td class="{pnl_class}">{pnl_pct:+.1f}%</td>
+            <td>{t.get('strategy', '')}</td>
+            <td><span class="{exit_badge}">{exit_r}</span></td>
+            <td><span class="{result_class}">{result}</span></td>
+        </tr>"""
+
+    if not full_log_rows:
+        full_log_rows = '<tr><td colspan="16" class="empty">No closed trades yet</td></tr>'
+
+    # Build funding rates rows
+    funding_rows = ""
+    for r in data.get("funding_rates", []):
+        sym = r.get("symbol", "?")
+        rate = float(r.get("lastFundingRate", 0))
+        ann = r.get("annualized", 0)
+        direction = r.get("direction", "?")
+        dir_class = "badge-red" if direction == "SHORT" else "badge-green"
+        funding_rows += f"""<tr>
+            <td>{sym}</td>
+            <td>{rate:+.6f}</td>
+            <td>{ann:+.1f}%</td>
+            <td><span class="{dir_class}">{direction}</span></td>
+        </tr>"""
+
+    if not funding_rows:
+        funding_rows = '<tr><td colspan="4" class="empty">No funding data</td></tr>'
+
+    # Metrics
+    m = data.get("metrics", {})
+    upnl = data.get("unrealized_pnl", 0)
+    upnl_class = "green" if upnl >= 0 else "red"
+
+    # Today's realized PnL (Central Time)
+    today = datetime.now(CENTRAL_TZ).strftime("%Y-%m-%d")
+    today_pnl = sum(float(t.get("net_pnl") or 0) for t in data.get("trades", [])
+                     if str(t.get("date_closed", ""))[:10] == today)
+
+    # Trade log data for export
+    trades_json = json.dumps(all_trades)
+
+    # Yearly projection
+    projection = _compute_yearly_projection()
+    projection_rows = _render_yearly_projection_rows(projection)
+    proj_total_annual = projection["total_annual"]
+    proj_total_class = "green" if proj_total_annual >= 0 else "red"
+    proj_total_pct = (proj_total_annual / INITIAL_CAPITAL * 100) if INITIAL_CAPITAL > 0 else 0
+    proj_trades_per_year = projection["total_trades_per_year"]
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crypto Bot Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+body {{ background: #060607; color: #f0f0f0; font-family: 'Segoe UI', system-ui, sans-serif; padding: 20px; }}
+h1 {{ text-align: center; color: #00d4d4; margin-bottom: 5px; font-size: 1.8em; }}
+.subtitle {{ text-align: center; color: #a0a0a8; margin-bottom: 20px; font-size: 0.85em; }}
+
+/* ── Tabs ── */
+.tab-bar {{ display: flex; gap: 0; margin-bottom: 25px; border-bottom: 2px solid #1c1c2e; }}
+.tab-btn {{ padding: 12px 28px; background: none; border: none; color: #a0a0a8; font-size: 1em; font-weight: 600; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s; letter-spacing: 0.5px; }}
+.tab-btn:hover {{ color: #f0f0f0; background: #0d0d14; }}
+.tab-btn.active {{ color: #00d4d4; border-bottom-color: #00d4d4; }}
+.tab-content {{ display: none; }}
+.tab-content.active {{ display: block; }}
+
+/* ── Stats Bar ── */
+.stats-bar {{ display: flex; gap: 15px; margin-bottom: 25px; flex-wrap: wrap; }}
+.stat-card {{ flex: 1; min-width: 160px; background: #0d0d14; border-radius: 12px; padding: 18px; text-align: center; border: 1px solid #1c1c2e; }}
+.stat-card .label {{ color: #a0a0a8; font-size: 0.8em; text-transform: uppercase; letter-spacing: 1px; }}
+.stat-card .value {{ font-size: 1.6em; font-weight: 700; margin-top: 5px; }}
+
+/* ── Colors ── */
+.green {{ color: #00c853; }}
+.red {{ color: #e5173f; }}
+.teal {{ color: #00d4d4; }}
+
+/* ── Sections ── */
+.section {{ background: #0d0d14; border-radius: 12px; padding: 20px; margin-bottom: 20px; border: 1px solid #1c1c2e; }}
+.section h2 {{ color: #00d4d4; font-size: 1.1em; margin-bottom: 15px; border-bottom: 1px solid #1c1c2e; padding-bottom: 8px; }}
+
+/* ── Tables ── */
+table {{ width: 100%; border-collapse: collapse; }}
+th {{ color: #a0a0a8; font-size: 0.8em; text-transform: uppercase; text-align: left; padding: 8px 10px; border-bottom: 1px solid #1c1c2e; }}
+td {{ padding: 8px 10px; border-bottom: 1px solid #0a0a0e; font-size: 0.9em; }}
+tr:nth-child(even) {{ background: #0a0a0e; }}
+.empty {{ text-align: center; color: #555; padding: 20px; }}
+
+/* ── Badges ── */
+.badge-green {{ background: #00c85320; color: #00c853; padding: 3px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; }}
+.badge-red {{ background: #e5173f20; color: #e5173f; padding: 3px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; }}
+.badge-magenta {{ background: #d040f020; color: #d040f0; padding: 3px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; }}
+.badge-gold {{ background: #c8c82020; color: #c8c820; padding: 3px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; }}
+.badge-blue {{ background: #1565c020; color: #5090e0; padding: 3px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; }}
+
+/* ── Grid Layouts ── */
+.grid-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }}
+.grid-3 {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }}
+.metric-box {{ background: #0a0a0e; border-radius: 8px; padding: 15px; text-align: center; }}
+.metric-box .m-label {{ color: #a0a0a8; font-size: 0.75em; text-transform: uppercase; }}
+.metric-box .m-value {{ font-size: 1.3em; font-weight: 700; margin-top: 4px; }}
+canvas {{ max-height: 300px; }}
+
+/* ── Telegram Cards ── */
+.tg-card {{ background: #0a0a0e; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px; border-left: 3px solid #d040f0; }}
+.tg-cmd {{ color: #d040f0; font-family: monospace; font-weight: 600; }}
+.tg-resp {{ color: #ccc; font-size: 0.9em; margin-top: 5px; }}
+.scroll-table {{ max-height: 400px; overflow-y: auto; }}
+
+/* ── Trade Log Tab ── */
+.log-toolbar {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; }}
+.log-toolbar .log-stats {{ color: #a0a0a8; font-size: 0.9em; }}
+.log-toolbar .log-stats span {{ color: #f0f0f0; font-weight: 600; }}
+.btn-export {{ padding: 8px 20px; border-radius: 8px; border: 1px solid #00d4d4; background: #00d4d410; color: #00d4d4; font-weight: 600; cursor: pointer; font-size: 0.85em; transition: all 0.2s; }}
+.btn-export:hover {{ background: #00d4d430; }}
+.full-log {{ overflow-x: auto; }}
+.full-log table {{ min-width: 1200px; }}
+.full-log th {{ position: sticky; top: 0; background: #0d0d14; z-index: 1; }}
+
+@media (max-width: 768px) {{ .grid-2 {{ grid-template-columns: 1fr; }} .grid-3 {{ grid-template-columns: 1fr 1fr; }} }}
+</style>
+</head>
+<body>
+
+<h1>Crypto Trading Bot</h1>
+<p class="subtitle">Last updated: {data.get('timestamp', 'N/A')}</p>
+
+<!-- Tab Navigation -->
+<div class="tab-bar">
+    <button class="tab-btn active" onclick="switchTab('dashboard')">Dashboard</button>
+    <button class="tab-btn" onclick="switchTab('tradelog')">Trade Log</button>
+    <button class="tab-btn" onclick="switchTab('projection')">Yearly Projection</button>
+</div>
+
+<!-- ═══════════════════ TAB 1: DASHBOARD ═══════════════════ -->
+<div id="tab-dashboard" class="tab-content active">
+
+<!-- Top Stats Bar -->
+<div class="stats-bar">
+    <div class="stat-card">
+        <div class="label">Portfolio Value</div>
+        <div class="value">${data.get('equity', 0):,.2f}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Unrealized PnL</div>
+        <div class="value {upnl_class}">${upnl:+,.2f}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Today's PnL</div>
+        <div class="value {'green' if today_pnl >= 0 else 'red'}">${today_pnl:+,.2f}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Win Rate</div>
+        <div class="value">{m.get('win_rate', 0)}%</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Total Trades</div>
+        <div class="value">{m.get('total_trades', 0)}</div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="grid-2">
+    <div class="section">
+        <h2>Daily PnL (30 Days)</h2>
+        <canvas id="dailyPnlChart"></canvas>
+    </div>
+    <div class="section">
+        <h2>Equity Curve</h2>
+        <canvas id="equityChart"></canvas>
+    </div>
+</div>
+
+<!-- Entry Signal Diagnostics (v2) -->
+<div class="section">
+    <h2>Entry Signal Diagnostics</h2>
+    <p style="opacity:0.6;font-size:0.85em;margin-top:-8px;">
+        Live per-filter breakdown. <span style="color:#4ade80;">✓</span> pass &nbsp;
+        <span style="color:#f87171;">✗</span> blocked &nbsp;
+        <span style="opacity:0.4;">—</span> not applicable. Recomputed each 5-min cycle.
+    </p>
+    <div class="scroll-table">
+    <table style="font-size:0.9em;">
+        <tr>
+            <th>Asset</th>
+            <th>Status</th>
+            <th>Blocked By</th>
+            <th>Trend</th>
+            <th>Px&gt;EMA</th>
+            <th>ATR</th>
+            <th>RSI</th>
+            <th>MACD</th>
+            <th>PMO</th>
+            <th>Vol</th>
+            <th>MFI</th>
+            <th>ADX</th>
+            <th>BTC</th>
+            <th>Values</th>
+        </tr>
+        {signal_rows}
+    </table>
+    </div>
+</div>
+
+<!-- Open Positions -->
+<div class="section">
+    <h2>Open Positions</h2>
+    <div class="scroll-table">
+    <table>
+        <tr><th>Pair</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>Lev</th><th>uPnL</th><th>ROE%</th><th>Liq Price</th></tr>
+        {pos_rows}
+    </table>
+    </div>
+</div>
+
+<!-- Trade Log + Metrics -->
+<div class="grid-2">
+    <div class="section">
+        <h2>Recent Trades</h2>
+        <div class="scroll-table">
+        <table>
+            <tr><th>Time</th><th>Action</th><th>Pair</th><th>Strategy</th><th>PnL</th></tr>
+            {trade_rows}
+        </table>
+        </div>
+    </div>
+    <div class="section">
+        <h2>Performance Metrics</h2>
+        <div class="grid-3">
+            <div class="metric-box"><div class="m-label">Win Rate</div><div class="m-value">{m.get('win_rate', 0)}%</div></div>
+            <div class="metric-box"><div class="m-label">Profit Factor</div><div class="m-value">{m.get('profit_factor', 0)}</div></div>
+            <div class="metric-box"><div class="m-label">Avg Win</div><div class="m-value green">${m.get('avg_win', 0)}</div></div>
+            <div class="metric-box"><div class="m-label">Avg Loss</div><div class="m-value red">-${m.get('avg_loss', 0)}</div></div>
+            <div class="metric-box"><div class="m-label">Best Trade</div><div class="m-value green">${m.get('best_trade', 0)}</div></div>
+            <div class="metric-box"><div class="m-label">Worst Trade</div><div class="m-value red">${m.get('worst_trade', 0)}</div></div>
+            <div class="metric-box"><div class="m-label">Max Drawdown</div><div class="m-value red">{m.get('max_drawdown', 0)}%</div></div>
+            <div class="metric-box"><div class="m-label">Sharpe Ratio</div><div class="m-value">{m.get('sharpe', 0)}</div></div>
+            <div class="metric-box"><div class="m-label">Expectancy</div><div class="m-value">${m.get('expectancy', 0)}</div></div>
+        </div>
+    </div>
+</div>
+
+<!-- Allocation + Funding -->
+<div class="grid-2">
+    <div class="section">
+        <h2>Portfolio Allocation</h2>
+        <canvas id="allocChart"></canvas>
+    </div>
+    <div class="section">
+        <h2>Funding Rate Opportunities</h2>
+        <div class="scroll-table">
+        <table>
+            <tr><th>Pair</th><th>Rate</th><th>Ann. APR</th><th>Direction</th></tr>
+            {funding_rows}
+        </table>
+        </div>
+    </div>
+</div>
+
+<!-- Telegram Preview -->
+<div class="section">
+    <h2>Telegram Commands</h2>
+    <div class="tg-card">
+        <div class="tg-cmd">/balance</div>
+        <div class="tg-resp">Equity: ${data.get('equity', 0):,.2f} | Available: ${data.get('available', 0):,.2f} | uPnL: ${upnl:+.2f}</div>
+    </div>
+    <div class="tg-card">
+        <div class="tg-cmd">/positions</div>
+        <div class="tg-resp">{len(data.get('positions', []))} open positions across BTC, ETH, XRP</div>
+    </div>
+    <div class="tg-card">
+        <div class="tg-cmd">/pnl</div>
+        <div class="tg-resp">Today: ${today_pnl:+.2f} | 7d Win Rate: {m.get('win_rate', 0)}% | PF: {m.get('profit_factor', 0)}</div>
+    </div>
+    <div class="tg-card">
+        <div class="tg-cmd">/signals</div>
+        <div class="tg-resp">Monitoring BTC (4H), ETH (4H), XRP (Daily) for momentum entry signals...</div>
+    </div>
+</div>
+
+</div><!-- end tab-dashboard -->
+
+<!-- ═══════════════════ TAB 2: TRADE LOG ═══════════════════ -->
+<div id="tab-tradelog" class="tab-content">
+
+<div class="section">
+    <div class="log-toolbar">
+        <div class="log-stats">
+            Total Trades: <span>{m.get('total_trades', 0)}</span> &nbsp;|&nbsp;
+            Wins: <span class="green">{len([t for t in all_trades if float(t.get('net_pnl') or 0) > 0])}</span> &nbsp;|&nbsp;
+            Losses: <span class="red">{len([t for t in all_trades if float(t.get('net_pnl') or 0) < 0])}</span> &nbsp;|&nbsp;
+            Net PnL: <span class="{'green' if sum(float(t.get('net_pnl') or 0) for t in all_trades) >= 0 else 'red'}">${sum(float(t.get('net_pnl') or 0) for t in all_trades):+,.2f}</span>
+        </div>
+        <button class="btn-export" onclick="exportToExcel()">Export to Excel</button>
+    </div>
+    <h2>Closed Trades</h2>
+    <div class="full-log scroll-table" style="max-height: 700px;">
+    <table id="tradeLogTable">
+        <thead>
+        <tr>
+            <th>#</th><th>Date Opened</th><th>Date Closed</th><th>Symbol</th><th>Direction</th>
+            <th>Entry Price</th><th>Exit Price</th><th>Quantity</th><th>Leverage</th>
+            <th>Gross PnL</th><th>Fees</th><th>Net PnL</th><th>Net PnL %</th>
+            <th>Strategy</th><th>Exit Reason</th><th>Result</th>
+        </tr>
+        </thead>
+        <tbody>
+        {full_log_rows}
+        </tbody>
+    </table>
+    </div>
+</div>
+
+</div><!-- end tab-tradelog -->
+
+<!-- ═══════════════════ TAB 3: YEARLY PROJECTION ═══════════════════ -->
+<div id="tab-projection" class="tab-content">
+
+<div class="stats-bar">
+    <div class="stat-card">
+        <div class="label">Starting Capital</div>
+        <div class="value">${INITIAL_CAPITAL:,.0f}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Notional / Trade</div>
+        <div class="value">${MARGIN_PER_TRADE * DEFAULT_LEVERAGE:,.0f}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Projected Annual PnL</div>
+        <div class="value {proj_total_class}">${proj_total_annual:+,.2f}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Projected Annual %</div>
+        <div class="value {proj_total_class}">{proj_total_pct:+.2f}%</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Trades / Year</div>
+        <div class="value">{proj_trades_per_year:.1f}</div>
+    </div>
+</div>
+
+<div class="section">
+    <h2>Per-Strategy Annual Projection</h2>
+    <p style="opacity:0.6;font-size:0.85em;margin-top:-8px;">
+        Extrapolated from {BACKTEST_YEARS}-year BINANCE backtest (Dec 2020 → Apr 2026),
+        scaled to live sizing: ${MARGIN_PER_TRADE:.0f} margin × {DEFAULT_LEVERAGE}x = ${MARGIN_PER_TRADE * DEFAULT_LEVERAGE:.0f} notional (vs ${BACKTEST_CAPITAL * BACKTEST_QTY_PCT/100:.0f} backtest).
+        Scale factor {projection['scale']:.2f}× applied. Assumes steady regime — real returns will deviate.
+    </p>
+    <div class="scroll-table">
+    <table>
+        <tr>
+            <th>Strategy</th>
+            <th>Symbol</th>
+            <th>TF</th>
+            <th>PF</th>
+            <th>Trades/Yr</th>
+            <th>Annual % (Backtest)</th>
+            <th>Projected Annual $</th>
+            <th>Max DD</th>
+        </tr>
+        {projection_rows}
+    </table>
+    </div>
+</div>
+
+<div class="section">
+    <h2>Disclaimer</h2>
+    <p style="opacity:0.7;line-height:1.6;">
+        These projections are <strong>not guarantees</strong>. Profit factor and trade counts come from historical
+        BINANCE data and assume the bot's filters match the TradingView Pine backtest exactly. Variables that can cause
+        divergence: exchange slippage/funding/latency, regime changes (2020-2024 had strong trends),
+        strategies running simultaneously on finite capital ({MAX_POSITIONS} concurrent max), and tax/withdrawal timing.
+        Treat the <em>ranking</em> as more reliable than the <em>absolute $</em>.
+    </p>
+</div>
+
+</div><!-- end tab-projection -->
+
+<script>
+// ── Tab Switching ──
+function switchTab(tabName) {{
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + tabName).classList.add('active');
+    event.target.classList.add('active');
+}}
+
+// ── Export to Excel (CSV with .xls extension for Excel compat) ──
+function exportToExcel() {{
+    const trades = {trades_json};
+    if (!trades.length) {{ alert('No trades to export'); return; }}
+    const headers = ['Trade #','Date Opened','Date Closed','Symbol','Direction','Entry Price','Exit Price','Quantity','Leverage','Gross PnL','Fees','Net PnL','Net PnL %','Strategy','Entry Reason','Exit Reason','Notes','Result'];
+    const rows = trades.map((t, i) => {{
+        const ep = parseFloat(t.entry_price) || 0;
+        const xp = parseFloat(t.exit_price) || 0;
+        const qty = parseFloat(t.quantity) || 0;
+        const lev = parseInt(t.leverage) || 1;
+        const pnl = parseFloat(t.net_pnl) || 0;
+        const gross = parseFloat(t.gross_pnl) || 0;
+        const fees = parseFloat(t.fees) || 0;
+        const margin = ep * qty / lev;
+        const pct = margin > 0 ? (pnl / margin * 100).toFixed(1) + '%' : '0%';
+        const result = pnl > 0 ? 'WIN' : (pnl < 0 ? 'LOSS' : 'FLAT');
+        return [i+1, t.date_opened||'', t.date_closed||'', t.symbol||'', t.direction||'', ep, xp, qty, lev+'x', gross.toFixed(2), fees.toFixed(2), pnl.toFixed(2), pct, t.strategy||'', t.entry_reason||'', t.exit_reason||'', t.notes||'', result];
+    }});
+    let csv = '\\uFEFF' + headers.join(',') + '\\n';
+    rows.forEach(r => {{ csv += r.map(v => '\"' + String(v).replace(/\"/g, '\"\"') + '\"').join(',') + '\\n'; }});
+    const blob = new Blob([csv], {{ type: 'text/csv;charset=utf-8;' }});
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'Trade_Log_' + new Date().toISOString().slice(0,10) + '.csv';
+    link.click();
+}}
+
+// ── Daily PnL Chart ──
+const dailyLabels = {daily_labels};
+const dailyValues = {daily_values};
+const dailyColors = dailyValues.map(v => v >= 0 ? '#00c853' : '#e5173f');
+new Chart(document.getElementById('dailyPnlChart'), {{
+    type: 'bar',
+    data: {{
+        labels: dailyLabels,
+        datasets: [{{ data: dailyValues, backgroundColor: dailyColors, borderRadius: 4 }}]
+    }},
+    options: {{
+        responsive: true,
+        plugins: {{ legend: {{ display: false }}, tooltip: {{ callbacks: {{ label: ctx => '$' + ctx.parsed.y.toFixed(2) }} }} }},
+        scales: {{
+            x: {{ ticks: {{ color: '#a0a0a8', maxRotation: 45 }}, grid: {{ display: false }} }},
+            y: {{ ticks: {{ color: '#a0a0a8', callback: v => '$' + v }}, grid: {{ color: '#1c1c2e' }} }}
+        }}
+    }}
+}});
+
+// ── Equity Curve ──
+const eqData = {equity_curve};
+const eqLabels = eqData.map((_, i) => i === 0 ? 'Start' : 'Trade ' + i);
+const ctx2 = document.getElementById('equityChart').getContext('2d');
+const gradient = ctx2.createLinearGradient(0, 0, 0, 300);
+gradient.addColorStop(0, 'rgba(0, 212, 212, 0.30)');
+gradient.addColorStop(1, 'rgba(0, 212, 212, 0.0)');
+new Chart(ctx2, {{
+    type: 'line',
+    data: {{
+        labels: eqLabels,
+        datasets: [{{ data: eqData, borderColor: '#00d4d4', backgroundColor: gradient, fill: true, tension: 0.3, pointRadius: 0 }}]
+    }},
+    options: {{
+        responsive: true,
+        plugins: {{ legend: {{ display: false }} }},
+        scales: {{
+            x: {{ ticks: {{ color: '#a0a0a8', maxTicksLimit: 10 }}, grid: {{ display: false }} }},
+            y: {{ ticks: {{ color: '#a0a0a8', callback: v => '$' + v.toLocaleString() }}, grid: {{ color: '#1c1c2e' }} }}
+        }}
+    }}
+}});
+
+// ── Allocation Chart ──
+const allocLabels = {alloc_labels};
+const allocValues = {alloc_values};
+const allocColors = ['#00d4d4', '#00c853', '#d040f0', '#1565c0', '#e5173f', '#c8c820', '#00e676', '#9c27b0', '#607d8b'];
+new Chart(document.getElementById('allocChart'), {{
+    type: 'doughnut',
+    data: {{
+        labels: allocLabels,
+        datasets: [{{ data: allocValues, backgroundColor: allocColors.slice(0, allocLabels.length), borderWidth: 0 }}]
+    }},
+    options: {{
+        responsive: true,
+        plugins: {{
+            legend: {{ position: 'right', labels: {{ color: '#f0f0f0', padding: 12 }} }},
+            tooltip: {{ callbacks: {{ label: ctx => ctx.label + ': $' + ctx.parsed.toFixed(2) }} }}
+        }}
+    }}
+}});
+</script>
+
+</body>
+</html>"""
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(html)
+    logger.info("Dashboard written to %s", path)
+
+
+def build_dashboard(executor, state: dict) -> None:
+    """Convenience: gather data and generate dashboard."""
+    data = gather_dashboard_data(executor, state)
+    generate_dashboard(data)
