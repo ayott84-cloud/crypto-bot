@@ -1,5 +1,10 @@
-# Pinned to tested versions (Apr 2026). Upgrade cautiously — pandas-ta
-# breaks on NumPy 2.x, so keep numpy < 2 until pandas-ta ships a fix.
+# Pinned to tested versions (Apr 2026). Upgrade cautiously.
+#
+# pandas-ta version note: 0.3.14b0 is Python <3.12 only. Ubuntu 24.04 ships
+# Python 3.12 which forces us onto 0.4.71b0. API surface used by signals.py
+# (ema/sma/atr/rsi/macd/mfi/adx) is preserved across that jump, though the
+# column-naming of macd() and adx() returns may differ — signals.py already
+# reads those by the "{name}_{length}" suffix, which both versions emit.
 
 # Core
 requests==2.33.1
@@ -8,7 +13,7 @@ python-dotenv==1.0.1
 # Bot 1 momentum strategy (indicators + Excel journal)
 numpy==1.26.4
 pandas==2.2.3
-pandas-ta==0.3.14b0
+pandas-ta==0.4.71b0
 openpyxl==3.1.5
 
 # Timezones (used by dashboard's America/Chicago; stdlib zoneinfo on Python 3.9+
