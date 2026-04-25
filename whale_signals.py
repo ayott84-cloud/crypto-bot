@@ -19,10 +19,14 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-# Make the HL whale skill importable
+# Resolve whale_scanner from one of two places:
+#   1. Vendored copy at crypto_bot/vendor/whale_scanner.py (production deploys)
+#   2. ~/.claude/skills/hyperliquid-whale-tracker/scripts/ (local dev)
+_VENDOR_DIR = Path(__file__).resolve().parent / "vendor"
 _HL_SKILL_DIR = Path.home() / ".claude" / "skills" / "hyperliquid-whale-tracker" / "scripts"
-if str(_HL_SKILL_DIR) not in sys.path:
-    sys.path.insert(0, str(_HL_SKILL_DIR))
+for _p in (_VENDOR_DIR, _HL_SKILL_DIR):
+    if _p.is_dir() and str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 from whale_scanner import (  # type: ignore  # noqa: E402
     get_leaderboard,
