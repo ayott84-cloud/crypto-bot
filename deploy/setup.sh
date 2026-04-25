@@ -81,7 +81,12 @@ SSHD_CONF=/etc/ssh/sshd_config
 sed -i -E 's/^#?PermitRootLogin.*/PermitRootLogin no/' "${SSHD_CONF}"
 sed -i -E 's/^#?PasswordAuthentication.*/PasswordAuthentication no/' "${SSHD_CONF}"
 sed -i -E 's/^#?ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' "${SSHD_CONF}"
-systemctl reload sshd || systemctl reload ssh
+# Service is `ssh` on Ubuntu 24.04, `sshd` on most others. Reload whichever exists.
+if systemctl list-unit-files ssh.service >/dev/null 2>&1; then
+  systemctl reload ssh
+elif systemctl list-unit-files sshd.service >/dev/null 2>&1; then
+  systemctl reload sshd
+fi
 echo "  SSH hardened: key-only auth, no root login."
 
 # ─── 4. Firewall ────────────────────────────────────────────────────
