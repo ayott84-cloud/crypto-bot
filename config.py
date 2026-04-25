@@ -15,13 +15,25 @@ load_dotenv(_BOT_DIR / ".env")          # crypto_bot/.env
 load_dotenv(_BOT_DIR.parent / ".env")   # Crypto Trading/.env (fallback)
 
 # ─── System Paths ────────────────────────────────────────────────────────────
-PROJECT_DIR = Path(r"C:\Users\ayott\.claude\projects\C--Users-ayott--claude\Crypto Trading")
-BOT_DIR = PROJECT_DIR / "crypto_bot"
+# All runtime paths resolve relative to this file so the bot runs identically
+# on Windows (local dev) and Linux (DigitalOcean droplet).
+BOT_DIR = _BOT_DIR
+PROJECT_DIR = BOT_DIR.parent
 STATE_FILE = BOT_DIR / "state.json"
-JOURNAL_FILE = PROJECT_DIR / "Trading_Journal.xlsx"
 DASHBOARD_FILE = BOT_DIR / "dashboard.html"
 LOG_FILE = BOT_DIR / "bot.log"
-WEEX_SKILL_DIR = Path(r"C:\Users\ayott\.claude\skills\weex-trader-skill\scripts")
+
+# Journal file: prefer the project root (where Excel naturally lives on the
+# Windows machine) but fall back to inside the bot dir if the parent doesn't
+# have one (typical on Linux deployments where the journal is generated fresh).
+_JOURNAL_AT_PROJECT = PROJECT_DIR / "Trading_Journal.xlsx"
+_JOURNAL_AT_BOT = BOT_DIR / "Trading_Journal.xlsx"
+JOURNAL_FILE = _JOURNAL_AT_PROJECT if _JOURNAL_AT_PROJECT.exists() else _JOURNAL_AT_BOT
+
+# Path to the bundled weex skill scripts. On Windows the canonical install
+# location is the Claude skills dir; on Linux deployments we bundle a copy
+# under crypto_bot/vendor/. executor.py handles the fallback chain.
+WEEX_SKILL_DIR = BOT_DIR / "vendor"
 
 # ─── Email Notifications ────────────────────────────────────────────────────
 NOTIFY_ENABLED = os.getenv("NOTIFY_ENABLED", "true").lower() in ("true", "1", "yes")
