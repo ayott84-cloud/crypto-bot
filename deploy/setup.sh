@@ -73,6 +73,12 @@ echo "${BOT_USER} ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/${BOT_USER}"
 chmod 440 "/etc/sudoers.d/${BOT_USER}"
 echo "  Enabled passwordless sudo for '${BOT_USER}'."
 
+# Git author identity — required for the dashboard-push service to make commits
+# to the render-dashboard branch. Idempotent.
+sudo -u "${BOT_USER}" git config --global user.email "${BOT_USER}@$(hostname)"
+sudo -u "${BOT_USER}" git config --global user.name "Crypto Bot Droplet"
+echo "  Set git author identity for '${BOT_USER}'."
+
 # ─── 3. SSH hardening ───────────────────────────────────────────────
 echo ""
 echo "[3/9] Hardening SSH (disabling root login + password auth)..."
