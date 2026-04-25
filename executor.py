@@ -13,12 +13,19 @@ import sys
 import time
 from typing import Any, Dict, List, Optional
 
-# Add the skill scripts directory to path so we can import the client
+# Resolve weex_contract_api from one of two places, in order of preference:
+#   1. Vendored copy in this repo (vendor/weex_contract_api.py) — used in
+#      production deployments where the Claude skill isn't installed.
+#   2. The Claude Code skill at ~/.claude/skills/weex-trader-skill/scripts/ —
+#      used during local development on the maintainer's machine.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_VENDOR_DIR = os.path.join(_HERE, "vendor")
 _SKILL_DIR = os.path.join(
     os.path.expanduser("~"), ".claude", "skills", "weex-trader-skill", "scripts"
 )
-if _SKILL_DIR not in sys.path:
-    sys.path.insert(0, _SKILL_DIR)
+for _path in (_VENDOR_DIR, _SKILL_DIR):
+    if os.path.isdir(_path) and _path not in sys.path:
+        sys.path.insert(0, _path)
 
 from weex_contract_api import WeexContractClient, ENDPOINTS, Endpoint  # noqa: E402
 
