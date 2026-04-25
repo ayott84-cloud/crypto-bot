@@ -18,9 +18,10 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=crypto-whale
 
-# Whale bot is lighter — no pandas hot path — but cap it anyway
-MemoryMax=200M
-MemoryHigh=150M
+# HL leaderboard response is 28 MB JSON; parsing it expands to ~160 MB in Python.
+# Caps need headroom for that + per-wallet position fetches + retries.
+MemoryMax=500M
+MemoryHigh=400M
 
 # Hardening
 NoNewPrivileges=true
