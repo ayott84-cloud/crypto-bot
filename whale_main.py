@@ -648,7 +648,14 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
 
         open_whale_position(executor, state, sig, atr)
 
-    # 6. Regenerate the HTML dashboard so the Whale Bot tab reflects this cycle.
+    # 6. Heartbeat — touch a file so the dashboard can show "live" status.
+    try:
+        heartbeat = Path(__file__).resolve().parent / ".whale_heartbeat"
+        heartbeat.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+    except Exception as e:
+        logger.warning("Heartbeat write failed: %s", e)
+
+    # 7. Regenerate the HTML dashboard so the Whale Bot tab reflects this cycle.
     if build_dashboard is not None:
         try:
             build_dashboard(executor, state)

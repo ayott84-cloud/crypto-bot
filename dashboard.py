@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List
 
 from openpyxl import load_workbook
@@ -137,6 +138,46 @@ def _compute_metrics(trades: List[dict]) -> dict:
     }
 
 
+def _compute_bot_status() -> Dict[str, dict]:
+    """Read heartbeat mtimes for both bots and classify as LIVE / STALE / NEVER.
+
+    Momentum bot saves state.json every cycle (~5 min). Whale bot writes
+    .whale_heartbeat every cycle (~15 min). Stale threshold = 2x poll interval.
+    """
+    from datetime import datetime, timezone
+    import time
+
+    bot_dir = Path(__file__).resolve().parent
+    now = time.time()
+
+    def _classify(path: Path, fresh_threshold_s: int) -> dict:
+        if not path.exists():
+            return {"text": "NEVER", "css": "never", "age": "never run"}
+        age_s = now - path.stat().st_mtime
+        if age_s < fresh_threshold_s:
+            css, text = "live", "LIVE"
+        elif age_s < fresh_threshold_s * 4:
+            css, text = "stale", "STALE"
+        else:
+            css, text = "stale", "DOWN"
+        if age_s < 60:
+            age = f"{int(age_s)}s ago"
+        elif age_s < 3600:
+            age = f"{int(age_s / 60)}m ago"
+        elif age_s < 86400:
+            age = f"{int(age_s / 3600)}h ago"
+        else:
+            age = f"{int(age_s / 86400)}d ago"
+        return {"text": text, "css": css, "age": age}
+
+    # Momentum: state.json — fresh if updated in last 10 min (2x its 5min poll)
+    momentum = _classify(bot_dir / "state.json", 600)
+    # Whale: .whale_heartbeat — fresh if updated in last 30 min (2x its 15min poll)
+    whale = _classify(bot_dir / ".whale_heartbeat", 1800)
+
+    return {"momentum": momentum, "whale": whale}
+
+
 def gather_dashboard_data(executor, state: dict) -> Dict[str, Any]:
     """Gather all data needed for the dashboard."""
     data: Dict[str, Any] = {}
@@ -196,6 +237,9 @@ def gather_dashboard_data(executor, state: dict) -> Dict[str, Any]:
 
     # v2: Signal status per asset (for Entry Signal Diagnostics panel)
     data["signal_status"] = state.get("signal_status", {})
+
+    # Bot health status (read mtimes; classify as LIVE/STALE/NEVER)
+    data["bot_status"] = _compute_bot_status()
 
     # Whale bot data (open whale positions + most recent signal snapshot)
     whale_positions = []
@@ -631,6 +675,17 @@ def generate_dashboard(data: dict, output_path: str = None) -> None:
     proj_total_class = "green" if proj_total_annual >= 0 else "red"
     proj_total_pct = (proj_total_annual / INITIAL_CAPITAL * 100) if INITIAL_CAPITAL > 0 else 0
 
+    # Bot status pills (header)
+    bot_status = data.get("bot_status") or {}
+    momentum_status = bot_status.get("momentum") or {"text": "NEVER", "css": "never", "age": "never run"}
+    whale_status = bot_status.get("whale") or {"text": "NEVER", "css": "never", "age": "never run"}
+    momentum_status_text = momentum_status["text"]
+    momentum_status_css = momentum_status["css"]
+    momentum_status_age = momentum_status["age"]
+    whale_status_text = whale_status["text"]
+    whale_status_css = whale_status["css"]
+    whale_status_age = whale_status["age"]
+
     # Whale bot rendering
     whale_signals_rows = _render_whale_signals_rows(data.get("whale_signals_latest", []))
     whale_positions_rows = _render_whale_positions_rows(data.get("whale_positions", []))
@@ -714,6 +769,48 @@ canvas {{ max-height: 300px; }}
 .log-toolbar .log-stats span {{ color: #f0f0f0; font-weight: 600; }}
 .btn-export {{ padding: 8px 20px; border-radius: 8px; border: 1px solid #00d4d4; background: #00d4d410; color: #00d4d4; font-weight: 600; cursor: pointer; font-size: 0.85em; transition: all 0.2s; }}
 .btn-export:hover {{ background: #00d4d430; }}
+
+/* ── Bot status pills (header) ── */
+.bot-status-bar {{ display: inline-flex; gap: 10px; margin-left: 15px; vertical-align: middle; }}
+.status-pill {{ display: inline-flex; align-items: center; padding: 3px 12px; border-radius: 14px; font-size: 0.78em; font-weight: 600; }}
+.status-pill .dot {{ width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; display: inline-block; }}
+.status-pill .age {{ opacity: 0.6; margin-left: 8px; font-weight: 400; font-size: 0.95em; }}
+.status-pill.live    {{ background: #00c85322; color: #4ade80; }}
+.status-pill.live .dot    {{ background: #4ade80; box-shadow: 0 0 8px #4ade80; animation: pulse 2s infinite; }}
+.status-pill.stale   {{ background: #ffc10722; color: #facc15; }}
+.status-pill.stale .dot   {{ background: #facc15; }}
+.status-pill.never   {{ background: #94a3b822; color: #94a3b8; }}
+.status-pill.never .dot   {{ background: #94a3b8; }}
+@keyframes pulse {{ 0%, 100% {{ opacity: 1; }} 50% {{ opacity: 0.5; }} }}
+
+/* ── Export modal ── */
+.modal-overlay {{ display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 1000; align-items: center; justify-content: center; padding: 20px; }}
+.modal-overlay.show {{ display: flex; }}
+.modal-content {{ background: #0d0d14; border: 1px solid #2a2a5e; border-radius: 14px; padding: 28px; max-width: 800px; width: 100%; max-height: 90vh; overflow-y: auto; }}
+.modal-content h2 {{ margin: 0 0 20px 0; color: #00d4d4; }}
+.modal-filters {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 20px; }}
+.modal-filters label {{ display: block; color: #a0a0a8; font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }}
+.modal-filters input, .modal-filters select {{ width: 100%; padding: 9px 12px; background: #0a0a0e; color: #e0e0e0; border: 1px solid #2a2a5e; border-radius: 8px; font-size: 0.92em; box-sizing: border-box; }}
+.modal-filters input:focus, .modal-filters select:focus {{ border-color: #00d4d4; outline: none; }}
+.modal-filters .date-range {{ display: flex; gap: 6px; align-items: center; }}
+.modal-filters .date-range input {{ flex: 1; }}
+.modal-preview-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 8px 0; border-top: 1px solid #1c1c2e; }}
+.modal-preview-count {{ color: #a0a0a8; font-size: 0.9em; }}
+.modal-preview-count b {{ color: #00d4d4; font-size: 1.1em; }}
+.modal-preview {{ max-height: 280px; overflow-y: auto; border: 1px solid #1c1c2e; border-radius: 8px; }}
+.modal-preview table {{ width: 100%; font-size: 0.82em; border-collapse: collapse; }}
+.modal-preview th {{ position: sticky; top: 0; background: #0a0a0e; color: #a0a0a8; text-align: left; padding: 8px 10px; font-weight: 500; border-bottom: 1px solid #2a2a5e; }}
+.modal-preview td {{ padding: 6px 10px; border-bottom: 1px solid #1c1c2e; }}
+.modal-actions {{ display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; align-items: center; }}
+.btn-primary {{ padding: 10px 24px; border-radius: 8px; border: none; background: #00d4d4; color: #0a0a0e; font-weight: 700; cursor: pointer; font-size: 0.9em; transition: all 0.2s; }}
+.btn-primary:hover {{ background: #4dffff; }}
+.btn-primary:disabled {{ background: #1c1c2e; color: #555; cursor: not-allowed; }}
+.btn-secondary {{ padding: 10px 24px; border-radius: 8px; border: 1px solid #2a2a5e; background: transparent; color: #a0a0a8; font-weight: 600; cursor: pointer; font-size: 0.9em; }}
+.btn-secondary:hover {{ background: #1c1c2e; color: #e0e0e0; }}
+
+/* ── Bitcoin spinner ── */
+.spinner-bitcoin {{ display: inline-block; font-size: 1.6em; color: #f7931a; animation: spin-btc 1s linear infinite; margin-right: auto; padding-left: 8px; }}
+@keyframes spin-btc {{ from {{ transform: rotate(0deg); }} to {{ transform: rotate(360deg); }} }}
 .full-log {{ overflow-x: auto; }}
 .full-log table {{ min-width: 1200px; }}
 .full-log th {{ position: sticky; top: 0; background: #0d0d14; z-index: 1; }}
@@ -724,7 +821,16 @@ canvas {{ max-height: 300px; }}
 <body>
 
 <h1>Crypto Trading Bot</h1>
-<p class="subtitle">Last updated: {data.get('timestamp', 'N/A')}</p>
+<p class="subtitle">Last updated: {data.get('timestamp', 'N/A')}
+    <span class="bot-status-bar">
+        <span class="status-pill {momentum_status_css}" title="Momentum bot heartbeat">
+            <span class="dot"></span>Momentum: {momentum_status_text}<span class="age">{momentum_status_age}</span>
+        </span>
+        <span class="status-pill {whale_status_css}" title="Whale bot heartbeat">
+            <span class="dot"></span>Whale: {whale_status_text}<span class="age">{whale_status_age}</span>
+        </span>
+    </span>
+</p>
 
 <!-- Tab Navigation -->
 <div class="tab-bar">
@@ -893,7 +999,7 @@ canvas {{ max-height: 300px; }}
             Losses: <span class="red">{len([t for t in all_trades if float(t.get('net_pnl') or 0) < 0])}</span> &nbsp;|&nbsp;
             Net PnL: <span class="{'green' if sum(float(t.get('net_pnl') or 0) for t in all_trades) >= 0 else 'red'}">${sum(float(t.get('net_pnl') or 0) for t in all_trades):+,.2f}</span>
         </div>
-        <button class="btn-export" onclick="exportToExcel()">Export to Excel</button>
+        <button class="btn-export" onclick="openExportModal()">Export Trades</button>
     </div>
     <h2>Closed Trades</h2>
     <div class="full-log scroll-table" style="max-height: 700px;">
@@ -911,6 +1017,56 @@ canvas {{ max-height: 300px; }}
         </tbody>
     </table>
     </div>
+</div>
+
+<!-- Export modal -->
+<div id="exportModal" class="modal-overlay" onclick="if(event.target===this) closeExportModal()">
+  <div class="modal-content">
+    <h2>Export Trades</h2>
+    <div class="modal-filters">
+      <div>
+        <label>Date range</label>
+        <div class="date-range">
+          <input type="date" id="exportFromDate" oninput="applyExportFilters()">
+          <span style="color:#666;">to</span>
+          <input type="date" id="exportToDate" oninput="applyExportFilters()">
+        </div>
+      </div>
+      <div>
+        <label>Symbol</label>
+        <select id="exportSymbol" onchange="applyExportFilters()">
+          <option value="">All symbols</option>
+        </select>
+      </div>
+      <div>
+        <label>Bot</label>
+        <select id="exportBot" onchange="applyExportFilters()">
+          <option value="">All bots</option>
+          <option value="momentum">Momentum (4H/1D)</option>
+          <option value="whale">Whale Tracker</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-preview-header">
+      <div class="modal-preview-count">Matching trades: <b id="exportCount">0</b></div>
+      <div style="color:#a0a0a8;font-size:0.85em;">Net PnL: <b id="exportNetPnl">$0.00</b></div>
+    </div>
+    <div class="modal-preview">
+      <table>
+        <thead>
+        <tr>
+          <th>Closed</th><th>Symbol</th><th>Direction</th><th>Strategy</th><th style="text-align:right;">Net PnL</th>
+        </tr>
+        </thead>
+        <tbody id="exportPreviewBody"></tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <span id="exportSpinner" class="spinner-bitcoin" style="display:none;">₿</span>
+      <button class="btn-secondary" onclick="closeExportModal()">Cancel</button>
+      <button id="exportDownloadBtn" class="btn-primary" onclick="downloadExport()">Download CSV</button>
+    </div>
+  </div>
 </div>
 
 </div><!-- end tab-tradelog -->
@@ -1081,31 +1237,132 @@ function switchTab(tabName) {{
     event.target.classList.add('active');
 }}
 
-// ── Export to Excel (CSV with .xls extension for Excel compat) ──
-function exportToExcel() {{
-    const trades = {trades_json};
-    if (!trades.length) {{ alert('No trades to export'); return; }}
-    const headers = ['Trade #','Date Opened','Date Closed','Symbol','Direction','Entry Price','Exit Price','Quantity','Leverage','Gross PnL','Fees','Net PnL','Net PnL %','Strategy','Entry Reason','Exit Reason','Notes','Result'];
-    const rows = trades.map((t, i) => {{
-        const ep = parseFloat(t.entry_price) || 0;
-        const xp = parseFloat(t.exit_price) || 0;
-        const qty = parseFloat(t.quantity) || 0;
-        const lev = parseInt(t.leverage) || 1;
-        const pnl = parseFloat(t.net_pnl) || 0;
-        const gross = parseFloat(t.gross_pnl) || 0;
-        const fees = parseFloat(t.fees) || 0;
-        const margin = ep * qty / lev;
-        const pct = margin > 0 ? (pnl / margin * 100).toFixed(1) + '%' : '0%';
-        const result = pnl > 0 ? 'WIN' : (pnl < 0 ? 'LOSS' : 'FLAT');
-        return [i+1, t.date_opened||'', t.date_closed||'', t.symbol||'', t.direction||'', ep, xp, qty, lev+'x', gross.toFixed(2), fees.toFixed(2), pnl.toFixed(2), pct, t.strategy||'', t.entry_reason||'', t.exit_reason||'', t.notes||'', result];
+// ── Export Trades modal ──
+const ALL_TRADES = {trades_json};
+
+function _isWhaleTrade(t) {{
+    const s = (t.strategy || '').toString();
+    return s.startsWith('Whale Track') || s.startsWith('Whale ');
+}}
+
+function _filteredTrades() {{
+    const fromDate = document.getElementById('exportFromDate').value;
+    const toDate   = document.getElementById('exportToDate').value;
+    const symbol   = document.getElementById('exportSymbol').value;
+    const bot      = document.getElementById('exportBot').value;
+    return ALL_TRADES.filter(t => {{
+        const closed = (t.date_closed || '').slice(0, 10);
+        if (fromDate && closed && closed < fromDate) return false;
+        if (toDate   && closed && closed > toDate)   return false;
+        if (symbol && t.symbol !== symbol) return false;
+        if (bot === 'whale'    && !_isWhaleTrade(t)) return false;
+        if (bot === 'momentum' &&  _isWhaleTrade(t)) return false;
+        return true;
     }});
-    let csv = '\\uFEFF' + headers.join(',') + '\\n';
-    rows.forEach(r => {{ csv += r.map(v => '\"' + String(v).replace(/\"/g, '\"\"') + '\"').join(',') + '\\n'; }});
-    const blob = new Blob([csv], {{ type: 'text/csv;charset=utf-8;' }});
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'Trade_Log_' + new Date().toISOString().slice(0,10) + '.csv';
-    link.click();
+}}
+
+function applyExportFilters() {{
+    const filtered = _filteredTrades();
+    const body = document.getElementById('exportPreviewBody');
+    const count = document.getElementById('exportCount');
+    const netEl = document.getElementById('exportNetPnl');
+
+    count.textContent = filtered.length;
+    let totalPnl = 0;
+    body.innerHTML = '';
+    const previewLimit = 100;
+    filtered.slice(0, previewLimit).forEach(t => {{
+        const pnl = parseFloat(t.net_pnl) || 0;
+        totalPnl += pnl;
+        const cls = pnl > 0 ? 'green' : (pnl < 0 ? 'red' : '');
+        const tr = document.createElement('tr');
+        tr.innerHTML =
+            '<td>' + (t.date_closed || '').slice(0, 16) + '</td>' +
+            '<td>' + (t.symbol || '') + '</td>' +
+            '<td>' + (t.direction || '') + '</td>' +
+            '<td style="opacity:0.8;">' + (t.strategy || '') + '</td>' +
+            '<td style="text-align:right;" class="' + cls + '">$' + pnl.toFixed(2) + '</td>';
+        body.appendChild(tr);
+    }});
+    // Sum the FULL filtered set (not just preview-limited rows) for the net display
+    const fullPnl = filtered.reduce((a, t) => a + (parseFloat(t.net_pnl) || 0), 0);
+    netEl.textContent = '$' + fullPnl.toFixed(2);
+    netEl.className = fullPnl >= 0 ? 'green' : 'red';
+    if (filtered.length > previewLimit) {{
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td colspan="5" style="text-align:center;opacity:0.6;font-style:italic;">… and ' + (filtered.length - previewLimit) + ' more (full set will be in CSV)</td>';
+        body.appendChild(tr);
+    }}
+    document.getElementById('exportDownloadBtn').disabled = (filtered.length === 0);
+}}
+
+function _populateSymbolDropdown() {{
+    const select = document.getElementById('exportSymbol');
+    // Clear existing (except the first "All" option)
+    while (select.options.length > 1) select.remove(1);
+    const symbols = [...new Set(ALL_TRADES.map(t => t.symbol).filter(Boolean))].sort();
+    symbols.forEach(s => {{
+        const opt = document.createElement('option');
+        opt.value = s; opt.textContent = s;
+        select.appendChild(opt);
+    }});
+}}
+
+function openExportModal() {{
+    if (!ALL_TRADES.length) {{ alert('No trades to export yet.'); return; }}
+    _populateSymbolDropdown();
+    document.getElementById('exportFromDate').value = '';
+    document.getElementById('exportToDate').value   = '';
+    document.getElementById('exportSymbol').value   = '';
+    document.getElementById('exportBot').value      = '';
+    applyExportFilters();
+    document.getElementById('exportModal').classList.add('show');
+}}
+
+function closeExportModal() {{
+    document.getElementById('exportModal').classList.remove('show');
+    document.getElementById('exportSpinner').style.display = 'none';
+}}
+
+function downloadExport() {{
+    const filtered = _filteredTrades();
+    if (!filtered.length) {{ alert('No trades match these filters.'); return; }}
+
+    // Show the bitcoin spinner during the build (fast, but gives clear feedback)
+    const spinner = document.getElementById('exportSpinner');
+    const btn = document.getElementById('exportDownloadBtn');
+    spinner.style.display = 'inline-block';
+    btn.disabled = true;
+
+    setTimeout(() => {{
+        try {{
+            const headers = ['Trade #','Date Opened','Date Closed','Symbol','Direction','Entry Price','Exit Price','Quantity','Leverage','Gross PnL','Fees','Net PnL','Net PnL %','Strategy','Bot','Entry Reason','Exit Reason','Notes','Result'];
+            const rows = filtered.map((t, i) => {{
+                const ep = parseFloat(t.entry_price) || 0;
+                const xp = parseFloat(t.exit_price) || 0;
+                const qty = parseFloat(t.quantity) || 0;
+                const lev = parseInt(t.leverage) || 1;
+                const pnl = parseFloat(t.net_pnl) || 0;
+                const gross = parseFloat(t.gross_pnl) || 0;
+                const fees = parseFloat(t.fees) || 0;
+                const margin = ep * qty / lev;
+                const pct = margin > 0 ? (pnl / margin * 100).toFixed(1) + '%' : '0%';
+                const result = pnl > 0 ? 'WIN' : (pnl < 0 ? 'LOSS' : 'FLAT');
+                const botName = _isWhaleTrade(t) ? 'Whale' : 'Momentum';
+                return [i+1, t.date_opened||'', t.date_closed||'', t.symbol||'', t.direction||'', ep, xp, qty, lev+'x', gross.toFixed(2), fees.toFixed(2), pnl.toFixed(2), pct, t.strategy||'', botName, t.entry_reason||'', t.exit_reason||'', t.notes||'', result];
+            }});
+            let csv = '\\uFEFF' + headers.join(',') + '\\n';
+            rows.forEach(r => {{ csv += r.map(v => '\"' + String(v).replace(/\"/g, '\"\"') + '\"').join(',') + '\\n'; }});
+            const blob = new Blob([csv], {{ type: 'text/csv;charset=utf-8;' }});
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'Trade_Log_' + new Date().toISOString().slice(0,10) + '.csv';
+            link.click();
+        }} finally {{
+            // Brief delay so the user sees the spinner spin at least once before close
+            setTimeout(() => {{ closeExportModal(); btn.disabled = false; }}, 600);
+        }}
+    }}, 50);
 }}
 
 // ── Daily PnL Chart ──
