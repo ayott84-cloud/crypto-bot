@@ -39,7 +39,10 @@ WEEX_SKILL_DIR = BOT_DIR / "vendor"
 NOTIFY_ENABLED = os.getenv("NOTIFY_ENABLED", "true").lower() in ("true", "1", "yes")
 NOTIFY_EMAIL = os.getenv("NOTIFY_EMAIL", "ayott84@gmail.com")
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+# Default to SMTPS (465) instead of submission+STARTTLS (587). Many cloud
+# providers (DigitalOcean included) block outbound 587 by default but allow
+# 465. The notifier handles both: 465 uses SMTP_SSL, 587 uses STARTTLS.
+SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 SMTP_USER = os.getenv("SMTP_USER", "")       # your Gmail address
 SMTP_PASS = os.getenv("SMTP_PASS", "")       # Gmail App Password (16 chars)
 

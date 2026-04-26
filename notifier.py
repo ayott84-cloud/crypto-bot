@@ -57,12 +57,22 @@ def _send_email(subject: str, html_body: str) -> bool:
         # but pass the original hostname for TLS SNI / cert validation.
         ipv4 = _resolve_ipv4(SMTP_HOST)
         context = ssl.create_default_context()
-        with smtplib.SMTP(ipv4, SMTP_PORT, timeout=15) as server:
-            server.ehlo()
-            server.starttls(context=context, server_hostname=SMTP_HOST)
-            server.ehlo()
-            server.login(SMTP_USER, SMTP_PASS)
-            server.sendmail(SMTP_USER, NOTIFY_EMAIL, msg.as_string())
+
+        if SMTP_PORT == 465:
+            # SMTPS — TLS from connection start. Most cloud providers (incl.
+            # DigitalOcean) leave 465 outbound open while blocking 587.
+            with smtplib.SMTP_SSL(ipv4, SMTP_PORT, timeout=15,
+                                   context=context, server_hostname=SMTP_HOST) as server:
+                server.login(SMTP_USER, SMTP_PASS)
+                server.sendmail(SMTP_USER, NOTIFY_EMAIL, msg.as_string())
+        else:
+            # Submission + STARTTLS (port 587 by convention).
+            with smtplib.SMTP(ipv4, SMTP_PORT, timeout=15) as server:
+                server.ehlo()
+                server.starttls(context=context, server_hostname=SMTP_HOST)
+                server.ehlo()
+                server.login(SMTP_USER, SMTP_PASS)
+                server.sendmail(SMTP_USER, NOTIFY_EMAIL, msg.as_string())
 
         logger.info("Email sent: %s", subject)
         return True
