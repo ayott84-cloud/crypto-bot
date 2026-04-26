@@ -77,38 +77,56 @@ class Executor:
 
     # ── Market Data ──────────────────────────────────────────────────────
 
+    # Parser note: WEEX returns the result directly under the top-level "data"
+    # key (e.g. data: {price: ...} or data: [{...}]). An older revision of
+    # the bot expected an extra nested "data" wrapper. These helpers now try
+    # the direct shape first and fall back to the nested shape so older
+    # responses still work.
+
     def get_klines(self, symbol: str, interval: str, limit: int = 300) -> list:
         """Fetch OHLCV kline data."""
         result = self._call("market.get_klines", query={
             "symbol": symbol, "interval": interval, "limit": str(limit)
         })
-        if result.get("ok") and result.get("data"):
+        if result.get("ok") and result.get("data") is not None:
             data = result["data"]
-            # WEEX returns {"code": "0", "data": [...klines...]}
+            if isinstance(data, list):
+                return data
             if isinstance(data, dict):
                 return data.get("data", [])
-            return data
         return []
 
     def get_symbol_price(self, symbol: str) -> Optional[float]:
         """Get current mark/last price for a symbol."""
         result = self._call("market.get_symbol_price", query={"symbol": symbol})
-        if result.get("ok") and result.get("data"):
-            data = result["data"]
-            if isinstance(data, dict):
-                inner = data.get("data", {})
-                if isinstance(inner, list) and inner:
-                    return float(inner[0].get("price", 0))
-                if isinstance(inner, dict):
-                    return float(inner.get("price", 0))
+        if not (result.get("ok") and result.get("data")):
+            return None
+        data = result["data"]
+        if isinstance(data, dict):
+            # Direct shape: {"symbol": ..., "price": ..., "time": ...}
+            if "price" in data:
+                try:
+                    return float(data["price"])
+                except (TypeError, ValueError):
+                    return None
+            # Nested shape: {"data": {...}} or {"data": [{...}]}
+            inner = data.get("data", {})
+            if isinstance(inner, list) and inner:
+                return float(inner[0].get("price", 0) or 0)
+            if isinstance(inner, dict) and "price" in inner:
+                return float(inner.get("price", 0) or 0)
+        if isinstance(data, list) and data:
+            return float(data[0].get("price", 0) or 0)
         return None
 
     def get_ticker_24h(self, symbol: str = None) -> list:
         """Get 24h ticker statistics."""
         query = {"symbol": symbol} if symbol else {}
         result = self._call("market.get_ticker24h", query=query)
-        if result.get("ok") and result.get("data"):
+        if result.get("ok") and result.get("data") is not None:
             data = result["data"]
+            if isinstance(data, list):
+                return data
             if isinstance(data, dict):
                 return data.get("data", [])
         return []
@@ -117,8 +135,10 @@ class Executor:
         """Get current funding rate(s)."""
         query = {"symbol": symbol} if symbol else {}
         result = self._call("market.get_current_funding_rate", query=query)
-        if result.get("ok") and result.get("data"):
+        if result.get("ok") and result.get("data") is not None:
             data = result["data"]
+            if isinstance(data, list):
+                return data
             if isinstance(data, dict):
                 return data.get("data", [])
         return []
@@ -127,11 +147,18 @@ class Executor:
         """Get contract specifications (min qty, tick size, etc.)."""
         query = {"symbol": symbol} if symbol else {}
         result = self._call("market.get_contract_info", query=query)
-        if result.get("ok") and result.get("data"):
-            data = result["data"]
-            if isinstance(data, dict):
-                symbols = data.get("data", {}).get("symbols", [])
-                return symbols if isinstance(symbols, list) else []
+        if not (result.get("ok") and result.get("data")):
+            return []
+        data = result["data"]
+        if isinstance(data, dict):
+            # Direct shape: {"assets": [...], "symbols": [...]}
+            if "symbols" in data and isinstance(data["symbols"], list):
+                return data["symbols"]
+            # Nested shape: {"data": {"symbols": [...]}}
+            inner = data.get("data", {})
+            if isinstance(inner, dict):
+                syms = inner.get("symbols", [])
+                return syms if isinstance(syms, list) else []
         return []
 
     # ── Account Data ─────────────────────────────────────────────────────
@@ -151,16 +178,23 @@ class Executor:
                 return inner
         return {}
 
+    @staticmethod
+    def _unwrap_list(data) -> list:
+        """Normalize the WEEX 'data' field down to a list, regardless of shape."""
+        if isinstance(data, list):
+            return data
+        if isinstance(data, dict):
+            inner = data.get("data", [])
+            if isinstance(inner, list):
+                return inner
+        return []
+
     def get_all_positions(self) -> list:
         """Get all open positions (filtered to non-zero size)."""
         result = self._call("account.get_all_positions")
-        if result.get("ok") and result.get("data"):
-            data = result["data"]
-            if isinstance(data, dict):
-                positions = data.get("data", [])
-                if isinstance(positions, list):
-                    return [p for p in positions
-                            if float(p.get("positionAmt", "0")) != 0]
+        if result.get("ok") and result.get("data") is not None:
+            positions = self._unwrap_list(result["data"])
+            return [p for p in positions if float(p.get("positionAmt", "0")) != 0]
         return []
 
     def get_order_history(self, symbol: str = None, start_time: int = None,
@@ -172,10 +206,8 @@ class Executor:
         if start_time:
             query["startTime"] = str(start_time)
         result = self._call("transaction.get_order_history", query=query)
-        if result.get("ok") and result.get("data"):
-            data = result["data"]
-            if isinstance(data, dict):
-                return data.get("data", [])
+        if result.get("ok") and result.get("data") is not None:
+            return self._unwrap_list(result["data"])
         return []
 
     def get_trade_details(self, symbol: str = None, order_id: str = None,
@@ -189,10 +221,8 @@ class Executor:
         if start_time:
             query["startTime"] = str(start_time)
         result = self._call("transaction.get_trade_details", query=query)
-        if result.get("ok") and result.get("data"):
-            data = result["data"]
-            if isinstance(data, dict):
-                return data.get("data", [])
+        if result.get("ok") and result.get("data") is not None:
+            return self._unwrap_list(result["data"])
         return []
 
     def get_contract_bills(self, start_time: int = None, end_time: int = None,
@@ -206,10 +236,8 @@ class Executor:
         if income_type:
             body["incomeType"] = income_type
         result = self._call("account.get_contract_bills", body=body)
-        if result.get("ok") and result.get("data"):
-            data = result["data"]
-            if isinstance(data, dict):
-                return data.get("data", [])
+        if result.get("ok") and result.get("data") is not None:
+            return self._unwrap_list(result["data"])
         return []
 
     # ── Trading Operations ───────────────────────────────────────────────
