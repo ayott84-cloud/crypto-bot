@@ -108,31 +108,37 @@ def notify_trade_opened(
     atr_at_entry: float,
     strategy: str,
     entry_reason: str = "",
+    direction: str = "LONG",
 ) -> bool:
-    """Send email when a new trade is opened."""
+    """Send email when a new trade is opened.
+
+    direction: "LONG" or "SHORT" — affects subject, badge color, and the sign
+    of the profit/loss math at the TP and SL targets.
+    """
     qty = float(quantity)
     notional = entry_price * qty
     margin = notional / leverage
 
-    # Expected profit at TP targets
-    profit_tp1 = (tp1_price - entry_price) * qty
-    profit_tp2 = (tp2_price - entry_price) * qty
-    # Potential loss at SL
-    loss_sl = (entry_price - sl_price) * qty
+    # Direction-aware: LONG profits when price rises, SHORT profits when price falls.
+    sign = 1 if direction == "LONG" else -1
+    profit_tp1 = (tp1_price - entry_price) * qty * sign
+    profit_tp2 = (tp2_price - entry_price) * qty * sign
+    loss_sl = (entry_price - sl_price) * qty * sign  # always positive when SL is set correctly
 
     # Percentages relative to margin
     pct_tp1 = (profit_tp1 / margin * 100) if margin > 0 else 0
     pct_tp2 = (profit_tp2 / margin * 100) if margin > 0 else 0
     pct_sl = (loss_sl / margin * 100) if margin > 0 else 0
 
-    subject = f"TRADE OPENED: {symbol} LONG @ {_fmt(entry_price)}"
+    subject = f"TRADE OPENED: {symbol} {direction} @ {_fmt(entry_price)}"
 
     # Determine price decimal places from entry price
     pdec = len(str(entry_price).split(".")[-1]) if "." in str(entry_price) else 2
 
+    badge_class = "badge-green" if direction == "LONG" else "badge-red"
     html = f"""{_STYLE}
 <div class="card">
-  <h2 class="open-header">TRADE OPENED <span class="badge badge-green">LONG</span></h2>
+  <h2 class="open-header">TRADE OPENED <span class="badge {badge_class}">{direction}</span></h2>
   <table>
     <tr><td>Asset</td><td>{symbol}</td></tr>
     <tr><td>Strategy</td><td class="blue">{strategy}</td></tr>
@@ -193,8 +199,9 @@ def notify_trade_closed(
     notional = entry_price * quantity
     margin = notional / leverage
 
-    # Actual PnL
-    pnl = (exit_price - entry_price) * quantity
+    # Direction-aware PnL: LONG profits when exit > entry, SHORT profits when exit < entry.
+    sign = 1 if direction == "LONG" else -1
+    pnl = (exit_price - entry_price) * quantity * sign
     pnl_pct = (pnl / margin * 100) if margin > 0 else 0
 
     # Color-code the exit reason badge

@@ -399,8 +399,15 @@ def open_whale_position(
             notify_trade_opened(
                 symbol=signal.weex_symbol,
                 entry_price=price,
-                quantity=float(qty),
+                quantity=qty,                       # str — notifier converts internally
+                leverage=WHALE_LEVERAGE,
+                sl_price=levels["sl"],
+                tp1_price=levels["tp"],             # whale uses single TP, not partial
+                tp2_price=levels["tp"],             # passing same value for both fields
+                atr_at_entry=atr,
                 strategy=strategy_name,
+                entry_reason=reason,
+                direction=signal.direction,
             )
         except Exception as e:
             logger.warning("Notifier error on open: %s", e)
@@ -459,13 +466,26 @@ def close_whale_position(
 
     if notify_trade_closed:
         try:
+            # Best-effort portfolio value for the email footer; falls back to 0
+            # in DRY_RUN where WEEX returns zero balance.
+            try:
+                bal = executor.get_account_balance()
+                portfolio_value = float(bal.get("balance", 0) or 0)
+            except Exception:
+                portfolio_value = 0.0
             notify_trade_closed(
                 symbol=symbol,
+                direction=direction,
                 entry_price=pos.get("entry_price", 0.0),
                 exit_price=exit_price,
                 quantity=float(pos.get("quantity", 0)),
-                strategy=pos.get("strategy", ""),
+                leverage=WHALE_LEVERAGE,
+                sl_price=pos.get("sl") or 0.0,
+                tp1_price=pos.get("tp") or 0.0,
+                tp2_price=pos.get("tp") or 0.0,
                 exit_reason=reason,
+                strategy=pos.get("strategy", ""),
+                portfolio_value=portfolio_value,
             )
         except Exception as e:
             logger.warning("Notifier error on close: %s", e)
