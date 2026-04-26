@@ -24,6 +24,18 @@ logger = logging.getLogger("crypto_bot.notifier")
 
 # ─── Low-level sender ──────────────────────────────────────────────────────
 
+def _resolve_ipv4(host: str) -> str:
+    """Resolve a hostname to an IPv4 address explicitly.
+
+    DigitalOcean droplets without IPv6 enabled still receive AAAA records
+    from DNS for hosts like smtp.gmail.com, and Python's default smtplib
+    will try them first and get ENETUNREACH ('Network is unreachable').
+    Pre-resolving to IPv4 avoids the dead path entirely.
+    """
+    import socket
+    return socket.getaddrinfo(host, None, socket.AF_INET)[0][4][0]
+
+
 def _send_email(subject: str, html_body: str) -> bool:
     """Send an HTML email. Returns True on success."""
     if not NOTIFY_ENABLED:
@@ -41,9 +53,14 @@ def _send_email(subject: str, html_body: str) -> bool:
         msg["To"] = NOTIFY_EMAIL
         msg.attach(MIMEText(html_body, "html"))
 
+        # Resolve to IPv4 to bypass broken IPv6 routing on cloud droplets,
+        # but pass the original hostname for TLS SNI / cert validation.
+        ipv4 = _resolve_ipv4(SMTP_HOST)
         context = ssl.create_default_context()
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
-            server.starttls(context=context)
+        with smtplib.SMTP(ipv4, SMTP_PORT, timeout=15) as server:
+            server.ehlo()
+            server.starttls(context=context, server_hostname=SMTP_HOST)
+            server.ehlo()
             server.login(SMTP_USER, SMTP_PASS)
             server.sendmail(SMTP_USER, NOTIFY_EMAIL, msg.as_string())
 
