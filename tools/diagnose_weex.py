@@ -21,6 +21,10 @@ from pathlib import Path
 BOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BOT_DIR))
 
+# Load .env so WEEX creds are present when running outside systemd
+from dotenv import load_dotenv  # noqa: E402
+load_dotenv(BOT_DIR / ".env")
+
 from executor import Executor  # noqa: E402
 
 
