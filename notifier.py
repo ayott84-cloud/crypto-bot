@@ -24,16 +24,21 @@ logger = logging.getLogger("crypto_bot.notifier")
 
 # ─── Low-level sender ──────────────────────────────────────────────────────
 
-def _resolve_ipv4(host: str) -> str:
-    """Resolve a hostname to an IPv4 address explicitly.
-
-    DigitalOcean droplets without IPv6 enabled still receive AAAA records
-    from DNS for hosts like smtp.gmail.com, and Python's default smtplib
-    will try them first and get ENETUNREACH ('Network is unreachable').
-    Pre-resolving to IPv4 avoids the dead path entirely.
+class _ipv4_only:
+    """Context manager that patches socket.getaddrinfo to return only IPv4
+    results. Avoids ENETUNREACH on cloud droplets that have IPv6 disabled
+    but still get AAAA records for hosts like smtp.gmail.com.
     """
-    import socket
-    return socket.getaddrinfo(host, None, socket.AF_INET)[0][4][0]
+    def __enter__(self):
+        import socket
+        self._socket = socket
+        self._orig = socket.getaddrinfo
+        def _ipv4(host, port, family=0, type=0, proto=0, flags=0):
+            return self._orig(host, port, socket.AF_INET, type, proto, flags)
+        socket.getaddrinfo = _ipv4
+        return self
+    def __exit__(self, *a):
+        self._socket.getaddrinfo = self._orig
 
 
 def _send_email(subject: str, html_body: str) -> bool:
@@ -53,26 +58,27 @@ def _send_email(subject: str, html_body: str) -> bool:
         msg["To"] = NOTIFY_EMAIL
         msg.attach(MIMEText(html_body, "html"))
 
-        # Resolve to IPv4 to bypass broken IPv6 routing on cloud droplets,
-        # but pass the original hostname for TLS SNI / cert validation.
-        ipv4 = _resolve_ipv4(SMTP_HOST)
         context = ssl.create_default_context()
 
-        if SMTP_PORT == 465:
-            # SMTPS — TLS from connection start. Most cloud providers (incl.
-            # DigitalOcean) leave 465 outbound open while blocking 587.
-            with smtplib.SMTP_SSL(ipv4, SMTP_PORT, timeout=15,
-                                   context=context, server_hostname=SMTP_HOST) as server:
-                server.login(SMTP_USER, SMTP_PASS)
-                server.sendmail(SMTP_USER, NOTIFY_EMAIL, msg.as_string())
-        else:
-            # Submission + STARTTLS (port 587 by convention).
-            with smtplib.SMTP(ipv4, SMTP_PORT, timeout=15) as server:
-                server.ehlo()
-                server.starttls(context=context, server_hostname=SMTP_HOST)
-                server.ehlo()
-                server.login(SMTP_USER, SMTP_PASS)
-                server.sendmail(SMTP_USER, NOTIFY_EMAIL, msg.as_string())
+        # Force IPv4 for the duration of the SMTP connection so DNS doesn't
+        # hand us an unroutable IPv6 address. Hostname is passed normally
+        # so SNI + cert validation work unchanged.
+        with _ipv4_only():
+            if SMTP_PORT == 465:
+                # SMTPS — TLS from connection start. Most cloud providers
+                # (incl. DigitalOcean) leave 465 outbound open while blocking 587.
+                with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=15,
+                                       context=context) as server:
+                    server.login(SMTP_USER, SMTP_PASS)
+                    server.sendmail(SMTP_USER, NOTIFY_EMAIL, msg.as_string())
+            else:
+                # Submission + STARTTLS (port 587 by convention).
+                with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+                    server.ehlo()
+                    server.starttls(context=context)
+                    server.ehlo()
+                    server.login(SMTP_USER, SMTP_PASS)
+                    server.sendmail(SMTP_USER, NOTIFY_EMAIL, msg.as_string())
 
         logger.info("Email sent: %s", subject)
         return True
