@@ -1,48 +1,30 @@
-"""Trade journal logger — appends trades to Trading_Journal.xlsx.
+"""Trade journal — JSONL append-only.
 
-Writes to columns B-I, K, N-Q. Leaves formula columns A, J, L, M, R
-intact so Excel auto-calculates PnL metrics.
+Replaced the Excel-backed journal in Apr 2026: the dashboard's export modal
+covers the "give me a CSV" use case directly, and an Excel file with formula
+columns was a poor fit for a Linux droplet (no Excel runtime, file locks,
+formula recomputation needs Excel itself to open the file).
+
+The new format is one JSON object per line. Append is atomic on Linux for
+small writes (POSIX guarantees no interleaving for writes < PIPE_BUF, and
+we're well under that). No file locking needed because both bots only
+ever append; they never rewrite earlier lines.
+
+Trade records are stored RAW (entry/exit/qty/fees) and PnL is computed
+on read in the dashboard. This keeps the journal trivially correctable
+(edit a line, fix a typo) without recomputing everything.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime
-from pathlib import Path
-from typing import Optional
-
-from openpyxl import load_workbook
-from openpyxl.utils import get_column_letter
+from typing import List, Optional
 
 from config import JOURNAL_FILE
 
 logger = logging.getLogger("crypto_bot.journal")
-
-# Pending entries that failed due to file lock
-_pending_entries: list = []
-
-
-def _find_next_empty_row(ws) -> int:
-    """Find the first empty row by scanning column B (Date Opened)."""
-    row = 2
-    while ws.cell(row=row, column=2).value is not None:
-        row += 1
-    return row
-
-
-def _copy_formulas(ws, source_row: int, target_row: int) -> None:
-    """Copy formula cells from source_row to target_row.
-
-    Formula columns: A(1), J(10), L(12), M(13), R(18)
-    """
-    formula_cols = [1, 10, 12, 13, 18]
-    for col in formula_cols:
-        src_cell = ws.cell(row=source_row, column=col)
-        val = src_cell.value
-        if val and isinstance(val, str) and val.startswith("="):
-            # Replace row references: "2" -> target_row
-            new_formula = val.replace(str(source_row), str(target_row))
-            ws.cell(row=target_row, column=col).value = new_formula
 
 
 def log_trade(
@@ -60,90 +42,102 @@ def log_trade(
     date_opened: Optional[datetime] = None,
     date_closed: Optional[datetime] = None,
 ) -> bool:
-    """Append a trade record to the Trading Journal.
+    """Append a trade record to trades.jsonl. Returns True on success.
 
-    Returns True if successful, False if file was locked (queued for retry).
+    Both open-only (entry_price set, exit_price=None) and closed
+    (both set) records are supported; the dashboard distinguishes by
+    presence of exit_price.
     """
-    entry = {
+    record = {
         "symbol": symbol,
         "direction": direction,
         "entry_price": entry_price,
         "exit_price": exit_price,
-        "quantity": quantity,
-        "leverage": leverage,
-        "fees": fees,
+        "quantity": float(quantity) if quantity is not None else 0.0,
+        "leverage": int(leverage) if leverage else 1,
+        "fees": float(fees) if fees is not None else 0.0,
         "strategy": strategy,
         "entry_reason": entry_reason,
         "exit_reason": exit_reason,
         "notes": notes,
-        "date_opened": date_opened or datetime.now(),
-        "date_closed": date_closed or datetime.now(),
+        "date_opened": (date_opened or datetime.now()).isoformat(),
+        "date_closed": (date_closed.isoformat() if date_closed else None),
     }
-
     try:
-        return _write_entry(entry)
-    except PermissionError:
-        logger.warning("Journal file is locked (open in Excel?). Queuing entry.")
-        _pending_entries.append(entry)
+        # 'a' mode opens for append; each write is atomic for short payloads.
+        with open(JOURNAL_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, default=str) + "\n")
+        logger.info("Logged trade: %s %s %s @ %s -> %s",
+                    direction, symbol, strategy,
+                    entry_price, exit_price or "(open)")
+        return True
+    except (IOError, OSError) as e:
+        logger.error("Failed to log trade to %s: %s", JOURNAL_FILE, e)
         return False
-    except Exception as e:
-        logger.error("Failed to write journal entry: %s", e)
-        _pending_entries.append(entry)
-        return False
 
 
-def _write_entry(entry: dict) -> bool:
-    """Write a single trade entry to the Excel file."""
-    wb = load_workbook(str(JOURNAL_FILE))
-    ws = wb["Trade Log"]
+def read_trades(max_rows: int = 5000) -> List[dict]:
+    """Read trade records from the JSONL file. Returns a list of dicts.
 
-    row = _find_next_empty_row(ws)
+    Computed fields added per trade for dashboard compatibility:
+        gross_pnl: (exit - entry) * qty * direction-sign
+        net_pnl:   gross - fees
+        result:    "WIN" / "LOSS" / "FLAT" / "OPEN"
+    """
+    if not JOURNAL_FILE.exists():
+        return []
+    out: List[dict] = []
+    try:
+        with open(JOURNAL_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    t = json.loads(line)
+                except json.JSONDecodeError as e:
+                    logger.warning("Skipping malformed journal line: %s", e)
+                    continue
+                _enrich_pnl(t)
+                out.append(t)
+                if len(out) >= max_rows:
+                    break
+    except (IOError, OSError) as e:
+        logger.error("Failed to read trades from %s: %s", JOURNAL_FILE, e)
+    return out
 
-    # Copy formulas from row 2 (template row)
-    _copy_formulas(ws, source_row=2, target_row=row)
 
-    # Write data columns
-    ws.cell(row=row, column=2).value = entry["date_opened"]      # B: Date Opened
-    ws.cell(row=row, column=3).value = entry["date_closed"]      # C: Date Closed
-    ws.cell(row=row, column=4).value = entry["symbol"]           # D: Symbol
-    ws.cell(row=row, column=5).value = entry["direction"]        # E: Direction
-    ws.cell(row=row, column=6).value = entry["entry_price"]      # F: Entry Price
-    ws.cell(row=row, column=7).value = entry["exit_price"]       # G: Exit Price
-    ws.cell(row=row, column=8).value = entry["quantity"]         # H: Quantity
-    ws.cell(row=row, column=9).value = entry["leverage"]         # I: Leverage
-    ws.cell(row=row, column=11).value = entry["fees"]            # K: Fees
-    ws.cell(row=row, column=14).value = entry["strategy"]        # N: Strategy
-    ws.cell(row=row, column=15).value = entry["entry_reason"]    # O: Entry Reason
-    ws.cell(row=row, column=16).value = entry["exit_reason"]     # P: Exit Reason
-    ws.cell(row=row, column=17).value = entry["notes"]           # Q: Notes
+def _enrich_pnl(t: dict) -> None:
+    """Compute gross_pnl, net_pnl, result on a record in-place."""
+    try:
+        entry = float(t.get("entry_price") or 0)
+        exit_p = t.get("exit_price")
+        exit_p = float(exit_p) if exit_p is not None else None
+        qty = float(t.get("quantity") or 0)
+        fees = float(t.get("fees") or 0)
+    except (TypeError, ValueError):
+        entry = exit_p = qty = fees = 0.0
 
-    wb.save(str(JOURNAL_FILE))
-    wb.close()
+    direction = t.get("direction", "LONG")
+    sign = 1 if direction == "LONG" else -1
 
-    logger.info("Logged trade: %s %s %s @ %.4f -> %.4f",
-                entry["direction"], entry["symbol"], entry["strategy"],
-                entry["entry_price"], entry.get("exit_price", 0))
-    return True
+    if exit_p is not None and exit_p > 0 and entry > 0 and qty > 0:
+        gross = (exit_p - entry) * qty * sign
+        net = gross - fees
+        t["gross_pnl"] = round(gross, 4)
+        t["net_pnl"] = round(net, 4)
+        t["result"] = "WIN" if net > 0 else ("LOSS" if net < 0 else "FLAT")
+    else:
+        t["gross_pnl"] = 0.0
+        t["net_pnl"] = 0.0
+        t["result"] = "OPEN"
 
 
 def flush_pending() -> int:
-    """Retry writing any pending entries. Returns count of successfully written."""
-    if not _pending_entries:
-        return 0
+    """No-op kept for back-compat with main.py.
 
-    written = 0
-    remaining = []
-    for entry in _pending_entries:
-        try:
-            _write_entry(entry)
-            written += 1
-        except Exception:
-            remaining.append(entry)
-
-    _pending_entries.clear()
-    _pending_entries.extend(remaining)
-
-    if written:
-        logger.info("Flushed %d pending journal entries (%d still queued)",
-                     written, len(remaining))
-    return written
+    The old Excel backend queued writes that failed because the file was
+    locked by Excel; the JSONL backend never blocks so there's nothing
+    to flush.
+    """
+    return 0

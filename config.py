@@ -23,12 +23,10 @@ STATE_FILE = BOT_DIR / "state.json"
 DASHBOARD_FILE = BOT_DIR / "dashboard.html"
 LOG_FILE = BOT_DIR / "bot.log"
 
-# Journal file: prefer the project root (where Excel naturally lives on the
-# Windows machine) but fall back to inside the bot dir if the parent doesn't
-# have one (typical on Linux deployments where the journal is generated fresh).
-_JOURNAL_AT_PROJECT = PROJECT_DIR / "Trading_Journal.xlsx"
-_JOURNAL_AT_BOT = BOT_DIR / "Trading_Journal.xlsx"
-JOURNAL_FILE = _JOURNAL_AT_PROJECT if _JOURNAL_AT_PROJECT.exists() else _JOURNAL_AT_BOT
+# Journal: JSONL append-only file inside the bot dir. Replaced the Excel
+# journal in Apr 2026; the dashboard's Export Trades modal covers the CSV
+# use case directly. See journal.py for the schema.
+JOURNAL_FILE = BOT_DIR / "trades.jsonl"
 
 # Path to the bundled weex skill scripts. On Windows the canonical install
 # location is the Claude skills dir; on Linux deployments we bundle a copy

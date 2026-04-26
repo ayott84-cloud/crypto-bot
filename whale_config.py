@@ -88,3 +88,22 @@ WHALE_STRATEGY_TAG = "Whale Track"  # prefix in journal — e.g. "Whale Track BT
 # ─── Logging / diagnostics ───────────────────────────────────────────────────
 WHALE_SIGNAL_LOG = _BOT_DIR / "whale_signals.jsonl"  # append every poll's signals
 WHALE_DEBUG_DUMP = os.getenv("WHALE_DEBUG_DUMP", "false").lower() in ("1", "true", "yes")
+
+# ─── Backtest stats (for the dashboard's Yearly Projection tab) ─────────────
+# Source: backtest_whale_proxy.py against OKX 24-month perp futures data
+# (Apr 2024 - Apr 2026) with tightened thresholds (funding pctile 95).
+# Caveat: this is the SYNTHETIC proxy, not the real whale-basket signal.
+# The real signal has additional filters (edge-decay guard, divergence,
+# min-trader floor) the proxy lacks, so live performance is expected
+# to match or exceed these numbers.
+WHALE_BACKTEST_STATS = {
+    "pf": 1.24,
+    "trades": 324,                # over 24 months
+    "pnl_pct": 7.81,              # Net $780.89 / $10k baseline = 7.81%
+    "dd_pct": 2.30,               # Max DD $230 / $10k = 2.30%
+    "win_rate": 40.4,
+    "sharpe": 0.72,
+    "years": 2.0,                 # window length (differs from momentum's 5.3yr)
+    "name": "Whale Tracker (Hyperliquid Smart Money)",
+    "source": "synthetic proxy — funding-extreme fade",
+}

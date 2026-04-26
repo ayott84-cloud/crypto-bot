@@ -12,8 +12,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
-from openpyxl import load_workbook
-
 try:
     from zoneinfo import ZoneInfo
     CENTRAL_TZ = ZoneInfo("America/Chicago")
@@ -43,34 +41,13 @@ except ImportError:
 logger = logging.getLogger("crypto_bot.dashboard")
 
 
-def _read_journal_trades(max_rows: int = 500) -> List[dict]:
-    """Read all trades from the Trading Journal."""
+def _read_journal_trades(max_rows: int = 5000) -> List[dict]:
+    """Read trade records from trades.jsonl. PnL fields are computed on
+    the fly by journal.read_trades() so this dashboard doesn't need to
+    know the schema."""
     try:
-        wb = load_workbook(str(JOURNAL_FILE), data_only=True)
-        ws = wb["Trade Log"]
-        trades = []
-        for row in range(2, max_rows + 2):
-            date_opened = ws.cell(row=row, column=2).value
-            if date_opened is None:
-                break
-            trades.append({
-                "date_opened": str(date_opened) if date_opened else "",
-                "date_closed": str(ws.cell(row=row, column=3).value or ""),
-                "symbol": ws.cell(row=row, column=4).value or "",
-                "direction": ws.cell(row=row, column=5).value or "",
-                "entry_price": ws.cell(row=row, column=6).value or 0,
-                "exit_price": ws.cell(row=row, column=7).value or 0,
-                "quantity": ws.cell(row=row, column=8).value or 0,
-                "leverage": ws.cell(row=row, column=9).value or 1,
-                "gross_pnl": ws.cell(row=row, column=10).value or 0,
-                "fees": ws.cell(row=row, column=11).value or 0,
-                "net_pnl": ws.cell(row=row, column=12).value or 0,
-                "strategy": ws.cell(row=row, column=14).value or "",
-                "exit_reason": ws.cell(row=row, column=16).value or "",
-                "result": ws.cell(row=row, column=18).value or "",
-            })
-        wb.close()
-        return trades
+        from journal import read_trades  # local import to avoid circulars at module load
+        return read_trades(max_rows=max_rows)
     except Exception as e:
         logger.error("Failed to read journal: %s", e)
         return []
@@ -412,6 +389,39 @@ def _compute_yearly_projection() -> dict:
         total_annual += annual_pnl_live
         total_trades_per_year += trades_per_year
 
+    # Whale bot — uses its own synthetic-proxy backtest (24mo window) and
+    # always trades at $500 notional (matches live config), so scale = 1.
+    try:
+        from whale_config import WHALE_BACKTEST_STATS, WHALE_MARGIN_CONSENSUS, WHALE_LEVERAGE
+        whale_stats = WHALE_BACKTEST_STATS
+        whale_years = whale_stats.get("years", 2.0)
+        whale_total_pnl_backtest = (whale_stats["pnl_pct"] / 100.0) * BACKTEST_CAPITAL
+        whale_annual_pnl_backtest = whale_total_pnl_backtest / whale_years
+        # Whale lives at WHALE_MARGIN_CONSENSUS x WHALE_LEVERAGE notional
+        whale_live_notional = WHALE_MARGIN_CONSENSUS * WHALE_LEVERAGE
+        whale_scale = whale_live_notional / backtest_notional if backtest_notional > 0 else 1.0
+        whale_annual_pnl_live = whale_annual_pnl_backtest * whale_scale
+        whale_trades_per_year = whale_stats["trades"] / whale_years
+
+        rows.append({
+            "key": "WHALE",
+            "name": whale_stats.get("name", "Whale Tracker"),
+            "symbol": "Multi-asset",
+            "interval": "15m poll",
+            "pf": whale_stats["pf"],
+            "trades_per_year": whale_trades_per_year,
+            "annual_pct_backtest": whale_stats["pnl_pct"] / whale_years,
+            "annual_pnl_live": whale_annual_pnl_live,
+            "dd_pct": whale_stats["dd_pct"],
+            "is_whale": True,
+            "source_note": whale_stats.get("source", ""),
+        })
+        total_annual += whale_annual_pnl_live
+        total_trades_per_year += whale_trades_per_year
+    except ImportError:
+        # whale_config not available — render without the whale row
+        pass
+
     rows.sort(key=lambda r: r["annual_pnl_live"], reverse=True)
     return {
         "rows": rows,
@@ -431,8 +441,14 @@ def _render_yearly_projection_rows(proj: dict) -> str:
     for r in rows:
         pnl_class = "green" if r["annual_pnl_live"] >= 0 else "red"
         display_name = r["name"]
-        html += f"""<tr>
-            <td><strong>{display_name}</strong></td>
+        # Highlight the whale row visually so it stands out as a different bot
+        row_style = ' style="background:#0d2227;"' if r.get("is_whale") else ''
+        name_html = f"<strong>{display_name}</strong>"
+        if r.get("is_whale"):
+            note = r.get("source_note", "")
+            name_html += f'<br><span style="font-size:0.78em;opacity:0.6;">{note}</span>'
+        html += f"""<tr{row_style}>
+            <td>{name_html}</td>
             <td>{r['symbol']}</td>
             <td>{r['interval']}</td>
             <td>{r['pf']:.2f}</td>

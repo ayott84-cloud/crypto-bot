@@ -27,7 +27,11 @@ Trading_Journal.xlsx
 .whale_weex_symbols.json
 .whale_top100.json
 .whale_prev_positions.json
+.whale_heartbeat
 whale_signals.jsonl
+
+# Trade journal (live append-only file — runtime data, not in source control)
+trades.jsonl
 
 # Generated dashboard / previews (dashboard.html is force-pushed to
 # render-dashboard branch instead; main branch keeps source only)

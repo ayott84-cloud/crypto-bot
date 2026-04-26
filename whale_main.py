@@ -265,33 +265,31 @@ def record_cooldown(state: dict, coin: str) -> None:
 def recent_whale_pnl(days: int = 7) -> float:
     """Sum realized PnL across whale trades closed in the last N days.
 
-    Reads the journal. Returns 0 if journal missing or no trades.
+    Reads the JSONL journal. Returns 0 if journal missing or no trades.
     """
     try:
-        from openpyxl import load_workbook
-        if not JOURNAL_FILE.exists():
-            return 0.0
-        wb = load_workbook(str(JOURNAL_FILE), read_only=True, data_only=True)
-        ws = wb["Trade Log"]
+        from journal import read_trades
         cutoff = datetime.now() - timedelta(days=days)
         total = 0.0
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if not row or len(row) < 17:
-                continue
-            # Column N (index 13) = Strategy; Column J (index 9) = PnL formula result;
-            # Column C (index 2) = Date Closed
-            strategy = row[13]
-            date_closed = row[2]
-            pnl = row[9]
+        for t in read_trades(max_rows=10000):
+            strategy = t.get("strategy", "")
             if not isinstance(strategy, str) or not strategy.startswith(WHALE_STRATEGY_TAG):
                 continue
-            if not isinstance(date_closed, datetime):
+            date_closed_str = t.get("date_closed")
+            if not date_closed_str:
                 continue
+            try:
+                date_closed = datetime.fromisoformat(date_closed_str)
+            except (TypeError, ValueError):
+                continue
+            # Drop tz-info for naive comparison with cutoff
+            if date_closed.tzinfo is not None:
+                date_closed = date_closed.replace(tzinfo=None)
             if date_closed < cutoff:
                 continue
-            if isinstance(pnl, (int, float)):
-                total += float(pnl)
-        wb.close()
+            net = t.get("net_pnl", 0)
+            if isinstance(net, (int, float)):
+                total += float(net)
         return total
     except Exception as e:
         logger.warning("Could not read recent whale PnL from journal: %s", e)
