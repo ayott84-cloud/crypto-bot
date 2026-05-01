@@ -134,13 +134,13 @@ canvas { max-height: 300px; }
 <body>
 
 <h1>Crypto Trading Bot</h1>
-<p class="subtitle">Last updated: 2026-05-01 13:54 CDT
+<p class="subtitle">Last updated: 2026-05-01 14:02 CDT
     <span class="bot-status-bar">
         <span class="status-pill live" title="Momentum bot heartbeat">
-            <span class="dot"></span>Momentum: LIVE<span class="age">5s ago</span>
+            <span class="dot"></span>Momentum: LIVE<span class="age">8s ago</span>
         </span>
         <span class="status-pill live" title="Whale bot heartbeat">
-            <span class="dot"></span>Whale: LIVE<span class="age">8m ago</span>
+            <span class="dot"></span>Whale: LIVE<span class="age">11s ago</span>
         </span>
         <button class="btn-refresh" onclick="window.location.reload(true)"
                 title="Force-refresh the page (bypasses browser cache). Page also auto-refreshes every 5 min.">
@@ -335,7 +335,57 @@ canvas { max-height: 300px; }
     <div class="scroll-table">
     <table>
         <tr><th>Pair</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>Lev</th><th>uPnL</th><th>ROE%</th><th>Liq Price</th></tr>
-        <tr><td colspan="9" class="empty">No open positions</td></tr>
+        <tr>
+            <td>AVAXUSDT<br><span style="font-size:0.75em;opacity:0.6;">Whale Track AVAX SHORT</span></td>
+            <td><span class="badge-red">SHORT</span><span class="badge badge-yellow" style="margin-left:6px;font-size:0.7em;font-weight:700;letter-spacing:0.5px;" title="Paper trade — no real exchange order. Tracked in state.json.">PAPER</span></td>
+            <td>52.759</td>
+            <td>9.477</td>
+            <td>9.16525</td>
+            <td>10x</td>
+            <td class="green">$+16.45</td>
+            <td class="green">+32.9%</td>
+            <td>N/A</td>
+        </tr><tr>
+            <td>ENAUSDT<br><span style="font-size:0.75em;opacity:0.6;">Whale Track ENA SHORT</span></td>
+            <td><span class="badge-red">SHORT</span><span class="badge badge-yellow" style="margin-left:6px;font-size:0.7em;font-weight:700;letter-spacing:0.5px;" title="Paper trade — no real exchange order. Tracked in state.json.">PAPER</span></td>
+            <td>4576.606</td>
+            <td>0.10925125</td>
+            <td>0.10376375</td>
+            <td>10x</td>
+            <td class="green">$+25.11</td>
+            <td class="green">+50.2%</td>
+            <td>N/A</td>
+        </tr><tr>
+            <td>TONUSDT<br><span style="font-size:0.75em;opacity:0.6;">Whale Track TON SHORT</span></td>
+            <td><span class="badge-red">SHORT</span><span class="badge badge-yellow" style="margin-left:6px;font-size:0.7em;font-weight:700;letter-spacing:0.5px;" title="Paper trade — no real exchange order. Tracked in state.json.">PAPER</span></td>
+            <td>381.388</td>
+            <td>1.311</td>
+            <td>1.331</td>
+            <td>10x</td>
+            <td class="red">$-7.63</td>
+            <td class="red">-15.3%</td>
+            <td>N/A</td>
+        </tr><tr>
+            <td>UNIUSDT<br><span style="font-size:0.75em;opacity:0.6;">Whale Track UNI SHORT</span></td>
+            <td><span class="badge-red">SHORT</span><span class="badge badge-yellow" style="margin-left:6px;font-size:0.7em;font-weight:700;letter-spacing:0.5px;" title="Paper trade — no real exchange order. Tracked in state.json.">PAPER</span></td>
+            <td>154.834</td>
+            <td>3.22925</td>
+            <td>3.236625</td>
+            <td>10x</td>
+            <td class="red">$-1.14</td>
+            <td class="red">-2.3%</td>
+            <td>N/A</td>
+        </tr><tr>
+            <td>ASTERUSDT<br><span style="font-size:0.75em;opacity:0.6;">Whale Track ASTER SHORT</span></td>
+            <td><span class="badge-red">SHORT</span><span class="badge badge-yellow" style="margin-left:6px;font-size:0.7em;font-weight:700;letter-spacing:0.5px;" title="Paper trade — no real exchange order. Tracked in state.json.">PAPER</span></td>
+            <td>759.243</td>
+            <td>0.65855</td>
+            <td>0.65755</td>
+            <td>10x</td>
+            <td class="green">$+0.76</td>
+            <td class="green">+1.5%</td>
+            <td>N/A</td>
+        </tr>
     </table>
     </div>
 </div>
@@ -461,8 +511,8 @@ canvas { max-height: 300px; }
             <td><span class="badge-green">LONG</span></td>
         </tr><tr>
             <td>ORCAUSDT</td>
-            <td>-0.000910</td>
-            <td>-99.6%</td>
+            <td>-0.000913</td>
+            <td>-99.9%</td>
             <td><span class="badge-green">LONG</span></td>
         </tr>
         </table>
@@ -479,7 +529,7 @@ canvas { max-height: 300px; }
     </div>
     <div class="tg-card">
         <div class="tg-cmd">/positions</div>
-        <div class="tg-resp">0 open positions across BTC, ETH, XRP</div>
+        <div class="tg-resp">5 open positions across BTC, ETH, XRP</div>
     </div>
     <div class="tg-card">
         <div class="tg-cmd">/pnl</div>
@@ -862,7 +912,7 @@ canvas { max-height: 300px; }
     </div>
     <div class="stat-card">
         <div class="label">Open Positions</div>
-        <div class="value">6</div>
+        <div class="value">5</div>
     </div>
 </div>
 
@@ -915,16 +965,6 @@ canvas { max-height: 300px; }
             <td><span class="badge badge-blue">CONSENSUS_SHORT</span></td>
             <td style="text-align:right;">$50</td>
         </tr><tr>
-            <td><b>ZEC</b></td>
-            <td style="opacity:0.7;font-size:0.85em;">ZECUSDT</td>
-            <td><span class="badge badge-red">SHORT</span></td>
-            <td style="text-align:right;">$355.4112</td>
-            <td style="text-align:right;">1.406</td>
-            <td style="text-align:right;color:#f87171;">$377.0359</td>
-            <td style="text-align:right;color:#4ade80;">$312.1619</td>
-            <td><span class="badge badge-blue">CONSENSUS_SHORT</span></td>
-            <td style="text-align:right;">$50</td>
-        </tr><tr>
             <td><b>UNI</b></td>
             <td style="opacity:0.7;font-size:0.85em;">UNIUSDT</td>
             <td><span class="badge badge-red">SHORT</span></td>
@@ -952,7 +992,7 @@ canvas { max-height: 300px; }
 <div class="section">
     <h2>Latest Whale Signal Scan</h2>
     <p style="opacity:0.6;font-size:0.85em;margin-top:-8px;">
-        Last scan at <b>2026-05-01T18:45:25.321532+00:00</b>.
+        Last scan at <b>2026-05-01T19:02:19.371552+00:00</b>.
         <span class="badge badge-yellow">DIVERGENCE</span> = smart vs rekt opposite (higher conviction, 1.5× size).
         <span class="badge badge-blue">CONSENSUS</span> = ≥80% smart-money agreement. Crowded-trade + edge-decay filters applied.
     </p>
@@ -984,7 +1024,7 @@ canvas { max-height: 300px; }
             <td style="text-align:right;font-size:0.9em;"><span style="color:#4ade80">+1.4%</span></td>
             <td style="text-align:right;font-size:0.85em;">—</td>
             <td style="text-align:right;font-size:0.85em;">—</td>
-            <td style="opacity:0.8;font-size:0.85em;">smart short 86% (7 wallets) · net $-6.1M · uPnL $+287,986</td>
+            <td style="opacity:0.8;font-size:0.85em;">smart short 86% (7 wallets) · net $-6.1M · uPnL $+284,353</td>
         </tr>
     </table>
     </div>
@@ -1145,8 +1185,8 @@ function downloadExport() {
 }
 
 // ── Daily PnL Chart ──
-const dailyLabels = ["None"];
-const dailyValues = [22.0];
+const dailyLabels = [];
+const dailyValues = [];
 const dailyColors = dailyValues.map(v => v >= 0 ? '#00c853' : '#e5173f');
 new Chart(document.getElementById('dailyPnlChart'), {
     type: 'bar',
@@ -1165,7 +1205,7 @@ new Chart(document.getElementById('dailyPnlChart'), {
 });
 
 // ── Equity Curve ──
-const eqData = [5000.0, 5000.0, 5023.57, 5032.45, 5053.0, 5053.0, 5021.99];
+const eqData = [5000.0];
 const eqLabels = eqData.map((_, i) => i === 0 ? 'Start' : 'Trade ' + i);
 const ctx2 = document.getElementById('equityChart').getContext('2d');
 const gradient = ctx2.createLinearGradient(0, 0, 0, 300);
@@ -1188,8 +1228,8 @@ new Chart(ctx2, {
 });
 
 // ── Allocation Chart ──
-const allocLabels = ["Available"];
-const allocValues = [0.0];
+const allocLabels = ["AVAXUSDT", "ENAUSDT", "TONUSDT", "UNIUSDT", "ASTERUSDT", "Available"];
+const allocValues = [50.0, 50.0, 50.0, 50.0, 50.0, 0.0];
 const allocColors = ['#00d4d4', '#00c853', '#d040f0', '#1565c0', '#e5173f', '#c8c820', '#00e676', '#9c27b0', '#607d8b'];
 new Chart(document.getElementById('allocChart'), {
     type: 'doughnut',
