@@ -24,6 +24,7 @@ from config import (
     JOURNAL_FILE, DASHBOARD_FILE, INITIAL_CAPITAL,
     ASSETS, MARGIN_PER_TRADE, DEFAULT_LEVERAGE, MAX_POSITIONS,
     BACKTEST_YEARS, BACKTEST_CAPITAL, BACKTEST_QTY_PCT,
+    DRY_RUN,
 )
 
 # Whale bot data (optional — dashboard still renders if whale_config missing)
@@ -155,6 +156,69 @@ def _compute_bot_status() -> Dict[str, dict]:
     return {"momentum": momentum, "whale": whale}
 
 
+def _state_positions_as_exchange_shape(state: dict, executor) -> List[dict]:
+    """Convert state.json paper positions into the WEEX exchange-position shape.
+
+    Used in DRY_RUN where no real orders are placed but the bots still track
+    paper trades in state.json. Each returned dict carries an `is_paper` flag
+    so the renderer can tag it visually.
+    """
+    positions = state.get("positions", {})
+    if not positions:
+        return []
+
+    out = []
+    for state_key, pos in positions.items():
+        symbol = pos.get("symbol", state_key)
+        try:
+            qty = float(pos.get("quantity", 0))
+        except (TypeError, ValueError):
+            qty = 0.0
+        if qty <= 0:
+            continue
+
+        direction = pos.get("direction", "LONG")  # legacy momentum positions default to LONG
+        signed_qty = qty if direction == "LONG" else -qty
+
+        try:
+            entry_price = float(pos.get("entry_price", 0) or 0)
+        except (TypeError, ValueError):
+            entry_price = 0.0
+
+        # Best-effort current price for uPnL display
+        mark_price = entry_price
+        try:
+            current = executor.get_symbol_price(symbol)
+            if current and current > 0:
+                mark_price = float(current)
+        except Exception:
+            pass
+
+        # Direction-aware uPnL
+        sign = 1 if direction == "LONG" else -1
+        upnl = (mark_price - entry_price) * qty * sign
+
+        leverage = pos.get("leverage", DEFAULT_LEVERAGE) or DEFAULT_LEVERAGE
+        margin_usd = pos.get("margin_usd")
+        if margin_usd is None and entry_price > 0 and qty > 0 and leverage:
+            margin_usd = (entry_price * qty) / leverage
+
+        out.append({
+            "symbol": symbol,
+            "positionAmt": str(signed_qty),
+            "entryPrice": str(entry_price),
+            "markPrice": str(mark_price),
+            "leverage": str(leverage),
+            "unrealizedProfit": str(round(upnl, 4)),
+            "positionInitialMargin": str(round(margin_usd or 0, 2)),
+            "liquidationPrice": pos.get("liquidation_price") or "N/A",
+            "is_paper": True,
+            "state_key": state_key,
+            "strategy": pos.get("strategy", ""),
+        })
+    return out
+
+
 def gather_dashboard_data(executor, state: dict) -> Dict[str, Any]:
     """Gather all data needed for the dashboard."""
     data: Dict[str, Any] = {}
@@ -166,8 +230,11 @@ def gather_dashboard_data(executor, state: dict) -> Dict[str, Any]:
     data["available"] = float(bal.get("availableBalance", 0) or 0)
     data["unrealized_pnl"] = float(bal.get("unrealizePnl", 0) or 0)
 
-    # Open positions
+    # Open positions — prefer real exchange data, fall back to paper trades
+    # from state.json when in DRY_RUN (where the exchange has nothing to return).
     positions = executor.get_all_positions()
+    if not positions and DRY_RUN:
+        positions = _state_positions_as_exchange_shape(state, executor)
     data["positions"] = positions
 
     # Funding rates (top 10)
@@ -188,19 +255,29 @@ def gather_dashboard_data(executor, state: dict) -> Dict[str, Any]:
     # Performance metrics
     data["metrics"] = _compute_metrics(trades)
 
-    # Daily PnL (last 30 days)
+    # Daily PnL (last 30 days). Only count CLOSED trades — open positions
+    # have date_closed=None in the JSONL and would otherwise bucket under
+    # a single 'None' label, producing one giant column with no x-axis date.
     daily_pnl: Dict[str, float] = {}
     for t in trades:
-        date_str = str(t.get("date_closed", ""))[:10]
-        if date_str:
-            daily_pnl[date_str] = daily_pnl.get(date_str, 0) + float(t.get("net_pnl") or 0)
+        date_closed = t.get("date_closed")
+        if not date_closed:
+            continue
+        date_str = str(date_closed)[:10]
+        if not date_str or date_str == "None":
+            continue
+        daily_pnl[date_str] = daily_pnl.get(date_str, 0) + float(t.get("net_pnl") or 0)
     sorted_days = sorted(daily_pnl.items())[-30:]
     data["daily_pnl_labels"] = [d[0] for d in sorted_days]
     data["daily_pnl_values"] = [round(d[1], 2) for d in sorted_days]
 
-    # Equity curve
+    # Equity curve — also only step on closed trades. Open positions
+    # contribute 0 net_pnl per the journal enricher, so including them
+    # would just flatline the curve for each open trade.
     equity_curve = [INITIAL_CAPITAL]
     for t in trades:
+        if not t.get("date_closed"):
+            continue
         equity_curve.append(round(equity_curve[-1] + float(t.get("net_pnl") or 0), 2))
     data["equity_curve"] = equity_curve
 
@@ -573,9 +650,20 @@ def generate_dashboard(data: dict, output_path: str = None) -> None:
         margin = float(p.get("positionInitialMargin", 0) or 0)
         roe = (upnl / margin * 100) if margin > 0 else 0
         liq = p.get("liquidationPrice", "N/A")
+        # PAPER badge for state.json-sourced positions (DRY_RUN)
+        is_paper = bool(p.get("is_paper"))
+        paper_badge = (
+            '<span class="badge badge-yellow" style="margin-left:6px;font-size:0.7em;font-weight:700;letter-spacing:0.5px;" '
+            'title="Paper trade — no real exchange order. Tracked in state.json.">PAPER</span>'
+            if is_paper else ''
+        )
+        # Trim margin column to remove trailing zeros and improve readability
+        sym_extra = ''
+        if is_paper and p.get("strategy"):
+            sym_extra = f'<br><span style="font-size:0.75em;opacity:0.6;">{p["strategy"]}</span>'
         pos_rows += f"""<tr>
-            <td>{sym}</td>
-            <td><span class="{side_class}">{side}</span></td>
+            <td>{sym}{sym_extra}</td>
+            <td><span class="{side_class}">{side}</span>{paper_badge}</td>
             <td>{abs(amt)}</td>
             <td>{entry}</td>
             <td>{mark}</td>
