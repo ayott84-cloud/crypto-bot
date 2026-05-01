@@ -603,7 +603,7 @@ def generate_dashboard(data: dict, output_path: str = None) -> None:
         elif "Stale" in action:
             action_class = "badge-gold"
         trade_rows += f"""<tr>
-            <td>{t.get('date_closed', '')[:16]}</td>
+            <td>{(t.get('date_closed') or '')[:16]}</td>
             <td><span class="{action_class}">{action}</span></td>
             <td>{t.get('symbol', '')}</td>
             <td>{t.get('strategy', '')}</td>
@@ -633,8 +633,8 @@ def generate_dashboard(data: dict, output_path: str = None) -> None:
         exit_badge = "badge-green" if "TP" in exit_r else ("badge-red" if "SL" in exit_r else ("badge-gold" if "Stale" in exit_r else "badge-magenta"))
         full_log_rows += f"""<tr>
             <td>{len(all_trades) - i + 1}</td>
-            <td>{t.get('date_opened', '')[:16]}</td>
-            <td>{t.get('date_closed', '')[:16]}</td>
+            <td>{(t.get('date_opened') or '')[:16]}</td>
+            <td>{(t.get('date_closed') or '')[:16]}</td>
             <td>{t.get('symbol', '')}</td>
             <td>{t.get('direction', '')}</td>
             <td>{entry_p}</td>
