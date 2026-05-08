@@ -31,6 +31,7 @@ from config import (
     JOURNAL_FILE,
 )
 from whale_config import (
+    WHALE_PAUSED,
     WHALE_POLL_INTERVAL_SECONDS,
     WHALE_MARGIN_CONSENSUS, WHALE_MARGIN_DIVERGENCE, WHALE_LEVERAGE,
     WHALE_ATR_PERIOD, WHALE_ATR_INTERVAL,
@@ -101,6 +102,7 @@ def print_banner():
     print("=" * 60)
     print(f"  Mode:              {'DRY RUN' if DRY_RUN else 'LIVE TRADING'}")
     print(f"  Trading enabled:   {TRADING_ENABLED}")
+    print(f"  Whale paused:      {WHALE_PAUSED}  {'(no new entries)' if WHALE_PAUSED else ''}")
     print(f"  Poll interval:     {WHALE_POLL_INTERVAL_SECONDS}s ({WHALE_POLL_INTERVAL_SECONDS // 60}m)")
     print(f"  Consensus margin:  ${WHALE_MARGIN_CONSENSUS} x {WHALE_LEVERAGE}x = ${WHALE_MARGIN_CONSENSUS * WHALE_LEVERAGE} notional")
     print(f"  Divergence margin: ${WHALE_MARGIN_DIVERGENCE} x {WHALE_LEVERAGE}x = ${WHALE_MARGIN_DIVERGENCE * WHALE_LEVERAGE} notional")
@@ -638,6 +640,23 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
     if not TRADING_ENABLED:
         logger.info("TRADING_ENABLED=false — not opening new trades this cycle.")
         return
+
+    if WHALE_PAUSED:
+        logger.info("WHALE_PAUSED=true — not opening new whale trades. Existing "
+                    "positions still manage to exit. Set WHALE_PAUSED=false in .env "
+                    "to resume.")
+        return
+
+    # Kill-switch: consecutive-loss breaker + global daily drawdown.
+    # Existing positions still manage to exit; this only blocks new entries.
+    try:
+        from kill_switch import should_pause
+        ks = should_pause("whale")
+        if ks.paused:
+            logger.warning("Kill-switch active for whale bot: %s", ks.reason)
+            return
+    except Exception as e:
+        logger.warning("Kill-switch check failed (allowing entries): %s", e)
 
     recent_pnl = recent_whale_pnl(days=7)
     if recent_pnl < -WHALE_MAX_7D_LOSS_USD:

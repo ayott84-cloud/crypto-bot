@@ -228,14 +228,21 @@ def can_open_new_position(state: dict) -> bool:
     return count_open_positions(state) < MAX_POSITIONS
 
 
-def find_most_profitable_position(state: dict, executor) -> Optional[str]:
-    """Find the position with the highest unrealized PnL.
+def find_most_profitable_position(state: dict, executor, owner: str = "momentum") -> Optional[str]:
+    """Find the position with the highest unrealized PnL within the caller's namespace.
+
+    owner: "momentum" only considers non-WHALE_* keys; "whale" only considers
+           WHALE_* keys. Default "momentum" preserves backward compatibility,
+           but is now SAFE — without this filter, the momentum bot's rotation
+           logic was selecting whale SHORT positions via LONG-only PnL math
+           and closing them with hardcoded LONG-direction calls (bug observed
+           on Trade #10, May 2026).
+
+    PnL math is now direction-aware: LONG profits when price rises, SHORT
+    profits when price falls.
 
     Returns the state_key (dict key in positions, e.g. "XRP" or "XRP_4H"),
-    or None if no positions.
-
-    Uses pos["symbol"] (exchange symbol like "XRPUSDT") for executor.get_symbol_price
-    so multiple configs on same underlying symbol can coexist.
+    or None if no eligible positions.
     """
     positions = get_open_positions(state)
     if not positions:
@@ -245,6 +252,12 @@ def find_most_profitable_position(state: dict, executor) -> Optional[str]:
     best_pnl = float("-inf")
 
     for state_key, pos in positions.items():
+        # Filter by owner — never let one bot rotate the other bot's positions
+        if owner == "momentum" and _is_whale_key(state_key):
+            continue
+        if owner == "whale" and not _is_whale_key(state_key):
+            continue
+
         # Prefer explicit stored symbol; fall back to state_key for legacy entries
         exch_symbol = pos.get("symbol", state_key)
         current_price = executor.get_symbol_price(exch_symbol)
@@ -252,7 +265,11 @@ def find_most_profitable_position(state: dict, executor) -> Optional[str]:
             continue
         entry = pos["entry_price"]
         qty = float(pos["quantity"])
-        pnl = (current_price - entry) * qty
+        # Direction-aware PnL: LONG profits when price > entry; SHORT inverts.
+        # Legacy momentum positions (no direction key) default to LONG.
+        direction = pos.get("direction", "LONG")
+        sign = 1 if direction == "LONG" else -1
+        pnl = (current_price - entry) * qty * sign
         if pnl > best_pnl:
             best_pnl = pnl
             best_state_key = state_key

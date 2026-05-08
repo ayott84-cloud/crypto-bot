@@ -411,22 +411,44 @@ def run():
                     if analysis is not None and analysis.get("would_enter"):
                         logger.info("[%s] ENTRY SIGNAL detected!", asset_name)
 
-                        # Check position slots
+                        # Kill-switch check: consecutive-loss breaker + daily drawdown.
+                        # Skip new entries (existing positions still manage to exit).
+                        try:
+                            from kill_switch import should_pause
+                            ks = should_pause("momentum")
+                            if ks.paused:
+                                logger.warning("[%s] Kill-switch active: %s — skipping entry",
+                                               asset_name, ks.reason)
+                                continue
+                        except Exception as e:
+                            logger.warning("Kill-switch check failed (allowing entry): %s", e)
+
+                        # Check position slots — only rotate momentum-owned positions.
+                        # Whale-owned positions (WHALE_* prefix) are managed by the
+                        # whale bot only; rotating them here would mis-direction the close.
                         if not can_open_new_position(state):
-                            most_prof_key = find_most_profitable_position(state, executor)
+                            most_prof_key = find_most_profitable_position(
+                                state, executor, owner="momentum"
+                            )
                             if most_prof_key:
                                 rot_pos = get_open_positions(state)[most_prof_key]
                                 rot_symbol = rot_pos.get("symbol", most_prof_key)
-                                logger.info("Rotating out %s (%s) to make room for %s",
-                                            most_prof_key, rot_symbol, asset_name)
+                                # Defensive: read stored direction (momentum is LONG-only,
+                                # but if that ever changes, this prevents a sign-flip bug).
+                                rot_direction = rot_pos.get("direction", "LONG")
+                                logger.info("Rotating out %s %s (%s) to make room for %s",
+                                            most_prof_key, rot_direction, rot_symbol, asset_name)
                                 rot_price = executor.get_symbol_price(rot_symbol)
 
-                                executor.close_long_full(rot_symbol)
+                                if rot_direction == "LONG":
+                                    executor.close_long_full(rot_symbol)
+                                else:
+                                    executor.close_short_full(rot_symbol)
                                 executor.cancel_pending_orders(rot_symbol)
                                 register_exit(state, most_prof_key)
 
                                 log_trade(
-                                    symbol=rot_symbol, direction="LONG",
+                                    symbol=rot_symbol, direction=rot_direction,
                                     entry_price=rot_pos["entry_price"],
                                     exit_price=rot_price or rot_pos["entry_price"],
                                     quantity=float(rot_pos["quantity"]),
@@ -446,7 +468,7 @@ def run():
                                     sl_p = rot_pos["entry_price"] - rot_cfg["sl_atr_mult"] * rot_pos["atr_at_entry"]
                                     try:
                                         notify_trade_closed(
-                                            symbol=rot_symbol, direction="LONG",
+                                            symbol=rot_symbol, direction=rot_direction,
                                             entry_price=rot_pos["entry_price"],
                                             exit_price=rot_price or rot_pos["entry_price"],
                                             quantity=float(rot_pos["quantity"]),

@@ -30,8 +30,19 @@ Trading_Journal.xlsx
 .whale_heartbeat
 whale_signals.jsonl
 
-# Trade journal (live append-only file — runtime data, not in source control)
+# Trade journal (live data — SQLite + the legacy JSONL)
 trades.jsonl
+trades.jsonl.migrated
+trades.db
+trades.db-journal
+trades.db-wal
+trades.db-shm
+
+# Coinglass funding-rate cache
+.coinglass_cache/
+
+# Generated reports
+reports/
 
 # Generated dashboard / previews (dashboard.html is force-pushed to
 # render-dashboard branch instead; main branch keeps source only)

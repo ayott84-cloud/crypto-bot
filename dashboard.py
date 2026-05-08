@@ -63,13 +63,20 @@ def _compute_metrics(trades: List[dict]) -> dict:
             "sharpe": 0, "expectancy": 0, "total_trades": 0,
         }
 
-    wins = [t for t in trades if (t.get("net_pnl") or 0) > 0]
-    losses = [t for t in trades if (t.get("net_pnl") or 0) < 0]
-    pnls = [float(t.get("net_pnl") or 0) for t in trades]
+    # Win rate denominator must be CLOSED trades only. Including open paper
+    # positions in the total made WR look ~37% when the real value was ~56%
+    # (peer-review feedback, May 2026).
+    closed = [t for t in trades if t.get("result") in ("WIN", "LOSS", "FLAT")
+              and t.get("exit_price") not in (None, 0, "0", "")]
+    open_count = len(trades) - len(closed)
 
-    total = len(trades)
+    wins = [t for t in closed if (t.get("net_pnl") or 0) > 0]
+    losses = [t for t in closed if (t.get("net_pnl") or 0) < 0]
+    pnls = [float(t.get("net_pnl") or 0) for t in closed]
+
+    total_closed = len(closed)
     win_count = len(wins)
-    win_rate = (win_count / total * 100) if total > 0 else 0
+    win_rate = (win_count / total_closed * 100) if total_closed > 0 else 0
 
     gross_profit = sum(float(t.get("net_pnl") or 0) for t in wins)
     gross_loss = abs(sum(float(t.get("net_pnl") or 0) for t in losses))
@@ -81,7 +88,7 @@ def _compute_metrics(trades: List[dict]) -> dict:
     best = max(pnls) if pnls else 0
     worst = min(pnls) if pnls else 0
 
-    # Max drawdown from equity curve
+    # Max drawdown from equity curve (closed trades only)
     equity = INITIAL_CAPITAL
     peak = equity
     max_dd = 0
@@ -112,7 +119,9 @@ def _compute_metrics(trades: List[dict]) -> dict:
         "max_drawdown": round(max_dd, 1),
         "sharpe": round(sharpe, 2),
         "expectancy": round(expectancy, 2),
-        "total_trades": total,
+        "total_trades": total_closed,        # closed-only count, used in WR display
+        "open_positions": open_count,        # separate exposure metric
+        "all_trades_count": len(trades),     # raw row count for sanity
     }
 
 
@@ -984,8 +993,8 @@ canvas {{ max-height: 300px; }}
         <div class="value">{m.get('win_rate', 0)}%</div>
     </div>
     <div class="stat-card">
-        <div class="label">Total Trades</div>
-        <div class="value">{m.get('total_trades', 0)}</div>
+        <div class="label">Closed Trades</div>
+        <div class="value">{m.get('total_trades', 0)}<span style="font-size:0.5em;opacity:0.6;"> + {m.get('open_positions', 0)} open</span></div>
     </div>
 </div>
 
@@ -1116,7 +1125,8 @@ canvas {{ max-height: 300px; }}
 <div class="section">
     <div class="log-toolbar">
         <div class="log-stats">
-            Total Trades: <span>{m.get('total_trades', 0)}</span> &nbsp;|&nbsp;
+            Closed: <span>{m.get('total_trades', 0)}</span> &nbsp;|&nbsp;
+            Open: <span>{m.get('open_positions', 0)}</span> &nbsp;|&nbsp;
             Wins: <span class="green">{len([t for t in all_trades if float(t.get('net_pnl') or 0) > 0])}</span> &nbsp;|&nbsp;
             Losses: <span class="red">{len([t for t in all_trades if float(t.get('net_pnl') or 0) < 0])}</span> &nbsp;|&nbsp;
             Net PnL: <span class="{'green' if sum(float(t.get('net_pnl') or 0) for t in all_trades) >= 0 else 'red'}">${sum(float(t.get('net_pnl') or 0) for t in all_trades):+,.2f}</span>

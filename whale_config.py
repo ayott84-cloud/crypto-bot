@@ -10,6 +10,14 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+# ─── Master pause flag ───────────────────────────────────────────────────────
+# Set WHALE_PAUSED=true in .env to stop the whale bot from opening NEW positions.
+# Existing positions still manage toward exit (SL/TP/signal-flip). Use this
+# during validation periods or when shutting the bot down for re-tuning.
+# Per peer-review (May 2026): whale bot is paused pending PnL bug fix +
+# accumulation of ≥30 cleanly-tracked trades before re-validating thresholds.
+WHALE_PAUSED = os.getenv("WHALE_PAUSED", "true").lower() in ("true", "1", "yes")
+
 # ─── Polling ─────────────────────────────────────────────────────────────────
 WHALE_POLL_INTERVAL_SECONDS = 15 * 60       # 15 minutes
 WHALE_FETCH_COUNT = 20                        # top N and rekt N wallets to scan
