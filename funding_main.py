@@ -62,7 +62,7 @@ from position_manager import (
 )
 from journal import log_trade
 from whale_hl_data import fetch_meta_and_ctxs
-from whale_universe import get_top_symbols, hl_coin_to_weex_symbol  # noqa: F401 (hl_coin_to_weex_symbol unused but mirrors whale pattern)
+from whale_universe import get_top_symbols
 
 try:
     from notifier import notify_trade_opened, notify_trade_closed
