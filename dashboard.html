@@ -134,13 +134,16 @@ canvas { max-height: 300px; }
 <body>
 
 <h1>Crypto Trading Bot</h1>
-<p class="subtitle">Last updated: 2026-05-15 11:08 CDT
+<p class="subtitle">Last updated: 2026-05-15 11:20 CDT
     <span class="bot-status-bar">
         <span class="status-pill live" title="Momentum bot heartbeat">
-            <span class="dot"></span>Momentum: LIVE<span class="age">0s ago</span>
+            <span class="dot"></span>Momentum: LIVE<span class="age">1s ago</span>
         </span>
         <span class="status-pill stale" title="Whale bot heartbeat">
             <span class="dot"></span>Whale: DOWN<span class="age">6d ago</span>
+        </span>
+        <span class="status-pill never" title="Funding-fade bot heartbeat">
+            <span class="dot"></span>Funding: NEVER<span class="age">never run</span>
         </span>
         <button class="btn-refresh" onclick="window.location.reload(true)"
                 title="Force-refresh the page (bypasses browser cache). Page also auto-refreshes every 5 min.">
@@ -154,6 +157,7 @@ canvas { max-height: 300px; }
     <button class="tab-btn active" onclick="switchTab('dashboard')">Dashboard</button>
     <button class="tab-btn" onclick="switchTab('projection')">Yearly Projection</button>
     <button class="tab-btn" onclick="switchTab('whale')">Whale Bot</button>
+    <button class="tab-btn" onclick="switchTab('funding')">Funding Bot</button>
     <button class="tab-btn" onclick="switchTab('tradelog')">Trade Log</button>
 </div>
 
@@ -1572,7 +1576,7 @@ canvas { max-height: 300px; }
 <div class="section">
     <h2>Latest Whale Signal Scan</h2>
     <p style="opacity:0.6;font-size:0.85em;margin-top:-8px;">
-        Last scan at <b>2026-05-15T16:01:57.917628+00:00</b>.
+        Last scan at <b>2026-05-15T16:15:25.737278+00:00</b>.
         <span class="badge badge-yellow">DIVERGENCE</span> = smart vs rekt opposite (higher conviction, 1.5× size).
         <span class="badge badge-blue">CONSENSUS</span> = ≥80% smart-money agreement. Crowded-trade + edge-decay filters applied.
     </p>
@@ -1593,44 +1597,18 @@ canvas { max-height: 300px; }
             <th>Reasoning</th>
         </tr>
         <tr>
-            <td><b>ETH</b></td>
-            <td style="opacity:0.7;font-size:0.85em;">ETHUSDT</td>
-            <td><span class="badge badge-blue">CONSENSUS_SHORT</span></td>
-            <td><span class="badge badge-red">SHORT</span></td>
-            <td style="text-align:right;color:#4ade80;font-weight:700;">10/10</td>
-            <td style="text-align:right;">8%</td>
-            <td style="text-align:right;">92%</td>
-            <td style="text-align:right;">12</td>
-            <td style="text-align:right;font-size:0.9em;"><span style="color:#4ade80">+1.4%</span></td>
-            <td style="text-align:right;font-size:0.85em;"><span style="color:#f87171">-$0.0M</span> <span style="color:#4ade80">+$5.1M</span></td>
-            <td style="text-align:right;font-size:0.85em;"><span style="color:#4ade80">↑1</span></td>
-            <td style="opacity:0.8;font-size:0.85em;">smart short 92% (12 wallets) · net $-166.7M · uPnL $+7,281,030</td>
-        </tr><tr>
             <td><b>TON</b></td>
             <td style="opacity:0.7;font-size:0.85em;">TONUSDT</td>
             <td><span class="badge badge-blue">CONSENSUS_SHORT</span></td>
             <td><span class="badge badge-red">SHORT</span></td>
             <td style="text-align:right;color:#4ade80;font-weight:700;">10/10</td>
-            <td style="text-align:right;">14%</td>
-            <td style="text-align:right;">86%</td>
-            <td style="text-align:right;">7</td>
-            <td style="text-align:right;font-size:0.9em;"><span style="color:#4ade80">+0.9%</span></td>
-            <td style="text-align:right;font-size:0.85em;">—</td>
-            <td style="text-align:right;font-size:0.85em;"><span style="color:#f87171">-1 out</span></td>
-            <td style="opacity:0.8;font-size:0.85em;">smart short 86% (7 wallets) · net $-21.7M · uPnL $+3,822,726</td>
-        </tr><tr>
-            <td><b>DOGE</b></td>
-            <td style="opacity:0.7;font-size:0.85em;">DOGEUSDT</td>
-            <td><span class="badge badge-blue">CONSENSUS_SHORT</span></td>
-            <td><span class="badge badge-red">SHORT</span></td>
-            <td style="text-align:right;color:#4ade80;font-weight:700;">8/10</td>
             <td style="text-align:right;">12%</td>
             <td style="text-align:right;">88%</td>
             <td style="text-align:right;">8</td>
-            <td style="text-align:right;font-size:0.9em;"><span style="color:#4ade80">+1.4%</span></td>
+            <td style="text-align:right;font-size:0.9em;"><span style="color:#4ade80">+1.1%</span></td>
             <td style="text-align:right;font-size:0.85em;">—</td>
             <td style="text-align:right;font-size:0.85em;"><span style="color:#4ade80">+1 new</span></td>
-            <td style="opacity:0.8;font-size:0.85em;">smart short 88% (8 wallets) · net $-18.2M · uPnL $+365,188</td>
+            <td style="opacity:0.8;font-size:0.85em;">smart short 88% (8 wallets) · net $-21.7M · uPnL $+3,830,961</td>
         </tr>
     </table>
     </div>
@@ -1652,6 +1630,92 @@ canvas { max-height: 300px; }
 </div>
 
 </div><!-- end tab-whale -->
+
+<!-- ═══════════════════ TAB 5: FUNDING BOT ═══════════════════ -->
+<div id="tab-funding" class="tab-content">
+
+<div class="stats-bar">
+    <div class="stat-card">
+        <div class="label">Funding Trades</div>
+        <div class="value">0</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Win Rate</div>
+        <div class="value">0%</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Profit Factor</div>
+        <div class="value">0.00</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Net PnL</div>
+        <div class="value green">$+0.00</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Open Positions</div>
+        <div class="value">0</div>
+    </div>
+</div>
+
+<div class="section">
+    <h2>Open Funding-Fade Positions</h2>
+    <p style="opacity:0.6;font-size:0.85em;margin-top:-8px;">
+        Positions opened by the funding-fade bot. Exits trigger on SL, TP, time-stop (8h), or funding-normalize back into the 25–75th pctile band.
+    </p>
+    <div class="scroll-table">
+    <table>
+        <tr>
+            <th>Coin</th>
+            <th>Symbol</th>
+            <th>Direction</th>
+            <th style="text-align:right;">Entry</th>
+            <th style="text-align:right;">Qty</th>
+            <th style="text-align:right;">SL</th>
+            <th style="text-align:right;">TP</th>
+            <th style="text-align:right;">Funding @ Entry</th>
+            <th style="text-align:right;">Margin</th>
+        </tr>
+        <tr><td colspan="9" style="text-align:center;opacity:0.6;">No open funding-fade positions.</td></tr>
+    </table>
+    </div>
+</div>
+
+<div class="section">
+    <h2>Latest Funding-Fade Signal Scan</h2>
+    <p style="opacity:0.6;font-size:0.85em;margin-top:-8px;">
+        Last scan at <b>never</b>. Signals fire when current funding rate hits 97th-percentile of its 30-day distribution AND magnitude ≥ 0.05%/8h. Entries only inside the ±30min window around 00:00 / 08:00 / 16:00 UTC funding fixings. Filters: low-vol ATR regime, trend not opposing the fade, OI ≥ $20M, top-100 market cap.
+    </p>
+    <div class="scroll-table">
+    <table style="font-size:0.9em;">
+        <tr>
+            <th>Coin</th>
+            <th>Symbol</th>
+            <th>Direction</th>
+            <th style="text-align:right;">Confidence</th>
+            <th style="text-align:right;">Funding</th>
+            <th style="text-align:right;">Pctile</th>
+            <th style="text-align:right;">OI</th>
+            <th style="text-align:center;">Filters</th>
+            <th>Reasoning</th>
+        </tr>
+        <tr><td colspan="8" style="text-align:center;opacity:0.6;">No funding signals yet — waiting for first 1h poll (~15-day warmup unless HL history cache has populated).</td></tr>
+    </table>
+    </div>
+</div>
+
+<div class="section">
+    <h2>How this bot trades</h2>
+    <p style="opacity:0.75;line-height:1.6;">
+        <b>Source:</b> Hyperliquid <code>/info</code> fundingHistory + metaAndAssetCtxs (free public API). 1-hour poll cadence with 30-day rolling history per symbol cached 12h.<br>
+        <b>Signal:</b> 97th-percentile funding rate (top OR bottom) + 0.05%/8h absolute floor. When funding is extreme, retail is overcrowded on one side and the basis with spot widens; mean-reversion of funding is the edge.<br>
+        <b>Filters:</b> trade only in ±30min window around the 3 daily funding fixings · low-vol regime (ATR < ATR_SMA, FLIPPED vs whale bot) · trend doesn't oppose the fade · OI ≥ $20M · top-100 market cap · per-coin 8h cooldown.<br>
+        <b>Sizing:</b> $25 margin × 10x = $250 notional (half-size during validation). Lifts to $500 after ≥10 closed trades with positive expectancy.<br>
+        <b>Exits:</b> 2.5×ATR stop, 1.5×ATR target (asymmetric — fast reversion or fail), 8h time-stop (one funding cycle), funding-normalize exit if rate moves back into the inner 25-75th band.<br>
+        <b>Caveat:</b> Funding-fade is regime-dependent. In strong trending markets, funding can stay extreme for days while price keeps trending. Low-vol filter helps but isn't a panacea.
+    </p>
+</div>
+
+</div><!-- end tab-funding -->
 
 <script>
 // ── Tab Switching ──
