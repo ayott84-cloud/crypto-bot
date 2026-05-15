@@ -148,7 +148,7 @@ fi
 # ─── 8. systemd units ───────────────────────────────────────────────
 echo ""
 echo "[8/9] Installing systemd units..."
-for unit in crypto-momentum.service crypto-whale.service dashboard-push.service dashboard-push.timer; do
+for unit in crypto-momentum.service crypto-whale.service crypto-funding.service dashboard-push.service dashboard-push.timer; do
   src="${BOT_DIR}/deploy/${unit}"
   dst="/etc/systemd/system/${unit}"
   if [[ -f "${src}" ]]; then

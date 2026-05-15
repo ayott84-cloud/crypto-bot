@@ -30,6 +30,11 @@ Trading_Journal.xlsx
 .whale_heartbeat
 whale_signals.jsonl
 
+# Funding-fade bot runtime artifacts
+.funding_heartbeat
+funding_signals.jsonl
+.funding_history_cache/
+
 # Trade journal (live data — SQLite + the legacy JSONL)
 trades.jsonl
 trades.jsonl.migrated

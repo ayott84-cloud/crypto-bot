@@ -82,9 +82,13 @@ _initialized = False
 
 
 def _bot_tag(strategy: str) -> str:
-    """Classify a strategy string into Whale vs Momentum bot."""
-    if isinstance(strategy, str) and strategy.startswith("Whale Track"):
+    """Classify a strategy string into Whale / Funding / Momentum bot."""
+    if not isinstance(strategy, str):
+        return "Momentum"
+    if strategy.startswith("Whale Track"):
         return "Whale"
+    if strategy.startswith("Funding Fade"):
+        return "Funding"
     return "Momentum"
 
 

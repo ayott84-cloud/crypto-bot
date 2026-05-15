@@ -1,0 +1,37 @@
+[Unit]
+Description=Crypto Funding-Fade Bot (funding_main.py — perpetual funding extremes)
+After=network-online.target crypto-momentum.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bot
+Group=bot
+WorkingDirectory=/home/bot/crypto-bot
+EnvironmentFile=-/home/bot/crypto-bot/.env
+ExecStart=/home/bot/crypto-bot/venv/bin/python /home/bot/crypto-bot/funding_main.py
+
+Restart=always
+RestartSec=30
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=crypto-funding
+
+# Bot is lighter than whale (no pandas at runtime, smaller signal payload).
+# Cap conservatively.
+MemoryMax=300M
+MemoryHigh=200M
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/bot/crypto-bot
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

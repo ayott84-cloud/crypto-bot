@@ -55,15 +55,19 @@ class KillSwitchStatus:
         return self.paused
 
 
-def _is_whale_strategy(strategy: str) -> bool:
-    return isinstance(strategy, str) and strategy.startswith("Whale Track")
+def _bot_of(strategy: str) -> str:
+    if not isinstance(strategy, str):
+        return "momentum"
+    if strategy.startswith("Whale Track"):
+        return "whale"
+    if strategy.startswith("Funding Fade"):
+        return "funding"
+    return "momentum"
 
 
 def _filter_to_owner(trades: List[dict], owner: str) -> List[dict]:
-    if owner == "whale":
-        return [t for t in trades if _is_whale_strategy(t.get("strategy", ""))]
-    if owner == "momentum":
-        return [t for t in trades if not _is_whale_strategy(t.get("strategy", ""))]
+    if owner in ("whale", "funding", "momentum"):
+        return [t for t in trades if _bot_of(t.get("strategy", "")) == owner]
     return trades  # 'global' / unknown owner — return everything
 
 
@@ -162,9 +166,9 @@ def should_pause(owner: str) -> KillSwitchStatus:
 
 
 def status_summary() -> dict:
-    """Returns a dashboard-friendly snapshot for both bots + global state."""
+    """Returns a dashboard-friendly snapshot for all three bots + global state."""
     out = {}
-    for owner in ("momentum", "whale"):
+    for owner in ("momentum", "whale", "funding"):
         s = should_pause(owner)
         out[owner] = {"paused": s.paused, "reason": s.reason}
     return out

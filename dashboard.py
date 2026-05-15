@@ -39,6 +39,18 @@ except ImportError:
     WHALE_STRATEGY_TAG = "Whale Track"
     WHALE_AVAILABLE = False
 
+# Funding bot data (optional — dashboard renders without it)
+try:
+    from funding_config import (
+        FUNDING_SIGNAL_LOG, FUNDING_STATE_KEY_PREFIX, FUNDING_STRATEGY_TAG,
+    )
+    FUNDING_AVAILABLE = True
+except ImportError:
+    FUNDING_SIGNAL_LOG = None
+    FUNDING_STATE_KEY_PREFIX = "FUNDING_"
+    FUNDING_STRATEGY_TAG = "Funding Fade"
+    FUNDING_AVAILABLE = False
+
 logger = logging.getLogger("crypto_bot.dashboard")
 
 
@@ -161,8 +173,10 @@ def _compute_bot_status() -> Dict[str, dict]:
     momentum = _classify(bot_dir / "state.json", 600)
     # Whale: .whale_heartbeat — fresh if updated in last 30 min (2x its 15min poll)
     whale = _classify(bot_dir / ".whale_heartbeat", 1800)
+    # Funding: .funding_heartbeat — fresh if updated in last 2 hours (2x its 1h poll)
+    funding = _classify(bot_dir / ".funding_heartbeat", 7200)
 
-    return {"momentum": momentum, "whale": whale}
+    return {"momentum": momentum, "whale": whale, "funding": funding}
 
 
 def _state_positions_as_exchange_shape(state: dict, executor) -> List[dict]:
@@ -347,6 +361,50 @@ def gather_dashboard_data(executor, state: dict) -> Dict[str, Any]:
                     and t["strategy"].startswith(WHALE_STRATEGY_TAG)]
     data["whale_trades"] = whale_trades
     data["whale_metrics"] = _compute_metrics(whale_trades)
+
+    # ─── Funding-fade bot data ───────────────────────────────────────────
+    funding_positions = []
+    for key, pos in state.get("positions", {}).items():
+        if not key.startswith(FUNDING_STATE_KEY_PREFIX):
+            continue
+        funding_positions.append({
+            "state_key": key,
+            "coin": key.replace(FUNDING_STATE_KEY_PREFIX, ""),
+            "symbol": pos.get("symbol", ""),
+            "direction": pos.get("direction", "LONG"),
+            "entry_price": pos.get("entry_price", 0.0),
+            "quantity": pos.get("quantity", 0),
+            "sl": pos.get("sl"),
+            "tp": pos.get("tp"),
+            "signal_type": pos.get("signal_type", ""),
+            "confidence": pos.get("confidence", 0),
+            "entry_time": pos.get("entry_time_iso") or pos.get("entry_time", ""),
+            "strategy": pos.get("strategy", ""),
+            "margin_usd": pos.get("margin_usd", 0),
+            "funding_at_entry": pos.get("funding_at_entry", 0),
+        })
+    data["funding_positions"] = funding_positions
+
+    funding_signals_latest = []
+    funding_signals_ts = None
+    if FUNDING_SIGNAL_LOG and FUNDING_SIGNAL_LOG.exists():
+        try:
+            with open(FUNDING_SIGNAL_LOG, "r", encoding="utf-8") as f:
+                lines = f.readlines()[-200:]
+            recs = [json.loads(l) for l in lines if l.strip()]
+            if recs:
+                funding_signals_ts = recs[-1].get("timestamp")
+                funding_signals_latest = [r for r in recs
+                                          if r.get("timestamp") == funding_signals_ts]
+        except Exception as e:
+            logger.warning("Could not read funding signal log: %s", e)
+    data["funding_signals_latest"] = funding_signals_latest
+    data["funding_signals_ts"] = funding_signals_ts or "never"
+
+    funding_trades = [t for t in trades if isinstance(t.get("strategy"), str)
+                      and t["strategy"].startswith(FUNDING_STRATEGY_TAG)]
+    data["funding_trades"] = funding_trades
+    data["funding_metrics"] = _compute_metrics(funding_trades)
 
     # Show timestamp in Central Time (auto-handles CST/CDT)
     data["timestamp"] = datetime.now(CENTRAL_TZ).strftime("%Y-%m-%d %H:%M %Z")
@@ -630,6 +688,65 @@ def _render_whale_positions_rows(positions: list) -> str:
     return rows
 
 
+def _render_funding_signals_rows(signals: list) -> str:
+    """Render the Funding-Fade signals table rows."""
+    if not signals:
+        return ('<tr><td colspan="8" style="text-align:center;opacity:0.6;">'
+                'No funding signals yet — waiting for first 1h poll (~15-day warmup '
+                'unless HL history cache has populated).</td></tr>')
+    rows = ""
+    for s in signals[:25]:
+        sig_type = s.get("signal", "")
+        direction = s.get("direction", "")
+        dir_class = "badge-green" if direction == "LONG" else "badge-red"
+        conf = s.get("confidence", 0)
+        conf_color = "#4ade80" if conf >= 7 else ("#facc15" if conf >= 5 else "#f87171")
+        ann = s.get("current_funding_annual_pct", 0)
+        pct = s.get("percentile", 0)
+        oi_m = s.get("oi_usd", 0) / 1e6
+        atr_ok = "✓" if s.get("atr_below_sma") else "✗"
+        trend_ok = "✓" if s.get("trend_ok") else "✗"
+        rows += f"""<tr>
+            <td><b>{s.get('coin', '?')}</b></td>
+            <td style="opacity:0.7;font-size:0.85em;">{s.get('weex_symbol', '')}</td>
+            <td><span class="badge {dir_class}">{direction}</span></td>
+            <td style="text-align:right;color:{conf_color};font-weight:700;">{conf}/10</td>
+            <td style="text-align:right;">{ann:+.1f}%</td>
+            <td style="text-align:right;">p{pct:.0f}</td>
+            <td style="text-align:right;">${oi_m:.0f}M</td>
+            <td style="text-align:center;font-size:0.85em;">vol:{atr_ok} trend:{trend_ok}</td>
+            <td style="opacity:0.8;font-size:0.85em;">{s.get('reasoning', '')}</td>
+        </tr>"""
+    return rows
+
+
+def _render_funding_positions_rows(positions: list) -> str:
+    if not positions:
+        return ('<tr><td colspan="9" style="text-align:center;opacity:0.6;">'
+                'No open funding-fade positions.</td></tr>')
+    rows = ""
+    for p in positions:
+        direction = p.get("direction", "LONG")
+        dir_class = "badge-green" if direction == "LONG" else "badge-red"
+        entry = p.get("entry_price", 0)
+        sl = p.get("sl") or 0
+        tp = p.get("tp") or 0
+        funding_at_entry = p.get("funding_at_entry", 0)
+        annual = funding_at_entry * 3 * 365 * 100
+        rows += f"""<tr>
+            <td><b>{p.get('coin', '?')}</b></td>
+            <td style="opacity:0.7;font-size:0.85em;">{p.get('symbol', '')}</td>
+            <td><span class="badge {dir_class}">{direction}</span></td>
+            <td style="text-align:right;">${entry:,.4f}</td>
+            <td style="text-align:right;">{p.get('quantity', 0)}</td>
+            <td style="text-align:right;color:#f87171;">${sl:,.4f}</td>
+            <td style="text-align:right;color:#4ade80;">${tp:,.4f}</td>
+            <td style="text-align:right;">{annual:+.1f}%/yr</td>
+            <td style="text-align:right;">${p.get('margin_usd', 0):.0f}</td>
+        </tr>"""
+    return rows
+
+
 def generate_dashboard(data: dict, output_path: str = None) -> None:
     """Generate the HTML dashboard file with two tabs: Dashboard + Trade Log."""
     path = output_path or str(DASHBOARD_FILE)
@@ -792,12 +909,16 @@ def generate_dashboard(data: dict, output_path: str = None) -> None:
     bot_status = data.get("bot_status") or {}
     momentum_status = bot_status.get("momentum") or {"text": "NEVER", "css": "never", "age": "never run"}
     whale_status = bot_status.get("whale") or {"text": "NEVER", "css": "never", "age": "never run"}
+    funding_status = bot_status.get("funding") or {"text": "NEVER", "css": "never", "age": "never run"}
     momentum_status_text = momentum_status["text"]
     momentum_status_css = momentum_status["css"]
     momentum_status_age = momentum_status["age"]
     whale_status_text = whale_status["text"]
     whale_status_css = whale_status["css"]
     whale_status_age = whale_status["age"]
+    funding_status_text = funding_status["text"]
+    funding_status_css = funding_status["css"]
+    funding_status_age = funding_status["age"]
 
     # Whale bot rendering
     whale_signals_rows = _render_whale_signals_rows(data.get("whale_signals_latest", []))
@@ -810,6 +931,19 @@ def generate_dashboard(data: dict, output_path: str = None) -> None:
     whale_net_class = "green" if whale_net_pnl >= 0 else "red"
     whale_signals_ts = data.get("whale_signals_ts", "never")
     whale_open_count = len(data.get("whale_positions", []))
+
+    # Funding-fade bot rendering
+    funding_signals_rows = _render_funding_signals_rows(data.get("funding_signals_latest", []))
+    funding_positions_rows = _render_funding_positions_rows(data.get("funding_positions", []))
+    funding_metrics = data.get("funding_metrics", {})
+    funding_trade_count = funding_metrics.get("total_trades", 0)
+    funding_win_rate = funding_metrics.get("win_rate", 0)
+    funding_pf = funding_metrics.get("profit_factor", 0)
+    funding_net_pnl = sum(float(t.get("net_pnl") or 0) for t in data.get("funding_trades", []))
+    funding_net_class = "green" if funding_net_pnl >= 0 else "red"
+    funding_signals_ts = data.get("funding_signals_ts", "never")
+    funding_open_count = len(data.get("funding_positions", []))
+
     proj_trades_per_year = projection["total_trades_per_year"]
 
     html = f"""<!DOCTYPE html>
@@ -956,6 +1090,9 @@ canvas {{ max-height: 300px; }}
         <span class="status-pill {whale_status_css}" title="Whale bot heartbeat">
             <span class="dot"></span>Whale: {whale_status_text}<span class="age">{whale_status_age}</span>
         </span>
+        <span class="status-pill {funding_status_css}" title="Funding-fade bot heartbeat">
+            <span class="dot"></span>Funding: {funding_status_text}<span class="age">{funding_status_age}</span>
+        </span>
         <button class="btn-refresh" onclick="window.location.reload(true)"
                 title="Force-refresh the page (bypasses browser cache). Page also auto-refreshes every 5 min.">
             <span class="refresh-icon">↻</span> Refresh
@@ -968,6 +1105,7 @@ canvas {{ max-height: 300px; }}
     <button class="tab-btn active" onclick="switchTab('dashboard')">Dashboard</button>
     <button class="tab-btn" onclick="switchTab('projection')">Yearly Projection</button>
     <button class="tab-btn" onclick="switchTab('whale')">Whale Bot</button>
+    <button class="tab-btn" onclick="switchTab('funding')">Funding Bot</button>
     <button class="tab-btn" onclick="switchTab('tradelog')">Trade Log</button>
 </div>
 
@@ -1359,6 +1497,92 @@ canvas {{ max-height: 300px; }}
 </div>
 
 </div><!-- end tab-whale -->
+
+<!-- ═══════════════════ TAB 5: FUNDING BOT ═══════════════════ -->
+<div id="tab-funding" class="tab-content">
+
+<div class="stats-bar">
+    <div class="stat-card">
+        <div class="label">Funding Trades</div>
+        <div class="value">{funding_trade_count}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Win Rate</div>
+        <div class="value">{funding_win_rate}%</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Profit Factor</div>
+        <div class="value">{funding_pf:.2f}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Net PnL</div>
+        <div class="value {funding_net_class}">${funding_net_pnl:+,.2f}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Open Positions</div>
+        <div class="value">{funding_open_count}</div>
+    </div>
+</div>
+
+<div class="section">
+    <h2>Open Funding-Fade Positions</h2>
+    <p style="opacity:0.6;font-size:0.85em;margin-top:-8px;">
+        Positions opened by the funding-fade bot. Exits trigger on SL, TP, time-stop (8h), or funding-normalize back into the 25–75th pctile band.
+    </p>
+    <div class="scroll-table">
+    <table>
+        <tr>
+            <th>Coin</th>
+            <th>Symbol</th>
+            <th>Direction</th>
+            <th style="text-align:right;">Entry</th>
+            <th style="text-align:right;">Qty</th>
+            <th style="text-align:right;">SL</th>
+            <th style="text-align:right;">TP</th>
+            <th style="text-align:right;">Funding @ Entry</th>
+            <th style="text-align:right;">Margin</th>
+        </tr>
+        {funding_positions_rows}
+    </table>
+    </div>
+</div>
+
+<div class="section">
+    <h2>Latest Funding-Fade Signal Scan</h2>
+    <p style="opacity:0.6;font-size:0.85em;margin-top:-8px;">
+        Last scan at <b>{funding_signals_ts}</b>. Signals fire when current funding rate hits 97th-percentile of its 30-day distribution AND magnitude ≥ 0.05%/8h. Entries only inside the ±30min window around 00:00 / 08:00 / 16:00 UTC funding fixings. Filters: low-vol ATR regime, trend not opposing the fade, OI ≥ $20M, top-100 market cap.
+    </p>
+    <div class="scroll-table">
+    <table style="font-size:0.9em;">
+        <tr>
+            <th>Coin</th>
+            <th>Symbol</th>
+            <th>Direction</th>
+            <th style="text-align:right;">Confidence</th>
+            <th style="text-align:right;">Funding</th>
+            <th style="text-align:right;">Pctile</th>
+            <th style="text-align:right;">OI</th>
+            <th style="text-align:center;">Filters</th>
+            <th>Reasoning</th>
+        </tr>
+        {funding_signals_rows}
+    </table>
+    </div>
+</div>
+
+<div class="section">
+    <h2>How this bot trades</h2>
+    <p style="opacity:0.75;line-height:1.6;">
+        <b>Source:</b> Hyperliquid <code>/info</code> fundingHistory + metaAndAssetCtxs (free public API). 1-hour poll cadence with 30-day rolling history per symbol cached 12h.<br>
+        <b>Signal:</b> 97th-percentile funding rate (top OR bottom) + 0.05%/8h absolute floor. When funding is extreme, retail is overcrowded on one side and the basis with spot widens; mean-reversion of funding is the edge.<br>
+        <b>Filters:</b> trade only in ±30min window around the 3 daily funding fixings · low-vol regime (ATR < ATR_SMA, FLIPPED vs whale bot) · trend doesn't oppose the fade · OI ≥ $20M · top-100 market cap · per-coin 8h cooldown.<br>
+        <b>Sizing:</b> $25 margin × 10x = $250 notional (half-size during validation). Lifts to $500 after ≥10 closed trades with positive expectancy.<br>
+        <b>Exits:</b> 2.5×ATR stop, 1.5×ATR target (asymmetric — fast reversion or fail), 8h time-stop (one funding cycle), funding-normalize exit if rate moves back into the inner 25-75th band.<br>
+        <b>Caveat:</b> Funding-fade is regime-dependent. In strong trending markets, funding can stay extreme for days while price keeps trending. Low-vol filter helps but isn't a panacea.
+    </p>
+</div>
+
+</div><!-- end tab-funding -->
 
 <script>
 // ── Tab Switching ──
