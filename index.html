@@ -134,7 +134,7 @@ canvas { max-height: 300px; }
 <body>
 
 <h1>Crypto Trading Bot</h1>
-<p class="subtitle">Last updated: 2026-05-15 09:56 CDT
+<p class="subtitle">Last updated: 2026-05-15 10:07 CDT
     <span class="bot-status-bar">
         <span class="status-pill live" title="Momentum bot heartbeat">
             <span class="dot"></span>Momentum: LIVE<span class="age">1s ago</span>
@@ -335,37 +335,7 @@ canvas { max-height: 300px; }
     <div class="scroll-table">
     <table>
         <tr><th>Pair</th><th>Side</th><th>Size</th><th>Entry</th><th>Mark</th><th>Lev</th><th>uPnL</th><th>ROE%</th><th>Liq Price</th></tr>
-        <tr>
-            <td>PENGUUSDT<br><span style="font-size:0.75em;opacity:0.6;">Whale Track PENGU SHORT</span></td>
-            <td><span class="badge-red">SHORT</span><span class="badge badge-yellow" style="margin-left:6px;font-size:0.7em;font-weight:700;letter-spacing:0.5px;" title="Paper trade — no real exchange order. Tracked in state.json.">PAPER</span></td>
-            <td>47647.636</td>
-            <td>0.0104937</td>
-            <td>0.0087043</td>
-            <td>10x</td>
-            <td class="green">$+85.26</td>
-            <td class="green">+170.5%</td>
-            <td>N/A</td>
-        </tr><tr>
-            <td>DOGEUSDT<br><span style="font-size:0.75em;opacity:0.6;">Whale Track DOGE SHORT</span></td>
-            <td><span class="badge-red">SHORT</span><span class="badge badge-yellow" style="margin-left:6px;font-size:0.7em;font-weight:700;letter-spacing:0.5px;" title="Paper trade — no real exchange order. Tracked in state.json.">PAPER</span></td>
-            <td>4675.846</td>
-            <td>0.1069325</td>
-            <td>0.11186</td>
-            <td>10x</td>
-            <td class="red">$-23.04</td>
-            <td class="red">-46.1%</td>
-            <td>N/A</td>
-        </tr><tr>
-            <td>XRPUSDT<br><span style="font-size:0.75em;opacity:0.6;">XRP Daily Momentum v2</span></td>
-            <td><span class="badge-green">LONG</span><span class="badge badge-yellow" style="margin-left:6px;font-size:0.7em;font-weight:700;letter-spacing:0.5px;" title="Paper trade — no real exchange order. Tracked in state.json.">PAPER</span></td>
-            <td>336.813</td>
-            <td>1.4845</td>
-            <td>1.437825</td>
-            <td>10x</td>
-            <td class="red">$-15.72</td>
-            <td class="red">-31.4%</td>
-            <td>N/A</td>
-        </tr>
+        <tr><td colspan="9" class="empty">No open positions</td></tr>
     </table>
     </div>
 </div>
@@ -530,8 +500,8 @@ canvas { max-height: 300px; }
             <tr><th>Pair</th><th>Rate</th><th>Ann. APR</th><th>Direction</th></tr>
             <tr>
             <td>IRYSUSDT</td>
-            <td>-0.007190</td>
-            <td>-787.3%</td>
+            <td>-0.006223</td>
+            <td>-681.4%</td>
             <td><span class="badge-green">LONG</span></td>
         </tr><tr>
             <td>MLNUSDT</td>
@@ -593,7 +563,7 @@ canvas { max-height: 300px; }
     </div>
     <div class="tg-card">
         <div class="tg-cmd">/positions</div>
-        <div class="tg-resp">3 open positions across BTC, ETH, XRP</div>
+        <div class="tg-resp">0 open positions across BTC, ETH, XRP</div>
     </div>
     <div class="tg-card">
         <div class="tg-cmd">/pnl</div>
@@ -1572,7 +1542,7 @@ canvas { max-height: 300px; }
     </div>
     <div class="stat-card">
         <div class="label">Open Positions</div>
-        <div class="value">2</div>
+        <div class="value">0</div>
     </div>
 </div>
 
@@ -1594,27 +1564,7 @@ canvas { max-height: 300px; }
             <th>Signal Type</th>
             <th style="text-align:right;">Margin</th>
         </tr>
-        <tr>
-            <td><b>PENGU</b></td>
-            <td style="opacity:0.7;font-size:0.85em;">PENGUUSDT</td>
-            <td><span class="badge badge-red">SHORT</span></td>
-            <td style="text-align:right;">$0.0105</td>
-            <td style="text-align:right;">47647.636</td>
-            <td style="text-align:right;color:#f87171;">$0.0114</td>
-            <td style="text-align:right;color:#4ade80;">$0.0087</td>
-            <td><span class="badge badge-blue">CONSENSUS_SHORT</span></td>
-            <td style="text-align:right;">$50</td>
-        </tr><tr>
-            <td><b>DOGE</b></td>
-            <td style="opacity:0.7;font-size:0.85em;">DOGEUSDT</td>
-            <td><span class="badge badge-red">SHORT</span></td>
-            <td style="text-align:right;">$0.1069</td>
-            <td style="text-align:right;">4675.846</td>
-            <td style="text-align:right;color:#f87171;">$0.1106</td>
-            <td style="text-align:right;color:#4ade80;">$0.0995</td>
-            <td><span class="badge badge-blue">CONSENSUS_SHORT</span></td>
-            <td style="text-align:right;">$50</td>
-        </tr>
+        <tr><td colspan="9" style="text-align:center;opacity:0.6;">No open whale positions.</td></tr>
     </table>
     </div>
 </div>
@@ -1897,8 +1847,8 @@ new Chart(ctx2, {
 });
 
 // ── Allocation Chart ──
-const allocLabels = ["PENGUUSDT", "DOGEUSDT", "XRPUSDT", "Available"];
-const allocValues = [50.0, 50.0, 50.0, 0.0];
+const allocLabels = ["Available"];
+const allocValues = [0.0];
 const allocColors = ['#00d4d4', '#00c853', '#d040f0', '#1565c0', '#e5173f', '#c8c820', '#00e676', '#9c27b0', '#607d8b'];
 new Chart(document.getElementById('allocChart'), {
     type: 'doughnut',
