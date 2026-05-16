@@ -134,7 +134,7 @@ canvas { max-height: 300px; }
 <body>
 
 <h1>Crypto Trading Bot</h1>
-<p class="subtitle">Last updated: 2026-05-16 16:55 CDT
+<p class="subtitle">Last updated: 2026-05-16 17:05 CDT
     <span class="bot-status-bar">
         <span class="status-pill live" title="Momentum bot heartbeat">
             <span class="dot"></span>Momentum: LIVE<span class="age">1s ago</span>
@@ -143,7 +143,7 @@ canvas { max-height: 300px; }
             <span class="dot"></span>Whale: DOWN<span class="age">8d ago</span>
         </span>
         <span class="status-pill live" title="Funding-fade bot heartbeat">
-            <span class="dot"></span>Funding: LIVE<span class="age">18m ago</span>
+            <span class="dot"></span>Funding: LIVE<span class="age">28m ago</span>
         </span>
         <button class="btn-refresh" onclick="window.location.reload(true)"
                 title="Force-refresh the page (bypasses browser cache). Page also auto-refreshes every 5 min.">
@@ -503,11 +503,6 @@ canvas { max-height: 300px; }
         <table>
             <tr><th>Pair</th><th>Rate</th><th>Ann. APR</th><th>Direction</th></tr>
             <tr>
-            <td>草根文化USDT</td>
-            <td>-0.007492</td>
-            <td>-820.4%</td>
-            <td><span class="badge-green">LONG</span></td>
-        </tr><tr>
             <td>1000BTTUSDT</td>
             <td>-0.004122</td>
             <td>-451.4%</td>
@@ -538,19 +533,24 @@ canvas { max-height: 300px; }
             <td>-190.3%</td>
             <td><span class="badge-green">LONG</span></td>
         </tr><tr>
+            <td>IRYSUSDT</td>
+            <td>-0.001474</td>
+            <td>-161.4%</td>
+            <td><span class="badge-green">LONG</span></td>
+        </tr><tr>
             <td>SIGNUSDT</td>
             <td>-0.001438</td>
             <td>-157.5%</td>
             <td><span class="badge-green">LONG</span></td>
         </tr><tr>
-            <td>IRYSUSDT</td>
-            <td>-0.001261</td>
-            <td>-138.1%</td>
-            <td><span class="badge-green">LONG</span></td>
-        </tr><tr>
             <td>AIGENSYNUSDT</td>
             <td>-0.001234</td>
             <td>-135.1%</td>
+            <td><span class="badge-green">LONG</span></td>
+        </tr><tr>
+            <td>POLYXUSDT</td>
+            <td>-0.001109</td>
+            <td>-121.4%</td>
             <td><span class="badge-green">LONG</span></td>
         </tr>
         </table>
@@ -1576,7 +1576,7 @@ canvas { max-height: 300px; }
 <div class="section">
     <h2>Latest Whale Signal Scan</h2>
     <p style="opacity:0.6;font-size:0.85em;margin-top:-8px;">
-        Last scan at <b>2026-05-16T21:45:23.654502+00:00</b>.
+        Last scan at <b>2026-05-16T22:00:27.908791+00:00</b>.
         <span class="badge badge-yellow">DIVERGENCE</span> = smart vs rekt opposite (higher conviction, 1.5× size).
         <span class="badge badge-blue">CONSENSUS</span> = ≥80% smart-money agreement. Crowded-trade + edge-decay filters applied.
     </p>
@@ -1602,13 +1602,26 @@ canvas { max-height: 300px; }
             <td><span class="badge badge-blue">CONSENSUS_SHORT</span></td>
             <td><span class="badge badge-red">SHORT</span></td>
             <td style="text-align:right;color:#4ade80;font-weight:700;">10/10</td>
-            <td style="text-align:right;">12%</td>
-            <td style="text-align:right;">88%</td>
-            <td style="text-align:right;">8</td>
-            <td style="text-align:right;font-size:0.9em;"><span style="color:#4ade80">+0.6%</span></td>
+            <td style="text-align:right;">0%</td>
+            <td style="text-align:right;">100%</td>
+            <td style="text-align:right;">7</td>
+            <td style="text-align:right;font-size:0.9em;"><span style="color:#4ade80">+1.4%</span></td>
             <td style="text-align:right;font-size:0.85em;">—</td>
             <td style="text-align:right;font-size:0.85em;">—</td>
-            <td style="opacity:0.8;font-size:0.85em;">smart short 88% (8 wallets) · net $-21.6M · uPnL $+4,366,717</td>
+            <td style="opacity:0.8;font-size:0.85em;">smart short 100% (7 wallets) · net $-21.6M · uPnL $+4,357,670</td>
+        </tr><tr>
+            <td><b>PUMP</b></td>
+            <td style="opacity:0.7;font-size:0.85em;">PUMPUSDT</td>
+            <td><span class="badge badge-yellow">DIVERGENCE_SHORT</span></td>
+            <td><span class="badge badge-red">SHORT</span></td>
+            <td style="text-align:right;color:#4ade80;font-weight:700;">9/10</td>
+            <td style="text-align:right;">18%</td>
+            <td style="text-align:right;">82%</td>
+            <td style="text-align:right;">11</td>
+            <td style="text-align:right;font-size:0.9em;"><span style="color:#4ade80">+1.4%</span></td>
+            <td style="text-align:right;font-size:0.85em;">—</td>
+            <td style="text-align:right;font-size:0.85em;"><span style="color:#f87171">-1 out</span></td>
+            <td style="opacity:0.8;font-size:0.85em;">smart short 82% (11 wallets) · net $-5.5M · uPnL $+1,737,561 · rekt long 100%</td>
         </tr>
     </table>
     </div>
