@@ -134,7 +134,7 @@ canvas { max-height: 300px; }
 <body>
 
 <h1>Crypto Trading Bot</h1>
-<p class="subtitle">Last updated: 2026-05-17 04:58 CDT
+<p class="subtitle">Last updated: 2026-05-17 05:08 CDT
     <span class="bot-status-bar">
         <span class="status-pill live" title="Momentum bot heartbeat">
             <span class="dot"></span>Momentum: LIVE<span class="age">1s ago</span>
@@ -143,7 +143,7 @@ canvas { max-height: 300px; }
             <span class="dot"></span>Whale: DOWN<span class="age">8d ago</span>
         </span>
         <span class="status-pill live" title="Funding-fade bot heartbeat">
-            <span class="dot"></span>Funding: LIVE<span class="age">20m ago</span>
+            <span class="dot"></span>Funding: LIVE<span class="age">31m ago</span>
         </span>
         <button class="btn-refresh" onclick="window.location.reload(true)"
                 title="Force-refresh the page (bypasses browser cache). Page also auto-refreshes every 5 min.">
@@ -503,6 +503,11 @@ canvas { max-height: 300px; }
         <table>
             <tr><th>Pair</th><th>Rate</th><th>Ann. APR</th><th>Direction</th></tr>
             <tr>
+            <td>草根文化USDT</td>
+            <td>+0.005644</td>
+            <td>+618.0%</td>
+            <td><span class="badge-red">SHORT</span></td>
+        </tr><tr>
             <td>PHBUSDT</td>
             <td>-0.005430</td>
             <td>-594.6%</td>
@@ -528,14 +533,14 @@ canvas { max-height: 300px; }
             <td>-161.6%</td>
             <td><span class="badge-green">LONG</span></td>
         </tr><tr>
-            <td>IRYSUSDT</td>
-            <td>-0.001418</td>
-            <td>-155.2%</td>
-            <td><span class="badge-green">LONG</span></td>
-        </tr><tr>
             <td>SIGNUSDT</td>
             <td>-0.001315</td>
             <td>-144.0%</td>
+            <td><span class="badge-green">LONG</span></td>
+        </tr><tr>
+            <td>IRYSUSDT</td>
+            <td>-0.001206</td>
+            <td>-132.1%</td>
             <td><span class="badge-green">LONG</span></td>
         </tr><tr>
             <td>AIGENSYNUSDT</td>
@@ -547,11 +552,6 @@ canvas { max-height: 300px; }
             <td>-0.001098</td>
             <td>-120.2%</td>
             <td><span class="badge-green">LONG</span></td>
-        </tr><tr>
-            <td>NGUSDT</td>
-            <td>+0.001014</td>
-            <td>+111.0%</td>
-            <td><span class="badge-red">SHORT</span></td>
         </tr>
         </table>
         </div>
@@ -1576,7 +1576,7 @@ canvas { max-height: 300px; }
 <div class="section">
     <h2>Latest Whale Signal Scan</h2>
     <p style="opacity:0.6;font-size:0.85em;margin-top:-8px;">
-        Last scan at <b>2026-05-17T09:45:24.496411+00:00</b>.
+        Last scan at <b>2026-05-17T10:00:26.750360+00:00</b>.
         <span class="badge badge-yellow">DIVERGENCE</span> = smart vs rekt opposite (higher conviction, 1.5× size).
         <span class="badge badge-blue">CONSENSUS</span> = ≥80% smart-money agreement. Crowded-trade + edge-decay filters applied.
     </p>
@@ -1604,11 +1604,24 @@ canvas { max-height: 300px; }
             <td style="text-align:right;color:#4ade80;font-weight:700;">10/10</td>
             <td style="text-align:right;">0%</td>
             <td style="text-align:right;">100%</td>
-            <td style="text-align:right;">9</td>
+            <td style="text-align:right;">8</td>
             <td style="text-align:right;font-size:0.9em;"><span style="color:#4ade80">+1.4%</span></td>
             <td style="text-align:right;font-size:0.85em;">—</td>
-            <td style="text-align:right;font-size:0.85em;"><span style="color:#4ade80">+2 new</span></td>
-            <td style="opacity:0.8;font-size:0.85em;">smart short 100% (9 wallets) · net $-9.6M · uPnL $+3,778,313 · 2 fresh entries</td>
+            <td style="text-align:right;font-size:0.85em;"><span style="color:#f87171">-1 out</span></td>
+            <td style="opacity:0.8;font-size:0.85em;">smart short 100% (8 wallets) · net $-9.6M · uPnL $+3,759,488</td>
+        </tr><tr>
+            <td><b>TON</b></td>
+            <td style="opacity:0.7;font-size:0.85em;">TONUSDT</td>
+            <td><span class="badge badge-blue">CONSENSUS_SHORT</span></td>
+            <td><span class="badge badge-red">SHORT</span></td>
+            <td style="text-align:right;color:#4ade80;font-weight:700;">10/10</td>
+            <td style="text-align:right;">14%</td>
+            <td style="text-align:right;">86%</td>
+            <td style="text-align:right;">7</td>
+            <td style="text-align:right;font-size:0.9em;"><span style="color:#4ade80">+1.4%</span></td>
+            <td style="text-align:right;font-size:0.85em;">—</td>
+            <td style="text-align:right;font-size:0.85em;"><span style="color:#f87171">-1 out</span></td>
+            <td style="opacity:0.8;font-size:0.85em;">smart short 86% (7 wallets) · net $-21.4M · uPnL $+4,084,135</td>
         </tr><tr>
             <td><b>PUMP</b></td>
             <td style="opacity:0.7;font-size:0.85em;">PUMPUSDT</td>
@@ -1620,8 +1633,8 @@ canvas { max-height: 300px; }
             <td style="text-align:right;">12</td>
             <td style="text-align:right;font-size:0.9em;"><span style="color:#4ade80">+1.4%</span></td>
             <td style="text-align:right;font-size:0.85em;">—</td>
-            <td style="text-align:right;font-size:0.85em;"><span style="color:#4ade80">+1 new</span> <span style="color:#f87171">-1 out</span></td>
-            <td style="opacity:0.8;font-size:0.85em;">smart short 83% (12 wallets) · net $-5.7M · uPnL $+1,751,967 · rekt long 100%</td>
+            <td style="text-align:right;font-size:0.85em;">—</td>
+            <td style="opacity:0.8;font-size:0.85em;">smart short 83% (12 wallets) · net $-5.7M · uPnL $+1,740,592 · rekt long 100%</td>
         </tr><tr>
             <td><b>ASTER</b></td>
             <td style="opacity:0.7;font-size:0.85em;">ASTERUSDT</td>
@@ -1633,8 +1646,8 @@ canvas { max-height: 300px; }
             <td style="text-align:right;">7</td>
             <td style="text-align:right;font-size:0.9em;"><span style="color:#4ade80">+1.4%</span></td>
             <td style="text-align:right;font-size:0.85em;">—</td>
-            <td style="text-align:right;font-size:0.85em;"><span style="color:#4ade80">+1 new</span></td>
-            <td style="opacity:0.8;font-size:0.85em;">smart short 86% (7 wallets) · net $-9.3M · uPnL $+433,586</td>
+            <td style="text-align:right;font-size:0.85em;">—</td>
+            <td style="opacity:0.8;font-size:0.85em;">smart short 86% (7 wallets) · net $-9.3M · uPnL $+405,199</td>
         </tr><tr>
             <td><b>TAO</b></td>
             <td style="opacity:0.7;font-size:0.85em;">TAOUSDT</td>
@@ -1647,7 +1660,7 @@ canvas { max-height: 300px; }
             <td style="text-align:right;font-size:0.9em;"><span style="color:#4ade80">+1.4%</span></td>
             <td style="text-align:right;font-size:0.85em;">—</td>
             <td style="text-align:right;font-size:0.85em;">—</td>
-            <td style="opacity:0.8;font-size:0.85em;">smart short 86% (7 wallets) · net $-5.0M · uPnL $+292,644</td>
+            <td style="opacity:0.8;font-size:0.85em;">smart short 86% (7 wallets) · net $-5.0M · uPnL $+272,696</td>
         </tr>
     </table>
     </div>
