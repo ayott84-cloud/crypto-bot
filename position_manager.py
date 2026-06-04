@@ -40,16 +40,47 @@ DEFAULT_STATE = {
 }
 
 # ─── Namespace rules ────────────────────────────────────────────────────────
+#
+# Position-key prefixes identify which bot owns the position. New bots add
+# a prefix + a row in BOT_PREFIXES below — the rest of the file dispatches
+# through _bot_of_key() so the namespace logic stays in one place.
 
 _WHALE_PREFIX = "WHALE_"
+_FUNDING_PREFIX = "FUNDING_"
+
+# Ordered (prefix, bot) — first match wins. Add new bots here.
+BOT_PREFIXES = (
+    (_WHALE_PREFIX, "whale"),
+    (_FUNDING_PREFIX, "funding"),
+)
+DEFAULT_BOT = "momentum"
+
 _MOMENTUM_TOPLEVEL = {
     "last_processed_candle", "signal_status", "last_dashboard_update",
 }
 _WHALE_TOPLEVEL = {"whale_cooldowns"}
+_FUNDING_TOPLEVEL: set = set()  # funding bot has no top-level state today
+
+# Per-bot top-level key sets — used by _merge_state to preserve other bots'
+# top-level state when one bot saves.
+_TOPLEVEL_BY_BOT = {
+    "momentum": _MOMENTUM_TOPLEVEL,
+    "whale": _WHALE_TOPLEVEL,
+    "funding": _FUNDING_TOPLEVEL,
+}
+
+
+def _bot_of_key(position_key: str) -> str:
+    """Classify a position key by owning bot. Default = momentum."""
+    for prefix, bot in BOT_PREFIXES:
+        if position_key.startswith(prefix):
+            return bot
+    return DEFAULT_BOT
 
 
 def _is_whale_key(position_key: str) -> bool:
-    return position_key.startswith(_WHALE_PREFIX)
+    """Backward-compat shim. Prefer _bot_of_key() in new code."""
+    return _bot_of_key(position_key) == "whale"
 
 
 # ─── Cross-process file lock (stdlib only) ──────────────────────────────────
@@ -135,42 +166,32 @@ def _merge_state(ours: dict, disk: dict, owner: str) -> dict:
     """Merge our in-memory state with the on-disk state by namespace.
 
     Rules:
-        - Positions owned by `owner` are taken from `ours`.
-        - Positions owned by the OTHER bot are preserved from `disk`
-          (we don't touch them — the other bot may have just written them).
-        - Top-level keys owned by `owner` come from `ours`; the other bot's
-          top-level keys come from `disk`.
+        - Positions owned by `owner` come from `ours` (our save wins).
+        - Positions owned by ANY OTHER bot are preserved from `disk` —
+          we don't touch them, the other bot may have just written them.
+        - Top-level keys owned by `owner` come from `ours`; other bots'
+          top-level keys are preserved from `disk`.
     """
     result = dict(ours)  # start from our state
 
-    # Positions: split by prefix, pick from the right source
+    # Positions: keep our owner's keys from ours, preserve all other owners' keys from disk
     our_positions = ours.get("positions", {})
     disk_positions = disk.get("positions", {})
-    merged_positions = {}
-    for k, v in our_positions.items():
-        is_whale = _is_whale_key(k)
-        owned_by_us = (is_whale and owner == "whale") or (not is_whale and owner == "momentum")
-        if owned_by_us:
-            merged_positions[k] = v
+    merged_positions = {k: v for k, v in our_positions.items() if _bot_of_key(k) == owner}
     for k, v in disk_positions.items():
         if k in merged_positions:
             continue
-        is_whale = _is_whale_key(k)
-        owned_by_them = (is_whale and owner != "whale") or (not is_whale and owner != "momentum")
-        if owned_by_them:
+        if _bot_of_key(k) != owner:
             merged_positions[k] = v
     result["positions"] = merged_positions
 
-    # Top-level keys: preserve the other bot's keys from disk
-    if owner == "momentum":
-        for k in _WHALE_TOPLEVEL:
+    # Top-level keys: preserve other bots' top-level keys from disk
+    for bot, keys in _TOPLEVEL_BY_BOT.items():
+        if bot == owner:
+            continue
+        for k in keys:
             if k in disk:
                 result[k] = disk[k]
-    else:  # "whale"
-        for k in _MOMENTUM_TOPLEVEL:
-            if k in disk:
-                result[k] = disk[k]
-        # Also preserve momentum-owned position keys already handled above.
 
     return result
 
@@ -252,10 +273,9 @@ def find_most_profitable_position(state: dict, executor, owner: str = "momentum"
     best_pnl = float("-inf")
 
     for state_key, pos in positions.items():
-        # Filter by owner — never let one bot rotate the other bot's positions
-        if owner == "momentum" and _is_whale_key(state_key):
-            continue
-        if owner == "whale" and not _is_whale_key(state_key):
+        # Filter by owner — never let one bot rotate another bot's positions.
+        # Three-way dispatch (momentum/whale/funding) lives in _bot_of_key.
+        if _bot_of_key(state_key) != owner:
             continue
 
         # Prefer explicit stored symbol; fall back to state_key for legacy entries
@@ -389,9 +409,10 @@ def reconcile_with_exchange(state: dict, executor, owner: str = "momentum") -> N
 
     state_positions = state.get("positions", {})
 
-    # Determine which state keys this owner is responsible for
+    # Determine which state keys this owner is responsible for.
+    # Three-way dispatch via _bot_of_key — extensible to pair/breakout/etc.
     def _owned(key: str) -> bool:
-        return (_is_whale_key(key) if owner == "whale" else not _is_whale_key(key))
+        return _bot_of_key(key) == owner
 
     # Log unknown positions on exchange (only for our owner's set of expected symbols)
     state_sig_set = set()
