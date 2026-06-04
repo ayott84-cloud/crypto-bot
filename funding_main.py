@@ -292,14 +292,22 @@ def close_funding_position(executor: Executor, state: dict, key: str, reason: st
     register_exit(state, key)
     save_state(state, owner="funding")
 
-    log_trade(
-        symbol=symbol, direction=direction,
-        entry_price=pos.get("entry_price", 0.0), exit_price=exit_price,
-        quantity=float(pos.get("quantity", 0)), leverage=FUNDING_LEVERAGE,
-        strategy=pos.get("strategy", f"{FUNDING_STRATEGY_TAG} {coin}"),
-        exit_reason=reason, notes=f"closed at ${exit_price:.4f}",
-        date_closed=datetime.now(timezone.utc),
-    )
+    # Swallow journal-write failures: state has already been stripped, so
+    # propagating would make the close appear failed and trigger an infinite
+    # retry loop in manage_open_positions. An orphan row (closed in state,
+    # open in journal) is acceptable — A.3 reconciler catches it.
+    try:
+        log_trade(
+            symbol=symbol, direction=direction,
+            entry_price=pos.get("entry_price", 0.0), exit_price=exit_price,
+            quantity=float(pos.get("quantity", 0)), leverage=FUNDING_LEVERAGE,
+            strategy=pos.get("strategy", f"{FUNDING_STRATEGY_TAG} {coin}"),
+            exit_reason=reason, notes=f"closed at ${exit_price:.4f}",
+            date_closed=datetime.now(timezone.utc),
+        )
+    except Exception as e:
+        logger.error("log_trade failed for %s (state already stripped, "
+                     "orphan journal row will be reconciled): %s", key, e)
 
     if notify_trade_closed:
         try:
