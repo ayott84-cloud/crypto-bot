@@ -559,6 +559,24 @@ def log_signals_jsonl(signals: list) -> None:
 
 
 _PREV_POSITIONS_FILE = Path(__file__).resolve().parent / ".whale_prev_positions.json"
+_HEARTBEAT_FILE = Path(__file__).resolve().parent / ".whale_heartbeat"
+
+
+def _write_heartbeat(path: Path = _HEARTBEAT_FILE) -> None:
+    """Touch the heartbeat file so the dashboard pill shows LIVE.
+
+    Called via try/finally in run_cycle so it fires on every cycle, including
+    when WHALE_PAUSED=true or any other early-return gate triggers. A stale
+    heartbeat is what makes the dashboard mis-report the bot as DOWN; an
+    actually-dead bot won't even reach this call.
+
+    Swallows filesystem errors — a transient write failure must not propagate
+    out of a finally block and mask the real cause of the cycle return.
+    """
+    try:
+        path.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
+    except Exception as e:
+        logger.warning("Heartbeat write failed: %s", e)
 
 
 def _load_prev_snapshot() -> dict:
@@ -587,6 +605,12 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
     """
     logger.info("=" * 60)
     logger.info("Whale cycle starting at %s", datetime.now().isoformat())
+
+    # Heartbeat fires at the top of every cycle so the dashboard pill reflects
+    # reality even when WHALE_PAUSED=true (or any other gate) returns early.
+    # Trade-off: a transient mid-cycle crash will still register a fresh
+    # heartbeat — that's the correct signal ("the loop is alive, work failed").
+    _write_heartbeat()
 
     # 1. Fetch cohorts (one shared fetch — reused for signals AND position mgmt)
     try:
@@ -685,14 +709,8 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
 
         open_whale_position(executor, state, sig, atr)
 
-    # 6. Heartbeat — touch a file so the dashboard can show "live" status.
-    try:
-        heartbeat = Path(__file__).resolve().parent / ".whale_heartbeat"
-        heartbeat.write_text(datetime.now(timezone.utc).isoformat(), encoding="utf-8")
-    except Exception as e:
-        logger.warning("Heartbeat write failed: %s", e)
-
-    # 7. Regenerate the HTML dashboard so the Whale Bot tab reflects this cycle.
+    # 6. Regenerate the HTML dashboard so the Whale Bot tab reflects this cycle.
+    #    (Heartbeat is written at the top of the cycle — see _write_heartbeat above.)
     if build_dashboard is not None:
         try:
             build_dashboard(executor, state)
