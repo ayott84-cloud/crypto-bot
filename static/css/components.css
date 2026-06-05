@@ -175,6 +175,90 @@
   color: var(--ink-3);
 }
 
+/* ── Chart panels (Phase D.7e: equity curve + daily PnL) ───────────────── */
+
+.chart-panel {
+  margin-top: var(--space-5);
+  padding: var(--space-5);
+  background: var(--surface-1);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-md);
+}
+
+.chart-panel__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.chart-panel__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-10);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.chart-panel__svg {
+  width: 100%;
+  line-height: 0;
+}
+
+/* Legend */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chart-legend__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-display);
+  font-size: var(--fs-9);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.chart-legend__dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.chart-legend__dot--aggregate { background: var(--ink-1); }
+.chart-legend__dot--momentum  { background: var(--b-momentum); }
+.chart-legend__dot--whale     { background: var(--b-whale); }
+.chart-legend__dot--funding   { background: var(--b-funding); }
+
+/* Equity curve polylines */
+.equity-curve__series              { stroke: var(--ink-3); }
+.equity-curve__series--aggregate   { stroke: var(--ink-1); }
+.equity-curve__series--momentum    { stroke: var(--b-momentum); }
+.equity-curve__series--whale       { stroke: var(--b-whale); opacity: 0.85; }
+.equity-curve__series--funding     { stroke: var(--b-funding); opacity: 0.85; }
+
+.equity-curve__zero {
+  stroke: var(--rule-soft);
+}
+
+/* Daily P/L bars */
+.daily-bar--up   { fill: var(--up);   opacity: 0.92; }
+.daily-bar--down { fill: var(--down); opacity: 0.92; }
+
+.daily-pnl__zero {
+  stroke: var(--rule-hard);
+}
+
 /* ── Trend chip (▲ ▼ —) ─────────────────────────────────────────────────── */
 /* Small directional indicator that lives next to a metric. Inherits font-size
  * from the surrounding line, so it scales with whichever block uses it. */

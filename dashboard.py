@@ -622,6 +622,10 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
         "whale_meta":   _v2_whale_meta(trades),
         "funding_meta": _v2_funding_meta(trades),
         "projection":   _v2_projection(),
+        "equity_curve_svg": _v2_equity_curve_svg(
+            _v2_equity_series(trades, days=90)),
+        "daily_pnl_svg":    _v2_daily_pnl_svg(
+            _v2_daily_pnl_bars(trades, days=30)),
     }
 
 
@@ -694,6 +698,10 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
         "whale_meta":   _v2_whale_meta(trades),
         "funding_meta": _v2_funding_meta(trades),
         "projection":   _v2_projection(),
+        "equity_curve_svg": _v2_equity_curve_svg(
+            _v2_equity_series(trades, days=90)),
+        "daily_pnl_svg":    _v2_daily_pnl_svg(
+            _v2_daily_pnl_bars(trades, days=30)),
     }
     ctx.update(overrides)
     return ctx
@@ -865,6 +873,181 @@ def _v2_sparkline_svg(points: List[float], width: int = 120, height: int = 24,
             f'<polyline class="{stroke_class}" points="{path}" '
             f'fill="none" stroke-width="1.25" stroke-linejoin="round" '
             f'stroke-linecap="round"/></svg>')
+
+
+# ─── Equity curve + daily P/L (Phase D.7e) ─────────────────────────────────
+
+def _v2_equity_series(trades: List[dict], days: int = 90) -> dict:
+    """Build cumulative-PnL series for the Overview equity curve panel.
+
+    Returns dict with `labels` (list of ISO dates, one per day) and
+    `series` (list of 4: Portfolio aggregate + Momentum + Whale + Funding).
+    Each series carries a CSS `modifier` for color theming.
+
+    All series share the same X-axis so they can be overlaid; days with no
+    trades carry the previous cumulative value (zero before any trade).
+    """
+    closed = [t for t in trades
+              if t.get("exit_price") not in (None, 0, "0", "")]
+
+    now = datetime.now(timezone.utc).date()
+    window = [(now - timedelta(days=i)) for i in range(days - 1, -1, -1)]
+    labels = [d.isoformat() for d in window]
+
+    def _cum(filter_label):
+        by_day: dict[str, float] = {}
+        for t in closed:
+            if filter_label is not None and t.get("bot") != filter_label:
+                continue
+            d = (t.get("date_opened") or "")[:10]
+            if not d:
+                continue
+            by_day[d] = by_day.get(d, 0.0) + float(t.get("net_pnl") or 0)
+        daily = [by_day.get(lbl, 0.0) for lbl in labels]
+        out, running = [], 0.0
+        for v in daily:
+            running += v
+            out.append(round(running, 2))
+        return out
+
+    return {
+        "labels": labels,
+        "series": [
+            {"label": "Portfolio", "modifier": "aggregate", "values": _cum(None)},
+            {"label": "Momentum",  "modifier": "momentum",  "values": _cum("Momentum")},
+            {"label": "Whale",     "modifier": "whale",     "values": _cum("Whale")},
+            {"label": "Funding",   "modifier": "funding",   "values": _cum("Funding")},
+        ],
+    }
+
+
+def _v2_equity_curve_svg(series_data: dict, width: int = 720,
+                          height: int = 200) -> str:
+    """Render the 4-series equity curve as inline SVG."""
+    all_values = []
+    for s in series_data["series"]:
+        all_values.extend(s["values"])
+    if not all_values:
+        return ""
+
+    vmin = min(0.0, min(all_values))
+    vmax = max(0.0, max(all_values))
+    if vmin == vmax:
+        vmax = vmin + 1.0  # avoid div-by-zero on flat-zero data
+
+    n = len(series_data["labels"])
+    if n < 2:
+        return ""
+
+    span = vmax - vmin
+
+    def _y(v):
+        return height - ((v - vmin) / span) * height
+
+    polylines = []
+    for s in series_data["series"]:
+        pts = " ".join(
+            f"{i / (n - 1) * width:.1f},{_y(v):.1f}"
+            for i, v in enumerate(s["values"])
+        )
+        is_aggregate = s["modifier"] == "aggregate"
+        sw = 2.0 if is_aggregate else 1.25
+        cls = f'equity-curve__series equity-curve__series--{s["modifier"]}'
+        polylines.append(
+            f'<polyline class="{cls}" points="{pts}" fill="none" '
+            f'stroke-width="{sw}" stroke-linejoin="round" '
+            f'stroke-linecap="round"/>'
+        )
+
+    zero_y = _y(0)
+    zero_line = (
+        f'<line class="equity-curve__zero" x1="0" y1="{zero_y:.1f}" '
+        f'x2="{width}" y2="{zero_y:.1f}" stroke-width="1" '
+        f'stroke-dasharray="3,5"/>'
+    )
+
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'viewBox="0 0 {width} {height}" preserveAspectRatio="none" '
+        f'width="100%" height="{height}" '
+        f'role="img" aria-label="{n}-day cumulative PnL curves">'
+        f'{zero_line}'
+        f'{"".join(polylines)}'
+        f'</svg>'
+    )
+
+
+def _v2_daily_pnl_bars(trades: List[dict], days: int = 30) -> List[dict]:
+    """Aggregate closed-trade PnL per day for the last N days.
+
+    Returns a list of {date, pnl} dicts, chronological, length == days.
+    """
+    now = datetime.now(timezone.utc).date()
+    window = [(now - timedelta(days=i)) for i in range(days - 1, -1, -1)]
+
+    by_day: dict[str, float] = {}
+    for t in trades:
+        if t.get("exit_price") in (None, 0, "0", ""):
+            continue
+        d = (t.get("date_opened") or "")[:10]
+        if not d:
+            continue
+        by_day[d] = by_day.get(d, 0.0) + float(t.get("net_pnl") or 0)
+
+    return [
+        {"date": d.isoformat(),
+         "pnl":  round(by_day.get(d.isoformat(), 0.0), 2)}
+        for d in window
+    ]
+
+
+def _v2_daily_pnl_svg(bars: List[dict], width: int = 720,
+                       height: int = 120) -> str:
+    """Render daily P/L as a green-up / red-down bar chart in inline SVG."""
+    if not bars:
+        return ""
+
+    values = [b["pnl"] for b in bars]
+    vmax = max((abs(v) for v in values), default=0.0) or 1.0
+    n = len(bars)
+
+    slot = width / n
+    bar_w = slot * 0.7
+    bar_gap = slot * 0.15
+    zero_y = height / 2
+
+    rects = []
+    for i, b in enumerate(bars):
+        x = i * slot + bar_gap
+        if b["pnl"] >= 0:
+            h = (b["pnl"] / vmax) * (height / 2)
+            y = zero_y - h
+            cls = "daily-bar daily-bar--up"
+        else:
+            h = (abs(b["pnl"]) / vmax) * (height / 2)
+            y = zero_y
+            cls = "daily-bar daily-bar--down"
+        if h < 0.5 and b["pnl"] == 0:
+            continue  # don't draw zero-height rects
+        rects.append(
+            f'<rect class="{cls}" x="{x:.1f}" y="{y:.1f}" '
+            f'width="{bar_w:.1f}" height="{max(h, 0.5):.1f}"/>'
+        )
+
+    zero_line = (
+        f'<line class="daily-pnl__zero" x1="0" y1="{zero_y:.1f}" '
+        f'x2="{width}" y2="{zero_y:.1f}" stroke-width="1"/>'
+    )
+
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'viewBox="0 0 {width} {height}" preserveAspectRatio="none" '
+        f'width="100%" height="{height}" '
+        f'role="img" aria-label="Daily PnL last {n} days">'
+        f'{zero_line}'
+        f'{"".join(rects)}'
+        f'</svg>'
+    )
 
 
 # ─── Trend computation (Phase D.7d) ─────────────────────────────────────────

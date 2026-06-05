@@ -67,3 +67,23 @@
     <span class="portfolio-strip__value">{{ portfolio.win_rate_display }}</span>
   </div>
 </section>
+
+<section class="chart-panel equity-curve" aria-label="Cumulative PnL over 90 days">
+  <header class="chart-panel__head">
+    <h2 class="chart-panel__title">Cumulative P/L · 90 days</h2>
+    <ul class="chart-legend">
+      <li class="chart-legend__item"><span class="chart-legend__dot chart-legend__dot--aggregate"></span>Portfolio</li>
+      <li class="chart-legend__item"><span class="chart-legend__dot chart-legend__dot--momentum"></span>Momentum</li>
+      <li class="chart-legend__item"><span class="chart-legend__dot chart-legend__dot--whale"></span>Whale</li>
+      <li class="chart-legend__item"><span class="chart-legend__dot chart-legend__dot--funding"></span>Funding</li>
+    </ul>
+  </header>
+  <div class="chart-panel__svg">{{ equity_curve_svg|safe }}</div>
+</section>
+
+<section class="chart-panel daily-pnl" aria-label="Daily PnL over last 30 days">
+  <header class="chart-panel__head">
+    <h2 class="chart-panel__title">Daily P/L · 30 days</h2>
+  </header>
+  <div class="chart-panel__svg">{{ daily_pnl_svg|safe }}</div>
+</section>
