@@ -177,12 +177,38 @@
 
 /* ── Chart panels (Phase D.7e: equity curve + daily PnL) ───────────────── */
 
+/* Side-by-side chart row (D.7i). Collapses to a single column under 1024px. */
+.chart-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+}
+
+.chart-row .chart-panel {
+  margin-top: 0;
+}
+
 .chart-panel {
   margin-top: var(--space-5);
-  padding: var(--space-5);
+  padding: var(--space-4) var(--space-5) var(--space-3);
   background: var(--surface-1);
   border: 1px solid var(--rule-soft);
   border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+}
+
+.chart-panel__svg {
+  flex: 1 1 auto;
+  height: 220px;
+  min-height: 220px;
+}
+
+.chart-panel__svg svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .chart-panel__head {

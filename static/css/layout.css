@@ -79,6 +79,7 @@
   .page { padding: var(--space-4) var(--space-4) var(--space-6); }
   .tab-nav { padding: 0 var(--space-4); overflow-x: auto; }
   .tab-heading { font-size: var(--fs-24); }
+  .chart-row { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {

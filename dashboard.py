@@ -910,15 +910,30 @@ def _v2_equity_series(trades: List[dict], days: int = 90) -> dict:
             out.append(round(running, 2))
         return out
 
-    return {
-        "labels": labels,
-        "series": [
-            {"label": "Portfolio", "modifier": "aggregate", "values": _cum(None)},
-            {"label": "Momentum",  "modifier": "momentum",  "values": _cum("Momentum")},
-            {"label": "Whale",     "modifier": "whale",     "values": _cum("Whale")},
-            {"label": "Funding",   "modifier": "funding",   "values": _cum("Funding")},
-        ],
-    }
+    series = [
+        {"label": "Portfolio", "modifier": "aggregate", "values": _cum(None)},
+        {"label": "Momentum",  "modifier": "momentum",  "values": _cum("Momentum")},
+        {"label": "Whale",     "modifier": "whale",     "values": _cum("Whale")},
+        {"label": "Funding",   "modifier": "funding",   "values": _cum("Funding")},
+    ]
+
+    # Trim leading days where every series is still zero — avoids a 60-day
+    # flat-line lead-in that wastes the panel's horizontal space.
+    first_nonzero = next(
+        (i for i in range(len(labels))
+         if any(s["values"][i] != 0 for s in series)),
+        None,
+    )
+    if first_nonzero is not None and first_nonzero > 0:
+        # Keep one day of zero on the left so the line starts at the baseline
+        start = max(0, first_nonzero - 1)
+        labels = labels[start:]
+        series = [
+            {**s, "values": s["values"][start:]}
+            for s in series
+        ]
+
+    return {"labels": labels, "series": series}
 
 
 def _fmt_dollar(v: float) -> str:
@@ -1023,8 +1038,8 @@ def _v2_equity_curve_svg(series_data: dict, width: int = 720,
 
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" '
-        f'viewBox="0 0 {width} {height}" '
-        f'width="100%" height="{height}" '
+        f'viewBox="0 0 {width} {height}" preserveAspectRatio="none" '
+        f'width="100%" height="100%" '
         f'role="img" aria-label="{n}-day cumulative PnL curves">'
         f'{zero_line}'
         f'{"".join(polylines)}'
@@ -1128,8 +1143,8 @@ def _v2_daily_pnl_svg(bars: List[dict], width: int = 720,
 
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" '
-        f'viewBox="0 0 {width} {height}" '
-        f'width="100%" height="{height}" '
+        f'viewBox="0 0 {width} {height}" preserveAspectRatio="none" '
+        f'width="100%" height="100%" '
         f'role="img" aria-label="Daily PnL last {n} days">'
         f'{zero_line}'
         f'{"".join(rects)}'

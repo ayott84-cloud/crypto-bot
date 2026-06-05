@@ -115,13 +115,41 @@ def test_equity_curve_svg_emits_role_img_and_aria_label():
     svg = dashboard._v2_equity_curve_svg(data)
     assert 'role="img"' in svg
     assert 'aria-label="' in svg
-    assert "90-day" in svg
+    assert "cumulative PnL curves" in svg
 
 
 def test_equity_curve_svg_includes_zero_baseline():
     data = dashboard._v2_equity_series([_trade("Momentum", 5, +10.0)], days=90)
     svg = dashboard._v2_equity_curve_svg(data)
     assert "equity-curve__zero" in svg
+
+
+def test_equity_series_trims_leading_zero_only_days():
+    """The chart should start at the first day any bot has a trade — not
+    waste horizontal space on a 60-day flat-line lead-in."""
+    trades = [_trade("Momentum", 5, +30.0)]  # only one trade, 5 days ago
+    data = dashboard._v2_equity_series(trades, days=90)
+    # Before trim: 90 labels with first ~85 days all zero
+    # After trim: fewer labels, starting close to the first trade
+    assert len(data["labels"]) < 30, (
+        f"Expected leading zero days trimmed, got {len(data['labels'])} labels"
+    )
+    # And the portfolio series should reach +30
+    portfolio = next(s for s in data["series"] if s["label"] == "Portfolio")
+    assert portfolio["values"][-1] == pytest.approx(30.0)
+
+
+def test_equity_series_no_trim_when_data_starts_early():
+    """When trades exist back to day 60+, the full window renders."""
+    trades = [_trade("Momentum", 80, +10.0)]
+    data = dashboard._v2_equity_series(trades, days=90)
+    assert len(data["labels"]) >= 80
+
+
+def test_equity_series_empty_input_keeps_full_window():
+    """Zero trades → don't crash, return full window of zeros."""
+    data = dashboard._v2_equity_series([], days=90)
+    assert len(data["labels"]) == 90
 
 
 def test_equity_curve_svg_uses_per_bot_class_modifiers():
