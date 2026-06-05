@@ -26,6 +26,7 @@ from config import (
     DEFAULT_LEVERAGE, LOG_FILE, DASHBOARD_REGEN_CYCLES, MAX_POSITIONS,
     MARGIN_PER_TRADE,
 )
+from btc_context import _build_btc_context
 from signals import (
     build_dataframe, compute_indicators, check_entry_signal,
     check_exit_conditions, get_entry_reason, analyze_entry_signal,
@@ -183,32 +184,10 @@ def run():
         trade_occurred = False
         cycle_start = time.time()
 
-        # v2: Pre-fetch BTC context for each timeframe used by any asset with BTC filter
-        # (BTC itself doesn't need this; only alts with use_btc_filter=True)
-        btc_context = {}  # interval → (btc_close, btc_ema)
-        intervals_needing_btc = {
-            cfg["interval"] for cfg in ASSETS.values()
-            if cfg.get("use_btc_filter", False)
-        }
-        for tf in intervals_needing_btc:
-            try:
-                btc_klines = executor.get_klines("BTCUSDT", tf, 200)
-                if btc_klines and len(btc_klines) >= 60:
-                    import pandas_ta as _ta
-                    btc_df = build_dataframe(btc_klines)
-                    btc_close_val = float(btc_df.iloc[-2]["close"])
-                    btc_ema_period = 50  # v2 standard
-                    btc_ema_val = float(_ta.ema(btc_df["close"], length=btc_ema_period).iloc[-2])
-                    btc_context[tf] = (btc_close_val, btc_ema_val)
-                    logger.debug("BTC %s context: close=%.2f ema%d=%.2f bullish=%s",
-                                 tf, btc_close_val, btc_ema_period, btc_ema_val,
-                                 btc_close_val > btc_ema_val)
-                else:
-                    btc_context[tf] = (None, None)
-                    logger.warning("Insufficient BTC %s klines for correlation filter", tf)
-            except Exception as e:
-                btc_context[tf] = (None, None)
-                logger.error("Failed to fetch BTC %s for correlation filter: %s", tf, e)
+        # B.1: Pre-fetch BTC context keyed by (interval, ema_period). Each
+        # asset's BTC correlation filter uses its OWN btc_ema_period; the
+        # previous version silently forced 50 for all of them.
+        btc_context = _build_btc_context(executor, ASSETS)
 
         for asset_name, cfg in ASSETS.items():
             symbol = cfg["symbol"]       # exchange symbol (XRPUSDT) — for API calls
@@ -228,7 +207,9 @@ def run():
                 df = compute_indicators(df, cfg)
 
                 # 3. ALWAYS compute signal diagnostics (for dashboard)
-                btc_close_val, btc_ema_val = btc_context.get(interval, (None, None))
+                # B.1: lookup is keyed by (interval, btc_ema_period) per asset.
+                btc_ctx_key = (interval, cfg.get("btc_ema_period", 50))
+                btc_close_val, btc_ema_val = btc_context.get(btc_ctx_key, (None, None))
                 try:
                     analysis = analyze_entry_signal(
                         df, cfg, btc_close=btc_close_val, btc_ema=btc_ema_val
