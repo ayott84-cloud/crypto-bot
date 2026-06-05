@@ -14,6 +14,11 @@
     <span data-trades-visible>{{ trades|length }}</span>
     <span class="trades-toolbar__count-label">of {{ trades|length }} rows</span>
   </span>
+  <button
+    type="button"
+    class="trades-export"
+    data-trades-export
+    aria-label="Download visible trades as CSV">Export CSV</button>
 </div>
 
 <div class="trades-table-wrap">

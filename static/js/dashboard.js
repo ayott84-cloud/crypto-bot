@@ -128,5 +128,46 @@
         timer = setTimeout(applyFilter, 200);
       });
     }
+
+    // ── CSV export (Phase D.7f) ─────────────────────────────────────────
+    // Walks the currently-visible rows in current sort order, builds a
+    // CSV, and triggers a Blob download. The filename includes today's
+    // date so multiple exports don't clobber each other.
+    const exportBtn = document.querySelector('[data-trades-export]');
+    if (exportBtn) {
+      const CSV_HEADERS = [
+        "#", "Date", "Symbol", "Direction", "Bot", "Strategy",
+        "Entry", "Exit", "Quantity", "Leverage",
+        "Net PnL", "Exit Reason", "Result"
+      ];
+      const escapeCell = (v) => {
+        const s = String(v ?? '');
+        return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      };
+      exportBtn.addEventListener('click', () => {
+        const visibleRows = Array.from(tbody.querySelectorAll('tr'))
+          .filter(tr => !tr.classList.contains('is-hidden'));
+        const lines = [CSV_HEADERS.join(',')];
+        visibleRows.forEach(tr => {
+          const ds = tr.dataset;
+          lines.push([
+            ds.row_num, ds.date_opened, ds.symbol, ds.direction,
+            ds.bot, ds.strategy, ds.entry_price, ds.exit_price,
+            ds.quantity, ds.leverage, ds.net_pnl,
+            ds.exit_reason, ds.result
+          ].map(escapeCell).join(','));
+        });
+        const csv = lines.join('\r\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `trades-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+    }
   }
 })();

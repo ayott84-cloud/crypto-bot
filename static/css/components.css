@@ -440,6 +440,32 @@
 
 .trades-toolbar__count-label { color: var(--ink-3); }
 
+/* ── Trade log: CSV export button (Phase D.7f) ─────────────────────────── */
+
+.trades-export {
+  appearance: none;
+  background: var(--surface-2);
+  color: var(--ink-1);
+  border: 1px solid var(--rule-hard);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-4);
+  font-family: var(--font-display);
+  font-size: var(--fs-10);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--motion-fast) var(--ease),
+              border-color var(--motion-fast) var(--ease);
+}
+.trades-export:hover {
+  background: var(--surface-3);
+  border-color: var(--ink-3);
+}
+.trades-export:active {
+  background: var(--surface-1);
+}
+
 /* ── Trade table ─────────────────────────────────────────────────────────── */
 
 .trades-table-wrap {
