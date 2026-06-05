@@ -8,9 +8,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
+
+BOT_DIR = Path(__file__).resolve().parent
 
 try:
     from zoneinfo import ZoneInfo
@@ -497,15 +501,40 @@ def _compute_yearly_projection() -> dict:
     }
 
 
+def _resolve_build_sha() -> str:
+    """Resolve the BUILD chip's commit hash for the colophon.
+
+    Precedence:
+      1. GIT_SHA env var (deployer override)
+      2. `git rev-parse --short=8 HEAD` against BOT_DIR
+      3. "local" fallback
+    """
+    env_sha = os.getenv("GIT_SHA", "").strip()
+    if env_sha:
+        return env_sha[:8]
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short=8", "HEAD"],
+            cwd=str(BOT_DIR),
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if result.returncode == 0:
+            sha = result.stdout.strip()
+            if sha:
+                return sha[:8]
+    except (FileNotFoundError, subprocess.SubprocessError, OSError):
+        pass
+    return "local"
+
+
 def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
     """Shape gather_dashboard_data output for the Jinja2 templates.
 
     Per-bot stats are recomputed by filtering trades on the `bot` column —
     cheap enough at this scale (a few hundred rows max).
     """
-    import os
-    from datetime import datetime, timezone
-
     trades = _read_journal_trades()
 
     def _bot_card(bot_class, monogram, name, bot_label, status):
@@ -549,7 +578,7 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
         "operator":  os.getenv("OPERATOR", "ayott84"),
         "env":       "paper" if DRY_RUN else "live",
         "freshness": "0s",
-        "build_sha": (os.getenv("GIT_SHA") or "local")[:8],
+        "build_sha": _resolve_build_sha(),
         "build_ts":  now.strftime("%Y-%m-%d %H:%M UTC"),
         "bots": [
             {**_bot_card("momentum", "M", "Momentum", "Momentum",
