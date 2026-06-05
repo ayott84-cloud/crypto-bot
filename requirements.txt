@@ -20,5 +20,10 @@ openpyxl==3.1.5
 # is sufficient but pytz is kept as a fallback on slim containers)
 pytz==2024.2
 
+# Phase D dashboard rebuild — Jinja2 templates extract the 1798-line
+# monolithic f-string in dashboard.py to a templates/ tree. Pure-Python,
+# tiny install, no native deps.
+Jinja2==3.1.4
+
 # Test-only (not installed by setup.sh unless dev mode)
 # pytest==9.0.3

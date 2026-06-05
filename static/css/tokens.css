@@ -1,0 +1,132 @@
+/* Design tokens — Quant Cockpit visual system.
+ *
+ * Single source of truth for color, typography, spacing, motion. The rest of
+ * the dashboard's CSS reads only these custom properties. Theme switches
+ * (light) override the values on [data-theme="light"] and everything else
+ * follows.
+ *
+ * Design direction: solo-operator monitoring console. Bloomberg × Linear ×
+ * Bauhaus print. Honest, dense, unironic. Anti-patterns explicitly rejected:
+ * purple/teal gradients, generic Inter everywhere, rounded "fintech" pills,
+ * motion-for-motion, the Material/Tailwind-UI lookbook aesthetic.
+ */
+
+:root {
+  /* ── Surfaces — true blacks tinted warm, not blue ──────────────────── */
+  --surface-0: #060608;        /* page background */
+  --surface-1: #0e0f12;        /* card */
+  --surface-2: #16171b;        /* elevated card / hover */
+  --surface-3: #1f2027;        /* table row alt */
+  --rule-soft: #25262b;        /* 1px dividers, hairline grid */
+  --rule-hard: #3a3b42;        /* table header underline, prominent separators */
+
+  /* ── Text — eye-comfortable for long sessions ──────────────────────── */
+  --ink-1: #f4f4f1;            /* high-contrast body text */
+  --ink-2: #a8a9ad;            /* labels, secondary text */
+  --ink-3: #6c6d72;            /* captions, timestamps, sparkline strokes */
+
+  /* ── Semantic — confident, not Christmas ───────────────────────────── */
+  --up:    #57cb95;            /* green that won't blind you (sage) */
+  --down:  #e85a4c;            /* warm red, not blood */
+  --warn:  #d4ad58;            /* amber for pending / silent-but-ok */
+  --info:  #5fa8e5;            /* one cool blue */
+
+  /* ── Bot identity — small accent strokes only, never chrome ────────── */
+  --b-momentum: #5fa8e5;       /* calm steel blue */
+  --b-whale:    #b076e3;       /* muted violet — currently dormant, looks quiet */
+  --b-funding:  #d4ad58;       /* amber — slow-burn strategy */
+
+  /* ── Spatial — 8px grid ────────────────────────────────────────────── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 28px;
+  --space-7: 40px;
+  --space-8: 56px;
+
+  /* ── Radii — restrained, not "fintech soft" ────────────────────────── */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* ── Typography ────────────────────────────────────────────────────── */
+  /* Display + UI body. Söhne is commercial; Inter Tight as a less-generic
+   * fallback than stock Inter. */
+  --font-ui: "Söhne", "Inter Tight", system-ui, -apple-system,
+             "Segoe UI", sans-serif;
+  /* Numbers, tables, code. JetBrains Mono ships with tabular figures and
+   * a slashed zero — non-negotiable for finance. */
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono",
+               "Cascadia Code", Consolas, monospace;
+  /* Status chips + colophon. Departure Mono is the signature accent face;
+   * IBM Plex Mono is the closest free fallback. */
+  --font-display: "Departure Mono", "IBM Plex Mono",
+                  "JetBrains Mono", ui-monospace, monospace;
+
+  /* ── Type scale ────────────────────────────────────────────────────── */
+  --fs-9:   10px;   /* colophon caps, table header labels */
+  --fs-10:  11px;   /* status pill caps */
+  --fs-12:  12px;   /* secondary captions */
+  --fs-13:  13px;   /* body small */
+  --fs-14:  14px;   /* table cells, body */
+  --fs-15:  15px;   /* body large */
+  --fs-18:  18px;   /* section headers */
+  --fs-24:  24px;   /* bot-status name */
+  --fs-32:  32px;   /* big numbers */
+  --fs-48:  48px;   /* hero PnL display */
+  --fs-56:  56px;   /* portfolio masthead PnL */
+
+  --lh-tight:  1.05;
+  --lh-snug:   1.25;
+  --lh-normal: 1.5;
+
+  /* ── Motion ────────────────────────────────────────────────────────── */
+  --motion-instant:  0ms;
+  --motion-fast:     120ms;
+  --motion-med:      240ms;
+  --motion-slow:     480ms;
+  --motion-breath:   3200ms;   /* LIVE-pill breathing dot period */
+  --ease:            cubic-bezier(0.4, 0.0, 0.2, 1);
+
+  /* ── Borders ───────────────────────────────────────────────────────── */
+  --border-thin:   1px solid var(--rule-soft);
+  --border-strong: 1px solid var(--rule-hard);
+}
+
+/* Light theme — opt-in via [data-theme="light"] on <html>. Persisted in
+ * localStorage by the theme toggle. */
+:root[data-theme="light"] {
+  --surface-0: #f5f4ef;        /* warm off-white, not blue-white */
+  --surface-1: #ffffff;
+  --surface-2: #ecebe5;
+  --surface-3: #f8f7f2;
+  --rule-soft: #d8d7d1;
+  --rule-hard: #b8b7b1;
+
+  --ink-1: #131418;
+  --ink-2: #54555b;
+  --ink-3: #84858b;
+
+  --up:    #2a8b5e;
+  --down:  #c1402f;
+  --warn:  #a87a1f;
+  --info:  #2c7ab8;
+
+  --b-momentum: #2c7ab8;
+  --b-whale:    #7a40b5;
+  --b-funding:  #a87a1f;
+}
+
+/* Respect operator preference for reduced motion — the Quant Cockpit
+ * uses motion sparingly but breathing dot + number flip still register.
+ * Remove them entirely when prefers-reduced-motion is set. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast:   0ms;
+    --motion-med:    0ms;
+    --motion-slow:   0ms;
+    --motion-breath: 0ms;
+  }
+}
