@@ -14,17 +14,19 @@
   <link rel="stylesheet" href="/static/css/components.css">
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
   {% include "components/colophon.html.j2" %}
 
   <nav class="tab-nav" role="tablist" aria-label="Dashboard sections">
-    <button role="tab" aria-selected="true"  aria-controls="tab-overview"   data-tab="overview"   class="active">Overview</button>
+    <button role="tab" aria-selected="true"  aria-current="page" aria-controls="tab-overview"   data-tab="overview"   class="active">Overview</button>
     <button role="tab" aria-selected="false" aria-controls="tab-trades"     data-tab="trades">Trade Log</button>
     <button role="tab" aria-selected="false" aria-controls="tab-projection" data-tab="projection">Projection</button>
     <button role="tab" aria-selected="false" aria-controls="tab-whale"      data-tab="whale">Whale</button>
     <button role="tab" aria-selected="false" aria-controls="tab-funding"    data-tab="funding">Funding</button>
   </nav>
 
-  <main class="page">
+  <main class="page" id="main-content">
     <section role="tabpanel" id="tab-overview"   tabindex="0">
       {% include "tabs/overview.html.j2" %}
     </section>

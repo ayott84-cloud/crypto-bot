@@ -1850,18 +1850,24 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
         "bots": [
             {**_bot_card("momentum", "M", "Momentum", "Momentum",
                          bot_status.get("momentum", {})),
-             "spark_svg": _v2_sparkline_svg(spark_momentum,
-                                             stroke_class="spark__line spark__line--momentum"),
+             "spark_svg": _v2_sparkline_svg(
+                 spark_momentum,
+                 stroke_class="spark__line spark__line--momentum",
+                 label="Momentum 30-day cumulative PnL"),
              "why":       _v2_why_silent("momentum", data)},
             {**_bot_card("whale",    "W", "Whale",    "Whale",
                          bot_status.get("whale", {})),
-             "spark_svg": _v2_sparkline_svg(spark_whale,
-                                             stroke_class="spark__line spark__line--whale"),
+             "spark_svg": _v2_sparkline_svg(
+                 spark_whale,
+                 stroke_class="spark__line spark__line--whale",
+                 label="Whale 30-day cumulative PnL"),
              "why":       _v2_why_silent("whale", data)},
             {**_bot_card("funding",  "F", "Funding",  "Funding",
                          bot_status.get("funding", {})),
-             "spark_svg": _v2_sparkline_svg(spark_funding,
-                                             stroke_class="spark__line spark__line--funding"),
+             "spark_svg": _v2_sparkline_svg(
+                 spark_funding,
+                 stroke_class="spark__line spark__line--funding",
+                 label="Funding 30-day cumulative PnL"),
              "why":       _v2_why_silent("funding", data)},
         ],
         "portfolio": {
@@ -1870,8 +1876,10 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
             "closed_count":     len(portfolio_closed),
             "open_count":       metrics.get("open_positions", 0),
             "win_rate_display": f"{metrics.get('win_rate', 0):.1f}%",
-            "spark_svg":        _v2_sparkline_svg(spark_portfolio, width=200, height=32,
-                                                   stroke_class="spark__line"),
+            "spark_svg":        _v2_sparkline_svg(
+                spark_portfolio, width=200, height=32,
+                stroke_class="spark__line",
+                label="Portfolio 30-day cumulative PnL"),
         },
         "trades": _v2_trade_rows(trades),
         "whale_meta":   _v2_whale_meta(trades),
@@ -1899,22 +1907,28 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
              "state": "live", "seen_label": "0s ago",
              "net_pnl": 0, "net_pnl_display": "$0.00",
              "trade_count": 0, "win_rate_display": "—",
-             "spark_svg": _v2_sparkline_svg(_v2_sparkline_points(trades, "Momentum"),
-                                              stroke_class="spark__line spark__line--momentum"),
+             "spark_svg": _v2_sparkline_svg(
+                 _v2_sparkline_points(trades, "Momentum"),
+                 stroke_class="spark__line spark__line--momentum",
+                 label="Momentum 30-day cumulative PnL"),
              "why": _v2_why_silent("momentum", data_stub)},
             {"class": "whale", "monogram": "W", "name": "Whale",
              "state": "dormant", "seen_label": "paused",
              "net_pnl": 0, "net_pnl_display": "$0.00",
              "trade_count": 0, "win_rate_display": "—",
-             "spark_svg": _v2_sparkline_svg(_v2_sparkline_points(trades, "Whale"),
-                                              stroke_class="spark__line spark__line--whale"),
+             "spark_svg": _v2_sparkline_svg(
+                 _v2_sparkline_points(trades, "Whale"),
+                 stroke_class="spark__line spark__line--whale",
+                 label="Whale 30-day cumulative PnL"),
              "why": _v2_why_silent("whale", data_stub)},
             {"class": "funding", "monogram": "F", "name": "Funding",
              "state": "live", "seen_label": "0s ago",
              "net_pnl": 0, "net_pnl_display": "$0.00",
              "trade_count": 0, "win_rate_display": "—",
-             "spark_svg": _v2_sparkline_svg(_v2_sparkline_points(trades, "Funding"),
-                                              stroke_class="spark__line spark__line--funding"),
+             "spark_svg": _v2_sparkline_svg(
+                 _v2_sparkline_points(trades, "Funding"),
+                 stroke_class="spark__line spark__line--funding",
+                 label="Funding 30-day cumulative PnL"),
              "why": _v2_why_silent("funding", data_stub)},
         ],
         "portfolio": {"net_pnl": 0, "net_pnl_display": "$0.00",
@@ -1922,7 +1936,8 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
                       "win_rate_display": "—",
                       "spark_svg": _v2_sparkline_svg(
                           _v2_sparkline_points(trades), width=200, height=32,
-                          stroke_class="spark__line")},
+                          stroke_class="spark__line",
+                          label="Portfolio 30-day cumulative PnL")},
         "trades":       _v2_trade_rows(trades),
         "whale_meta":   _v2_whale_meta(trades),
         "funding_meta": _v2_funding_meta(trades),
@@ -2053,11 +2068,16 @@ def _v2_sparkline_points(trades: List[dict], bot_label: str | None = None,
 
 
 def _v2_sparkline_svg(points: List[float], width: int = 120, height: int = 24,
-                       stroke_class: str = "spark__line") -> str:
+                       stroke_class: str = "spark__line",
+                       label: str = "PnL trend") -> str:
     """Render a list of PnL points as inline SVG path. Returns "" if empty.
 
     Color is applied via CSS class — the sign of the last point picks
     .spark__line--up or .spark__line--down at render time in the caller.
+
+    Accessibility: the SVG carries role="img" + an aria-label that
+    summarizes the curve in plain text. The polyline itself is decorative
+    (no individual data points are read).
     """
     if not points or len(points) < 2:
         return ""
@@ -2079,8 +2099,16 @@ def _v2_sparkline_svg(points: List[float], width: int = 120, height: int = 24,
     path = " ".join(coords)
     zero_line = (f'<line x1="{pad}" y1="{zero_y:.1f}" x2="{width - pad}" y2="{zero_y:.1f}" '
                  f'class="spark__zero"/>' if zero_y is not None else "")
+    # Plain-text summary for screen readers
+    last = points[-1]
+    direction = ("up" if last > points[0]
+                 else "down" if last < points[0]
+                 else "flat")
+    aria = (f"{label}: {direction} from {_v2_pnl_display(points[0])} "
+            f"to {_v2_pnl_display(last)} over {n} days")
     return (f'<svg class="spark" viewBox="0 0 {width} {height}" '
-            f'width="{width}" height="{height}" aria-hidden="true">'
+            f'width="{width}" height="{height}" role="img" '
+            f'aria-label="{aria}">'
             f'{zero_line}'
             f'<polyline class="{stroke_class}" points="{path}" '
             f'fill="none" stroke-width="1.25" stroke-linejoin="round" '

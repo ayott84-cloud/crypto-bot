@@ -16,12 +16,19 @@
   } catch (e) { /* localStorage unavailable — fall back to default */ }
 
   const toggleBtn = document.querySelector('[data-theme-toggle]');
+  const syncTogglePressed = () => {
+    if (!toggleBtn) return;
+    const isLight = document.documentElement.dataset.theme === 'light';
+    toggleBtn.setAttribute('aria-pressed', isLight ? 'true' : 'false');
+  };
+  syncTogglePressed();
   if (toggleBtn) {
     toggleBtn.addEventListener('click', () => {
       const current = document.documentElement.dataset.theme || 'dark';
       const next = current === 'dark' ? 'light' : 'dark';
       document.documentElement.dataset.theme = next;
       try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+      syncTogglePressed();
     });
   }
 
@@ -33,6 +40,8 @@
       const isActive = t.dataset.tab === tabId;
       t.classList.toggle('active', isActive);
       t.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      if (isActive) t.setAttribute('aria-current', 'page');
+      else          t.removeAttribute('aria-current');
     });
     panels.forEach(p => {
       p.hidden = p.id !== `tab-${tabId}`;
