@@ -25,6 +25,7 @@ from dashboard_renderer import render
 
 
 def _ctx(net_pnl: float = -147.47):
+    import dashboard
     return {
         "operator":  "ayott84",
         "env":       "paper",
@@ -52,6 +53,9 @@ def _ctx(net_pnl: float = -147.47):
             "open_count":       0,
             "win_rate_display": "45.0%",
         },
+        "trades":       [],
+        "whale_meta":   dashboard._v2_whale_meta([]),
+        "funding_meta": dashboard._v2_funding_meta([]),
     }
 
 

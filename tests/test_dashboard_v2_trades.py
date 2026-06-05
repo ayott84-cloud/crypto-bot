@@ -138,6 +138,8 @@ def _ctx_with_trades(trades):
                       "closed_count": 0, "open_count": 0,
                       "win_rate_display": "—"},
         "trades": trades,
+        "whale_meta":   dashboard._v2_whale_meta([]),
+        "funding_meta": dashboard._v2_funding_meta([]),
     }
 
 
