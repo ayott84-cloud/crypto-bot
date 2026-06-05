@@ -62,19 +62,15 @@
   letter-spacing: -0.02em;
 }
 
-/* ── Phase-D placeholder note ────────────────────────────────────────────── */
+/* ── Tab footnote (small operator-facing note at bottom of a tab) ───────── */
 
-.phase-note {
+.tab-note {
   color: var(--ink-3);
   font-size: var(--fs-13);
   padding: var(--space-5);
   background: var(--surface-1);
   border: var(--border-thin);
   border-radius: var(--radius-md);
-}
-
-.phase-note--placeholder {
-  border-style: dashed;
 }
 
 /* ── Breakpoints ─────────────────────────────────────────────────────────── */
