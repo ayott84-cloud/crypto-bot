@@ -1,5 +1,89 @@
 <h1 class="tab-heading">Trade Log</h1>
-<p class="phase-note phase-note--placeholder">
-  Migrates next: sortable column headers, sticky <code>&lt;thead&gt;</code>, debounced
-  search row, exit-reason chips, export modal with bitcoin spinner.
-</p>
+
+<div class="trades-toolbar" role="search">
+  <label class="trades-search">
+    <span class="sr-only">Filter trades</span>
+    <input
+      type="search"
+      placeholder="filter by symbol, strategy, bot, exit reason…"
+      data-trades-search
+      autocomplete="off"
+      spellcheck="false">
+  </label>
+  <span class="trades-toolbar__count" aria-live="polite">
+    <span data-trades-visible>{{ trades|length }}</span>
+    <span class="trades-toolbar__count-label">of {{ trades|length }} rows</span>
+  </span>
+</div>
+
+<div class="trades-table-wrap">
+  <table class="trades-table" aria-label="All trades">
+    <caption class="sr-only">
+      Complete trade history. Click a column header to sort. Type in the search
+      box above to filter.
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col" data-sort="row_num"      data-sort-type="num"  data-sort-active="desc">#</th>
+        <th scope="col" data-sort="date_opened"  data-sort-type="text">Date</th>
+        <th scope="col" data-sort="symbol"       data-sort-type="text">Symbol</th>
+        <th scope="col" data-sort="direction"    data-sort-type="text">Dir</th>
+        <th scope="col" data-sort="bot"          data-sort-type="text">Bot</th>
+        <th scope="col" data-sort="strategy"     data-sort-type="text">Strategy</th>
+        <th scope="col" data-sort="entry_price"  data-sort-type="num">Entry</th>
+        <th scope="col" data-sort="exit_price"   data-sort-type="num">Exit</th>
+        <th scope="col" data-sort="quantity"     data-sort-type="num">Qty</th>
+        <th scope="col" data-sort="leverage"     data-sort-type="num">Lev</th>
+        <th scope="col" data-sort="net_pnl"      data-sort-type="num">Net PnL</th>
+        <th scope="col" data-sort="exit_reason"  data-sort-type="text">Exit Reason</th>
+        <th scope="col" data-sort="result"       data-sort-type="text">Result</th>
+      </tr>
+    </thead>
+    <tbody data-trades-tbody>
+      {% for t in trades %}
+      <tr data-row
+          data-row-num="{{ t.row_num }}"
+          data-date_opened="{{ t.date_opened }}"
+          data-symbol="{{ t.symbol|lower }}"
+          data-direction="{{ t.direction|lower }}"
+          data-bot="{{ t.bot|lower }}"
+          data-strategy="{{ t.strategy|lower }}"
+          data-entry_price="{{ t.entry_price }}"
+          data-exit_price="{{ t.exit_price }}"
+          data-quantity="{{ t.quantity }}"
+          data-leverage="{{ t.leverage }}"
+          data-net_pnl="{{ t.net_pnl }}"
+          data-exit_reason="{{ t.exit_reason|lower }}"
+          data-result="{{ t.result|lower }}">
+        <td class="num">{{ t.row_num }}</td>
+        <td class="trades-table__date">{{ t.date_opened }}</td>
+        <td class="trades-table__symbol">{{ t.symbol }}</td>
+        <td>
+          <span class="dir dir--{{ t.direction|lower }}">{{ t.direction }}</span>
+        </td>
+        <td>
+          {% with monogram=t.bot[:1], bot_class=t.bot_class %}
+          {% include "components/bot_monogram.html.j2" %}
+          {% endwith %}
+        </td>
+        <td class="trades-table__strategy">{{ t.strategy }}</td>
+        <td class="num">{{ t.entry_price }}</td>
+        <td class="num">{{ t.exit_price }}</td>
+        <td class="num">{{ t.quantity }}</td>
+        <td class="num">{{ t.leverage }}x</td>
+        <td class="num {{ t.result_class }}">{{ t.net_pnl_display }}</td>
+        <td class="trades-table__reason">
+          {% if t.exit_reason %}
+          <span class="exit-chip exit-chip--{{ t.result|lower }}">{{ t.exit_reason }}</span>
+          {% else %}
+          —
+          {% endif %}
+        </td>
+        <td>
+          <span class="result-pill result-pill--{{ t.result|lower }}">{{ t.result }}</span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

@@ -1852,6 +1852,7 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
             "open_count":       metrics.get("open_positions", 0),
             "win_rate_display": f"{metrics.get('win_rate', 0):.1f}%",
         },
+        "trades": _v2_trade_rows(trades),
     }
 
 
@@ -1894,6 +1895,72 @@ def _v2_pnl_display(amount: float) -> str:
     if amount < 0:
         return f"−${abs(amount):,.2f}"
     return "$0.00"
+
+
+def _v2_trade_rows(trades: List[dict]) -> List[dict]:
+    """Shape journal trades for the V2 trade log template.
+
+    Sorted newest-first by date_opened. Open positions (exit_price None)
+    render with em-dashes and result="OPEN". Each row carries the css
+    helper classes the table needs so the template stays presentational.
+    """
+    def _result_class(r: str) -> str:
+        return {"WIN": "is-up", "LOSS": "is-down",
+                "FLAT": "is-flat", "OPEN": "is-open"}.get(r, "")
+
+    def _pnl_cell(r: dict) -> str:
+        pnl = float(r.get("net_pnl") or 0)
+        if r.get("result") == "OPEN":
+            return "—"
+        return _v2_pnl_display(pnl)
+
+    def _exit_cell(r: dict) -> str:
+        ep = r.get("exit_price")
+        if ep in (None, 0, "0", ""):
+            return "—"
+        try:
+            f = float(ep)
+        except (TypeError, ValueError):
+            return "—"
+        if f == 0:
+            return "—"
+        return f"{f:g}"
+
+    def _short_date(s: str) -> str:
+        # "2026-05-15T08:02:00..." → "2026-05-15 08:02"
+        if not s:
+            return ""
+        s = str(s).replace("T", " ")
+        return s[:16]
+
+    rows = sorted(
+        trades,
+        key=lambda r: r.get("date_opened") or "",
+        reverse=True,
+    )
+    out: List[dict] = []
+    for i, r in enumerate(rows, start=1):
+        result = r.get("result") or "OPEN"
+        out.append({
+            "row_num":        len(rows) - i + 1,   # newest = highest #
+            "id":             r.get("id"),
+            "date_opened":    _short_date(r.get("date_opened")),
+            "symbol":         r.get("symbol", ""),
+            "direction":      r.get("direction", ""),
+            "bot":            r.get("bot", ""),
+            "bot_class":      (r.get("bot") or "").lower() or "momentum",
+            "strategy":       r.get("strategy", ""),
+            "entry_price":    f"{float(r.get('entry_price') or 0):g}",
+            "exit_price":     _exit_cell(r),
+            "quantity":       f"{float(r.get('quantity') or 0):g}",
+            "leverage":       int(r.get("leverage") or 1),
+            "net_pnl":        float(r.get("net_pnl") or 0),
+            "net_pnl_display": _pnl_cell(r),
+            "exit_reason":    r.get("exit_reason") or "",
+            "result":         result,
+            "result_class":   _result_class(result),
+        })
+    return out
 
 
 def build_dashboard(executor, state: dict) -> None:
