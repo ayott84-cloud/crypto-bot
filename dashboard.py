@@ -1793,7 +1793,123 @@ new Chart(document.getElementById('allocChart'), {{
     logger.info("Dashboard written to %s", path)
 
 
+def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Shape gather_dashboard_data output for the Jinja2 templates.
+
+    Per-bot stats are recomputed by filtering trades on the `bot` column —
+    cheap enough at this scale (a few hundred rows max).
+    """
+    import os
+    from datetime import datetime, timezone
+
+    trades = _read_journal_trades()
+
+    def _bot_card(bot_class, monogram, name, bot_label, status):
+        bot_trades = [t for t in trades if t.get("bot") == bot_label]
+        closed = [t for t in bot_trades
+                  if t.get("exit_price") not in (None, 0, "0", "")]
+        net_pnl = sum(float(t.get("net_pnl") or 0) for t in closed)
+        wins = sum(1 for t in closed if (t.get("net_pnl") or 0) > 0)
+        win_rate = (wins / len(closed) * 100) if closed else 0.0
+        return {
+            "class":    bot_class,
+            "monogram": monogram,
+            "name":     name,
+            "state":    _v2_state(bot_class, status),
+            "seen_label": _v2_seen_label(bot_class, status),
+            "net_pnl":  net_pnl,
+            "net_pnl_display": _v2_pnl_display(net_pnl),
+            "trade_count": len(closed),
+            "win_rate_display": (f"{win_rate:.0f}%" if closed else "—"),
+        }
+
+    bot_status = data.get("bot_status") or {}
+    metrics = data.get("metrics") or {}
+
+    portfolio_closed = [t for t in trades
+                        if t.get("exit_price") not in (None, 0, "0", "")]
+    portfolio_net = sum(float(t.get("net_pnl") or 0) for t in portfolio_closed)
+
+    now = datetime.now(timezone.utc)
+    return {
+        "operator":  os.getenv("OPERATOR", "ayott84"),
+        "env":       "paper" if DRY_RUN else "live",
+        "freshness": "0s",
+        "build_sha": (os.getenv("GIT_SHA") or "local")[:8],
+        "build_ts":  now.strftime("%Y-%m-%d %H:%M UTC"),
+        "bots": [
+            _bot_card("momentum", "M", "Momentum", "Momentum",
+                      bot_status.get("momentum", {})),
+            _bot_card("whale",    "W", "Whale",    "Whale",
+                      bot_status.get("whale", {})),
+            _bot_card("funding",  "F", "Funding",  "Funding",
+                      bot_status.get("funding", {})),
+        ],
+        "portfolio": {
+            "net_pnl":          portfolio_net,
+            "net_pnl_display":  _v2_pnl_display(portfolio_net),
+            "closed_count":     len(portfolio_closed),
+            "open_count":       metrics.get("open_positions", 0),
+            "win_rate_display": f"{metrics.get('win_rate', 0):.1f}%",
+        },
+    }
+
+
+def _v2_state(bot_class: str, status: dict) -> str:
+    """Map heartbeat freshness + pause flags to the four V2 state names.
+
+    Whale is treated as "dormant" whenever WHALE_PAUSED is true regardless
+    of heartbeat — the paused state is the operational reality.
+    """
+    if bot_class == "whale":
+        try:
+            from whale_config import WHALE_PAUSED
+            if WHALE_PAUSED:
+                return "dormant"
+        except ImportError:
+            pass
+    css = (status or {}).get("css", "")
+    if css == "live":
+        return "live"
+    if css == "never":
+        return "never"
+    return "silent"
+
+
+def _v2_seen_label(bot_class: str, status: dict) -> str:
+    if bot_class == "whale":
+        try:
+            from whale_config import WHALE_PAUSED
+            if WHALE_PAUSED:
+                return "paused"
+        except ImportError:
+            pass
+    return (status or {}).get("age", "—")
+
+
+def _v2_pnl_display(amount: float) -> str:
+    """Sign-aware PnL string. Empty input → '$0.00'."""
+    if amount > 0:
+        return f"+${amount:,.2f}"
+    if amount < 0:
+        return f"−${abs(amount):,.2f}"
+    return "$0.00"
+
+
 def build_dashboard(executor, state: dict) -> None:
-    """Convenience: gather data and generate dashboard."""
+    """Convenience: gather data and generate dashboard.
+
+    Phase D: when DASHBOARD_V2=true, render via dashboard_renderer + Jinja2
+    templates. Default false → legacy generate_dashboard path.
+    """
+    from dashboard_renderer import dashboard_v2_enabled, render
+
     data = gather_dashboard_data(executor, state)
-    generate_dashboard(data)
+
+    if dashboard_v2_enabled():
+        ctx = _build_v2_context(data)
+        html = render("base.html.j2", ctx)
+        DASHBOARD_FILE.write_text(html, encoding="utf-8")
+        logger.info("Dashboard V2 written to %s", DASHBOARD_FILE)
+    else:
+        generate_dashboard(data)

@@ -1,0 +1,8 @@
+{# Bot status pill: dot + state caps + last-seen.
+   Expects: state ("live"|"silent"|"dormant"|"never"), seen_label (str). #}
+<span class="status-pill status-pill--{{ state }}" role="status" aria-live="polite">
+  <span class="status-pill__dot" aria-hidden="true"></span>
+  <span class="status-pill__state">{{ state|upper }}</span>
+  <span class="status-pill__sep">·</span>
+  <span class="status-pill__seen">{{ seen_label }}</span>
+</span>

@@ -1,0 +1,4 @@
+{# Single-letter bot monogram, stroked in bot color. Usage:
+   {% include "components/bot_monogram.html.j2" with context %}
+   Expects vars in scope: monogram (letter), bot_class (momentum|whale|funding). #}
+<span class="monogram monogram--{{ bot_class }}" aria-hidden="true">{{ monogram }}</span>

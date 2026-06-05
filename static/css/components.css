@@ -1,0 +1,209 @@
+/* ── Colophon strip ──────────────────────────────────────────────────────── */
+/* Newspaper-style metadata row at the very top. All caps, Departure Mono,
+ * heavily tracked — feels like a 1973 broadsheet masthead. */
+
+.colophon {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5);
+  background: var(--surface-1);
+  border-bottom: var(--border-thin);
+  font-family: var(--font-display);
+  font-size: var(--fs-9);
+  letter-spacing: 0.12em;
+  color: var(--ink-3);
+  flex-wrap: wrap;
+}
+
+.colophon__chip { white-space: nowrap; }
+.colophon__sep  { opacity: 0.4; }
+
+/* ── Status pill (breathing LIVE dot) ────────────────────────────────────── */
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  background: var(--surface-2);
+  border: var(--border-thin);
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-size: var(--fs-10);
+  letter-spacing: 0.1em;
+  color: var(--ink-2);
+}
+
+.status-pill__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-3);
+  flex-shrink: 0;
+}
+
+.status-pill--live .status-pill__dot {
+  background: var(--up);
+  animation: breath var(--motion-breath) ease-in-out infinite;
+}
+
+.status-pill--silent .status-pill__dot {
+  background: var(--warn);
+}
+
+.status-pill--dormant .status-pill__dot {
+  background: var(--b-whale);
+  opacity: 0.55;
+}
+
+.status-pill--never .status-pill__dot {
+  background: var(--down);
+  opacity: 0.55;
+}
+
+.status-pill__state {
+  color: var(--ink-1);
+  font-weight: 500;
+}
+
+.status-pill__sep { opacity: 0.4; }
+.status-pill__seen { color: var(--ink-3); }
+
+@keyframes breath {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+
+/* ── Bot monogram (M/W/F) ────────────────────────────────────────────────── */
+
+.monogram {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: var(--fs-13);
+  flex-shrink: 0;
+  background: var(--surface-0);
+}
+
+.monogram--momentum { color: var(--b-momentum); }
+.monogram--whale    { color: var(--b-whale); }
+.monogram--funding  { color: var(--b-funding); }
+
+/* ── Hero status board (3 bot cards side-by-side) ────────────────────────── */
+
+.hero-status {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.bot-card {
+  background: var(--surface-1);
+  border: var(--border-thin);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.bot-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.bot-card__name {
+  margin: 0;
+  font-size: var(--fs-18);
+  font-weight: 500;
+  color: var(--ink-1);
+}
+
+.bot-card__pnl {
+  margin: var(--space-3) 0 0;
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum" 1, "zero" 1, "ss02" 1;
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-size: var(--fs-32);
+  line-height: var(--lh-tight);
+  font-weight: 300;
+  color: var(--ink-1);
+}
+
+.bot-card__pnl.is-up   { color: var(--up); }
+.bot-card__pnl.is-down { color: var(--down); }
+
+.bot-card__meta {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-10);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+/* ── Portfolio totals strip ──────────────────────────────────────────────── */
+
+.portfolio-strip {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 1px;
+  background: var(--rule-soft);
+  border: var(--border-thin);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-bottom: var(--space-5);
+}
+
+.portfolio-strip__cell {
+  background: var(--surface-1);
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.portfolio-strip__label {
+  font-family: var(--font-display);
+  font-size: var(--fs-9);
+  letter-spacing: 0.12em;
+  color: var(--ink-3);
+}
+
+.portfolio-strip__value {
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum" 1, "zero" 1, "ss02" 1;
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-size: var(--fs-32);
+  line-height: var(--lh-tight);
+  font-weight: 300;
+  color: var(--ink-1);
+}
+
+.portfolio-strip__value.is-up   { color: var(--up); }
+.portfolio-strip__value.is-down { color: var(--down); }
+
+/* ── Breakpoints ─────────────────────────────────────────────────────────── */
+
+@media (max-width: 1024px) {
+  .hero-status { grid-template-columns: 1fr 1fr; }
+  .hero-status > :last-child { grid-column: 1 / -1; }
+  .portfolio-strip { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 640px) {
+  .hero-status { grid-template-columns: 1fr; }
+  .hero-status > :last-child { grid-column: auto; }
+  .portfolio-strip { grid-template-columns: 1fr; }
+  .bot-card__pnl, .portfolio-strip__value { font-size: var(--fs-24); }
+  .colophon { padding: var(--space-2) var(--space-3); }
+}

@@ -1,0 +1,51 @@
+<h1 class="tab-heading">Overview</h1>
+
+<section class="hero-status" aria-label="Bot status">
+  {% for bot in bots %}
+  <article class="bot-card bot-card--{{ bot.class }}">
+    <header class="bot-card__head">
+      {% with monogram=bot.monogram, bot_class=bot.class %}
+      {% include "components/bot_monogram.html.j2" %}
+      {% endwith %}
+      <h2 class="bot-card__name">{{ bot.name }}</h2>
+    </header>
+    {% with state=bot.state, seen_label=bot.seen_label %}
+    {% include "components/status_pill.html.j2" %}
+    {% endwith %}
+    <p class="bot-card__pnl
+              {% if bot.net_pnl > 0 %}is-up{% elif bot.net_pnl < 0 %}is-down{% endif %}">
+      {{ bot.net_pnl_display }}
+    </p>
+    <p class="bot-card__meta">
+      {{ bot.trade_count }} closed · WR {{ bot.win_rate_display }}
+    </p>
+  </article>
+  {% endfor %}
+</section>
+
+<section class="portfolio-strip" aria-label="Portfolio totals">
+  <div class="portfolio-strip__cell">
+    <span class="portfolio-strip__label">NET PnL · all bots</span>
+    <span class="portfolio-strip__value
+                {% if portfolio.net_pnl > 0 %}is-up{% elif portfolio.net_pnl < 0 %}is-down{% endif %}">
+      {{ portfolio.net_pnl_display }}
+    </span>
+  </div>
+  <div class="portfolio-strip__cell">
+    <span class="portfolio-strip__label">CLOSED</span>
+    <span class="portfolio-strip__value">{{ portfolio.closed_count }}</span>
+  </div>
+  <div class="portfolio-strip__cell">
+    <span class="portfolio-strip__label">OPEN</span>
+    <span class="portfolio-strip__value">{{ portfolio.open_count }}</span>
+  </div>
+  <div class="portfolio-strip__cell">
+    <span class="portfolio-strip__label">WIN RATE</span>
+    <span class="portfolio-strip__value">{{ portfolio.win_rate_display }}</span>
+  </div>
+</section>
+
+<p class="phase-note">
+  Phase D.1a · status pills + portfolio strip are live. Stat cards, equity curve,
+  trade log, regime heatmap, and per-bot tabs land in subsequent D.1+ commits.
+</p>

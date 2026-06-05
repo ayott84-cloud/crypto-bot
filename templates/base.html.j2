@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <meta http-equiv="refresh" content="300">
+  <title>Crypto Bots · Operator</title>
+  <link rel="stylesheet" href="/static/css/tokens.css">
+  <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/layout.css">
+  <link rel="stylesheet" href="/static/css/components.css">
+</head>
+<body>
+  {% include "components/colophon.html.j2" %}
+
+  <nav class="tab-nav" role="tablist" aria-label="Dashboard sections">
+    <button role="tab" aria-selected="true"  aria-controls="tab-overview"   data-tab="overview"   class="active">Overview</button>
+    <button role="tab" aria-selected="false" aria-controls="tab-trades"     data-tab="trades">Trade Log</button>
+    <button role="tab" aria-selected="false" aria-controls="tab-projection" data-tab="projection">Projection</button>
+    <button role="tab" aria-selected="false" aria-controls="tab-whale"      data-tab="whale">Whale</button>
+    <button role="tab" aria-selected="false" aria-controls="tab-funding"    data-tab="funding">Funding</button>
+  </nav>
+
+  <main class="page">
+    <section role="tabpanel" id="tab-overview"   tabindex="0">
+      {% include "tabs/overview.html.j2" %}
+    </section>
+    <section role="tabpanel" id="tab-trades"     tabindex="0" hidden>
+      {% include "tabs/trades.html.j2" %}
+    </section>
+    <section role="tabpanel" id="tab-projection" tabindex="0" hidden>
+      {% include "tabs/projection.html.j2" %}
+    </section>
+    <section role="tabpanel" id="tab-whale"      tabindex="0" hidden>
+      {% include "tabs/whale.html.j2" %}
+    </section>
+    <section role="tabpanel" id="tab-funding"    tabindex="0" hidden>
+      {% include "tabs/funding.html.j2" %}
+    </section>
+  </main>
+
+  <footer class="page-foot">
+    <span class="page-foot__build">Build · {{ build_sha }} · {{ build_ts }}</span>
+    <span class="page-foot__phase">Phase D dashboard rebuild in progress · set <code>DASHBOARD_V2=false</code> to revert</span>
+  </footer>
+
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>
