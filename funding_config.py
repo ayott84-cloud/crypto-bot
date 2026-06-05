@@ -104,10 +104,20 @@ FUNDING_NORMALIZE_INNER_LOW_PCTILE = 25
 FUNDING_NORMALIZE_INNER_HIGH_PCTILE = 75
 
 # ─── Symbol universe ─────────────────────────────────────────────────────────
-# Intersect WEEX-listed perps with top-100 market cap (same plumbing whale
-# bot uses). Skip the funding-extreme signal on coins outside top-100 —
-# they have noisy funding and shallow books.
-# The whale_universe module is reused; nothing new to configure here.
+# Phase C.1: the top-100 market-cap filter (whale_universe.get_top_symbols)
+# excluded exactly the long-tail coins where funding extremes live (HOMEUSDT
+# at -2190% APR, VICUSDT at -815%, 1000BTTUSDT at -315% on 2026-05-22 — all
+# outside top-100 but well above any sensible OI floor). New default: select
+# by OI in USD from the HL meta_and_ctxs response we already fetch per cycle.
+#
+#   "OI"      Use OI floor only (recommended). HOMEUSDT et al become reachable.
+#   "TOP100"  Legacy market-cap filter via whale_universe.get_top_symbols.
+FUNDING_UNIVERSE_MODE = os.getenv("FUNDING_UNIVERSE_MODE", "OI").upper()
+
+# OI floor for the universe filter (separate from FUNDING_MIN_OI_USD which
+# is the per-signal safety net checked inside classify()). Same default;
+# the two can diverge if we later want a tighter universe-stage cut.
+FUNDING_UNIVERSE_MIN_OI_USD = 20_000_000
 
 # ─── State / logging paths ───────────────────────────────────────────────────
 FUNDING_STATE_KEY_PREFIX = "FUNDING_"  # state.json keys, e.g. "FUNDING_BTC"

@@ -48,7 +48,9 @@ from funding_config import (
     FUNDING_SIGNAL_LOG, FUNDING_HEARTBEAT,
     FUNDING_ATR_PERIOD, FUNDING_ATR_INTERVAL, FUNDING_ATR_SMA_PERIOD,
     FUNDING_TREND_EMA_PERIOD,
+    FUNDING_UNIVERSE_MODE, FUNDING_UNIVERSE_MIN_OI_USD,
 )
+from funding_universe import get_perp_universe_by_oi
 from funding_signals import (
     classify, compute_atr_and_sma, compute_ema_and_slope, trend_allows_fade,
     in_execution_window,
@@ -404,8 +406,19 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
     # Manage existing positions every cycle, even outside execution window
     manage_open_positions(executor, state, hl_ctx_map)
 
-    # Refresh rolling history for top-100 coins (cheap, mostly cache hits)
-    top_universe = get_top_symbols()
+    # Phase C.1: select universe by OI (default) or legacy top-100 market cap.
+    # OI mode lets the bot see long-tail coins where funding extremes live
+    # (HOMEUSDT, VICUSDT, 1000BTTUSDT) — they have $20M+ OI but were excluded
+    # by top-100 market cap.
+    if FUNDING_UNIVERSE_MODE == "OI":
+        top_universe = get_perp_universe_by_oi(
+            hl_ctx_map, min_oi_usd=FUNDING_UNIVERSE_MIN_OI_USD,
+        )
+        logger.info("Universe (OI mode, min=$%.0fM): %d coins",
+                    FUNDING_UNIVERSE_MIN_OI_USD / 1_000_000, len(top_universe))
+    else:
+        top_universe = get_top_symbols()
+        logger.info("Universe (TOP100 legacy mode): %d coins", len(top_universe))
     candidates = []
     for coin in top_universe:
         weex_sym = f"{coin}USDT"
