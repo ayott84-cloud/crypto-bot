@@ -1,23 +1,18 @@
-"""Dashboard Jinja2 renderer — Phase D foundation.
+"""Dashboard Jinja2 renderer.
 
 Loads templates from `templates/` and inlines `static/css/*.css` +
 `static/js/*.js` into a single self-contained HTML document. The Render
-deploy model is preserved: build_dashboard() emits one `dashboard.html`
-the dashboard-push.timer force-pushes to the render-dashboard branch.
+deploy model: build_dashboard() emits one `dashboard.html` the
+dashboard-push.timer force-pushes to the render-dashboard branch.
 
-Feature-flagged behind `DASHBOARD_V2` (env var). As of Phase D.6 the
-default is ON — V2 ships unless the operator opts out via
-DASHBOARD_V2=false. The legacy f-string renderer is still wired up as a
-fallback escape hatch; Phase D.7 will retire it.
-
-This module is intentionally small. The template tree under templates/
-is where the actual presentation logic lives.
+As of Phase D.7 this is the only renderer; the legacy f-string path has
+been retired. The template tree under templates/ holds all presentation
+logic.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from typing import Any, Dict
 
@@ -26,17 +21,6 @@ logger = logging.getLogger("crypto_bot.dashboard_renderer")
 _BOT_DIR = Path(__file__).resolve().parent
 _TEMPLATES_DIR = _BOT_DIR / "templates"
 _STATIC_DIR = _BOT_DIR / "static"
-
-
-def dashboard_v2_enabled() -> bool:
-    """Feature flag — default ON as of Phase D.6.
-
-    V2 is the default Quant Cockpit renderer. Operators can opt back into
-    the legacy f-string dashboard with DASHBOARD_V2=false (or 0/no/off).
-    """
-    return os.getenv("DASHBOARD_V2", "true").lower() not in (
-        "false", "0", "no", "off"
-    )
 
 
 def _lazy_env():

@@ -1,8 +1,8 @@
-"""Unit tests for dashboard_renderer (Phase D.0 scaffolding).
+"""Unit tests for dashboard_renderer.
 
-Verifies the foundation: feature flag is off by default, and the static-asset
-inliner correctly substitutes <link> and <script> tags with the actual file
-contents.
+Phase D.7 retired the legacy f-string renderer. The feature-flag function
+is gone; this module now only handles template loading and static asset
+inlining.
 
 Run: python -m pytest tests/test_dashboard_renderer.py -v
 """
@@ -23,30 +23,13 @@ import pytest
 import dashboard_renderer
 
 
-# ─── Feature flag ──────────────────────────────────────────────────────────
-# Phase D.6: default flipped to ON. V2 is now the default; DASHBOARD_V2=false
-# opts out to the legacy renderer.
+# ─── Legacy retirement ─────────────────────────────────────────────────────
 
-def test_dashboard_v2_enabled_by_default(monkeypatch):
-    monkeypatch.delenv("DASHBOARD_V2", raising=False)
-    assert dashboard_renderer.dashboard_v2_enabled() is True
-
-
-def test_dashboard_v2_disabled_when_flag_explicitly_false(monkeypatch):
-    monkeypatch.setenv("DASHBOARD_V2", "false")
-    assert dashboard_renderer.dashboard_v2_enabled() is False
-
-
-def test_dashboard_v2_accepts_alternate_falsy_values(monkeypatch):
-    for v in ("0", "no", "off", "FALSE", "False"):
-        monkeypatch.setenv("DASHBOARD_V2", v)
-        assert dashboard_renderer.dashboard_v2_enabled() is False
-
-
-def test_dashboard_v2_enabled_for_truthy_or_garbage(monkeypatch):
-    for v in ("true", "1", "yes", "TRUE", "asdf"):
-        monkeypatch.setenv("DASHBOARD_V2", v)
-        assert dashboard_renderer.dashboard_v2_enabled() is True
+def test_dashboard_v2_enabled_function_removed():
+    """Phase D.7: the DASHBOARD_V2 feature flag no longer exists. V2 is the
+    only renderer. Confirming the function is gone protects against
+    accidental restoration."""
+    assert not hasattr(dashboard_renderer, "dashboard_v2_enabled")
 
 
 # ─── Static-asset inlining ─────────────────────────────────────────────────
