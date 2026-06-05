@@ -145,10 +145,10 @@ def test_find_phantom_10_returns_none_when_no_row_at_id_10(tmp_path):
 # ─── Orphan detection ──────────────────────────────────────────────────────
 
 def test_find_orphans_returns_whale_rows_not_in_state(tmp_path):
-    """Whale rows with date_closed=NULL whose state_key is missing from state.json."""
+    """Whale entry-rows (exit_price=NULL) whose state_key is missing from state.json."""
     db = tmp_path / "trades.db"
     _make_db(db, [
-        _row(1, "UNIUSDT", "SHORT", "Whale Track UNI SHORT", "Whale"),  # orphan
+        _row(1, "UNIUSDT", "SHORT", "Whale Track UNI SHORT", "Whale"),  # orphan (exit_price=None)
         _row(2, "ASTERUSDT", "SHORT", "Whale Track ASTER SHORT", "Whale"),  # orphan
         _row(3, "DOGEUSDT", "SHORT", "Whale Track DOGE SHORT", "Whale"),  # in state, NOT orphan
     ])
@@ -157,12 +157,16 @@ def test_find_orphans_returns_whale_rows_not_in_state(tmp_path):
     assert {o["id"] for o in orphans} == {1, 2}
 
 
-def test_find_orphans_excludes_closed_rows(tmp_path):
-    """A closed whale row (date_closed set) is not an orphan."""
+def test_find_orphans_excludes_rows_with_exit_price(tmp_path):
+    """A whale row with exit_price set is closed (regardless of date_closed)."""
     db = tmp_path / "trades.db"
     _make_db(db, [
+        # Pre-fix whale close-rows have exit_price set but date_closed=NULL.
+        # The v2 filter must use exit_price, not date_closed.
         _row(1, "UNIUSDT", "SHORT", "Whale Track UNI SHORT", "Whale",
-             date_closed="2026-05-08T10:00:00"),  # closed → not an orphan
+             exit_price=3.35, date_closed=None),  # closed (exit_price set) — NOT orphan
+        _row(2, "ASTERUSDT", "SHORT", "Whale Track ASTER SHORT", "Whale",
+             exit_price=0.68, date_closed="2026-05-08T10:00:00"),  # closed — NOT orphan
     ])
     assert find_whale_orphans(db, state_keys=set()) == []
 

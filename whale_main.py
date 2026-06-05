@@ -467,6 +467,7 @@ def close_whale_position(
             strategy=pos.get("strategy", f"{WHALE_STRATEGY_TAG} {coin}"),
             exit_reason=reason,
             notes=f"closed at ${exit_price:.4f}",
+            date_closed=datetime.now(timezone.utc),
         )
     except Exception as e:
         logger.error("log_trade failed for %s (state already stripped, "

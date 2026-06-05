@@ -87,7 +87,13 @@ def find_phantom_10(db_path: Path) -> Optional[dict]:
 
 
 def find_whale_orphans(db_path: Path, state_keys: set) -> list[dict]:
-    """Whale rows with date_closed IS NULL whose state_key isn't in state.json.
+    """Whale entry-rows (exit_price IS NULL) whose state_key isn't in state.json.
+
+    Important: the filter is `exit_price IS NULL`, NOT `date_closed IS NULL`.
+    Pre-fix whale_main.close_whale_position did not pass date_closed to
+    log_trade, so legitimately-closed whale rows have date_closed=NULL but
+    exit_price=set. Filtering on date_closed would wrongly catch those as
+    orphans (producing duplicate FLAT closes in the journal).
 
     These were opened (logged) but never had their close written — either the
     bot crashed mid-close, or the pre-A.2 close path failed at log_trade and
@@ -98,7 +104,7 @@ def find_whale_orphans(db_path: Path, state_keys: set) -> list[dict]:
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
-            "SELECT * FROM trades WHERE date_closed IS NULL AND bot = 'Whale'"
+            "SELECT * FROM trades WHERE exit_price IS NULL AND bot = 'Whale'"
         ).fetchall()
     finally:
         conn.close()
@@ -205,9 +211,13 @@ def main(argv=None) -> int:
 
     if args.purge_phantom_10:
         if phantom:
+            ep = phantom.get("exit_price") or 0.0
+            qty = phantom.get("quantity") or 0.0
+            net_long_math = (ep - phantom["entry_price"]) * qty
             print(f"PHANTOM #10: id={phantom['id']} {phantom['symbol']} "
                   f"strategy='{phantom['strategy']}' direction={phantom['direction']} "
-                  f"net (LONG-math)=${(phantom.get('exit_price') or 0 - phantom['entry_price']) * phantom['quantity']:.2f}")
+                  f"entry={phantom['entry_price']} exit={ep} "
+                  f"net (LONG-math)=${net_long_math:.2f}")
         else:
             print("PHANTOM #10: no matching row at id=10 (nothing to do).")
 
