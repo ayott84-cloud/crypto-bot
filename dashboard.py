@@ -1855,6 +1855,85 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
         "trades": _v2_trade_rows(trades),
         "whale_meta":   _v2_whale_meta(trades),
         "funding_meta": _v2_funding_meta(trades),
+        "projection":   _v2_projection(),
+    }
+
+
+def _v2_test_context(trades: list | None = None, **overrides) -> dict:
+    """Build a complete V2 template context using the real shapers.
+
+    Centralized so test helpers don't drift behind context-key additions
+    in _build_v2_context(). Pass `trades=[]` for the zero-state, or a
+    list of trade dicts for non-empty cases. Override any top-level key
+    via kwargs.
+    """
+    trades = trades or []
+    ctx = {
+        "operator": "ayott84", "env": "paper", "freshness": "0s",
+        "build_sha": "abc12345", "build_ts": "2026-06-05 00:00 UTC",
+        "bots": [
+            {"class": "momentum", "monogram": "M", "name": "Momentum",
+             "state": "live", "seen_label": "0s ago",
+             "net_pnl": 0, "net_pnl_display": "$0.00",
+             "trade_count": 0, "win_rate_display": "—"},
+            {"class": "whale", "monogram": "W", "name": "Whale",
+             "state": "dormant", "seen_label": "paused",
+             "net_pnl": 0, "net_pnl_display": "$0.00",
+             "trade_count": 0, "win_rate_display": "—"},
+            {"class": "funding", "monogram": "F", "name": "Funding",
+             "state": "live", "seen_label": "0s ago",
+             "net_pnl": 0, "net_pnl_display": "$0.00",
+             "trade_count": 0, "win_rate_display": "—"},
+        ],
+        "portfolio": {"net_pnl": 0, "net_pnl_display": "$0.00",
+                      "closed_count": 0, "open_count": 0,
+                      "win_rate_display": "—"},
+        "trades":       _v2_trade_rows(trades),
+        "whale_meta":   _v2_whale_meta(trades),
+        "funding_meta": _v2_funding_meta(trades),
+        "projection":   _v2_projection(),
+    }
+    ctx.update(overrides)
+    return ctx
+
+
+def _v2_projection() -> dict:
+    """Wrap _compute_yearly_projection() with display-formatted fields.
+
+    Returns dict with `rows` (per-strategy + whale), `total_annual`,
+    `total_trades_per_year`, and the pre-formatted display strings the
+    template renders.
+    """
+    proj = _compute_yearly_projection()
+    rows = proj.get("rows", [])
+    total_annual = proj.get("total_annual", 0.0)
+    total_trades = proj.get("total_trades_per_year", 0.0)
+    starting_capital = INITIAL_CAPITAL
+    annual_pct = (total_annual / starting_capital * 100) if starting_capital > 0 else 0
+
+    def _fmt(row):
+        return {
+            **row,
+            "annual_pnl_live_display": _v2_pnl_display(row.get("annual_pnl_live", 0.0)),
+            "pf_display":              f"{row.get('pf', 0):.2f}",
+            "annual_pct_display":      f"{row.get('annual_pct_backtest', 0):+.1f}%",
+            "trades_per_year_display": f"{row.get('trades_per_year', 0):.1f}",
+            "dd_display":              f"{row.get('dd_pct', 0):.1f}%",
+            "is_whale":                row.get("is_whale", False),
+        }
+
+    return {
+        "rows":                       [_fmt(r) for r in rows],
+        "starting_capital":           starting_capital,
+        "starting_capital_display":   f"${starting_capital:,.0f}",
+        "live_notional":              proj.get("live_notional", 0.0),
+        "live_notional_display":      f"${proj.get('live_notional', 0):,.0f}",
+        "total_annual":               total_annual,
+        "total_annual_display":       _v2_pnl_display(total_annual),
+        "annual_pct":                 annual_pct,
+        "annual_pct_display":         f"{annual_pct:+.2f}%",
+        "total_trades_per_year":      total_trades,
+        "total_trades_display":       f"{total_trades:.1f}",
     }
 
 

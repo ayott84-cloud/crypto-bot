@@ -56,6 +56,7 @@ def _ctx(net_pnl: float = -147.47):
         "trades":       [],
         "whale_meta":   dashboard._v2_whale_meta([]),
         "funding_meta": dashboard._v2_funding_meta([]),
+        "projection":   dashboard._v2_projection(),
     }
 
 

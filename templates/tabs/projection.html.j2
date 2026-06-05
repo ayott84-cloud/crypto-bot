@@ -1,5 +1,85 @@
 <h1 class="tab-heading">Yearly Projection</h1>
-<p class="phase-note phase-note--placeholder">
-  Migrates in a later D.1 commit. Same starting capital · notional/trade ·
-  projected annual rows the legacy view shows.
+
+<section class="kv-grid" aria-label="Headline projection">
+  <div class="kv-cell">
+    <span class="kv-cell__k">STARTING CAPITAL</span>
+    <span class="kv-cell__v">{{ projection.starting_capital_display }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">NOTIONAL · per trade</span>
+    <span class="kv-cell__v">{{ projection.live_notional_display }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">PROJECTED ANNUAL PnL</span>
+    <span class="kv-cell__v
+                {% if projection.total_annual > 0 %}is-up
+                {% elif projection.total_annual < 0 %}is-down{% endif %}">
+      {{ projection.total_annual_display }}
+    </span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">PROJECTED ANNUAL %</span>
+    <span class="kv-cell__v
+                {% if projection.annual_pct > 0 %}is-up
+                {% elif projection.annual_pct < 0 %}is-down{% endif %}">
+      {{ projection.annual_pct_display }}
+    </span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">TRADES / YEAR</span>
+    <span class="kv-cell__v">{{ projection.total_trades_display }}</span>
+  </div>
+</section>
+
+<div class="trades-table-wrap">
+  <table class="trades-table" aria-label="Per-strategy projection">
+    <caption class="sr-only">
+      Per-strategy yearly projection scaled from backtest results to live sizing.
+    </caption>
+    <thead>
+      <tr>
+        <th scope="col">Strategy</th>
+        <th scope="col">Symbol</th>
+        <th scope="col">TF</th>
+        <th scope="col" data-sort-type="num">PF</th>
+        <th scope="col" data-sort-type="num">Trades/yr</th>
+        <th scope="col" data-sort-type="num">Annual %</th>
+        <th scope="col" data-sort-type="num">Max DD</th>
+        <th scope="col" data-sort-type="num">Annual PnL</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in projection.rows %}
+      <tr>
+        <td class="trades-table__strategy">{{ r.name }}</td>
+        <td class="trades-table__symbol">{{ r.symbol }}</td>
+        <td class="trades-table__date">{{ r.interval }}</td>
+        <td class="num">{{ r.pf_display }}</td>
+        <td class="num">{{ r.trades_per_year_display }}</td>
+        <td class="num">{{ r.annual_pct_display }}</td>
+        <td class="num">{{ r.dd_display }}</td>
+        <td class="num
+                    {% if r.annual_pnl_live > 0 %}is-up
+                    {% elif r.annual_pnl_live < 0 %}is-down{% endif %}">
+          {{ r.annual_pnl_live_display }}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not projection.rows %}
+      <tr>
+        <td colspan="8" class="trades-table__strategy" style="text-align:center; padding: var(--space-5);">
+          <em>No strategies with backtest stats configured.</em>
+        </td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<p class="phase-note">
+  Projection scales backtest $ PnL to your live sizing
+  ({{ projection.live_notional_display }} notional per trade) and divides
+  by the backtest window. Treat as <em>rough</em> — past performance
+  doesn't predict future regime, and the funding bot has zero backtest
+  history so it's not reflected here.
 </p>
