@@ -1853,6 +1853,95 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
             "win_rate_display": f"{metrics.get('win_rate', 0):.1f}%",
         },
         "trades": _v2_trade_rows(trades),
+        "whale_meta":   _v2_whale_meta(trades),
+        "funding_meta": _v2_funding_meta(trades),
+    }
+
+
+def _v2_whale_meta(trades: List[dict]) -> dict:
+    """Whale-specific metadata for the Whale tab — paused state + post-mortem."""
+    try:
+        from whale_config import WHALE_PAUSED
+    except ImportError:
+        WHALE_PAUSED = False
+    whale_trades = [t for t in trades if t.get("bot") == "Whale"]
+    closed = [t for t in whale_trades
+              if t.get("exit_price") not in (None, 0, "0", "")]
+    pnl_list = [float(t.get("net_pnl") or 0) for t in closed]
+    wins = [p for p in pnl_list if p > 0]
+    losses = [p for p in pnl_list if p < 0]
+    return {
+        "paused":            bool(WHALE_PAUSED),
+        "pause_reason":      "peer-review consensus: 12/14 trades SL-hit; "
+                             "retire or redesign before re-enabling",
+        "closed_count":      len(closed),
+        "wins":              len(wins),
+        "losses":            len(losses),
+        "flats":             len(closed) - len(wins) - len(losses),
+        "win_rate_display":  (f"{len(wins) / len(closed) * 100:.1f}%"
+                              if closed else "—"),
+        "net_pnl_display":   _v2_pnl_display(sum(pnl_list)),
+        "best_display":      _v2_pnl_display(max(pnl_list) if pnl_list else 0),
+        "worst_display":     _v2_pnl_display(min(pnl_list) if pnl_list else 0),
+        "avg_loss_display":  _v2_pnl_display(
+                                sum(losses) / len(losses) if losses else 0),
+    }
+
+
+def _v2_funding_meta(trades: List[dict]) -> dict:
+    """Funding-specific metadata for the Funding tab — config + state."""
+    try:
+        from funding_config import (
+            FUNDING_PAUSED, FUNDING_UNIVERSE_MODE, FUNDING_UNIVERSE_MIN_OI_USD,
+            FUNDING_PERCENTILE_THRESHOLD, FUNDING_ABSOLUTE_FLOOR,
+            FUNDING_MIN_OI_USD, FUNDING_EXECUTION_WINDOW_MINUTES,
+            FUNDING_FIXING_HOURS_UTC,
+            FUNDING_ALLOW_LONG_FADE, FUNDING_ALLOW_SHORT_FADE,
+            FUNDING_MARGIN_USD, FUNDING_LEVERAGE,
+            FUNDING_REQUIRE_LOW_VOL,
+        )
+        config_available = True
+    except ImportError:
+        FUNDING_PAUSED = False
+        FUNDING_UNIVERSE_MODE = "OI"
+        FUNDING_UNIVERSE_MIN_OI_USD = 20_000_000
+        FUNDING_PERCENTILE_THRESHOLD = 97.0
+        FUNDING_ABSOLUTE_FLOOR = 0.0005
+        FUNDING_MIN_OI_USD = 20_000_000
+        FUNDING_EXECUTION_WINDOW_MINUTES = 30
+        FUNDING_FIXING_HOURS_UTC = (0, 8, 16)
+        FUNDING_ALLOW_LONG_FADE = True
+        FUNDING_ALLOW_SHORT_FADE = True
+        FUNDING_MARGIN_USD = 25.0
+        FUNDING_LEVERAGE = 10
+        FUNDING_REQUIRE_LOW_VOL = True
+        config_available = False
+
+    funding_trades = [t for t in trades if t.get("bot") == "Funding"]
+    closed = [t for t in funding_trades
+              if t.get("exit_price") not in (None, 0, "0", "")]
+    pnl_list = [float(t.get("net_pnl") or 0) for t in closed]
+
+    return {
+        "config_available":   config_available,
+        "paused":              bool(FUNDING_PAUSED),
+        "universe_mode":       FUNDING_UNIVERSE_MODE,
+        "universe_min_oi_m":   FUNDING_UNIVERSE_MIN_OI_USD / 1_000_000,
+        "percentile":          float(FUNDING_PERCENTILE_THRESHOLD),
+        "absolute_floor_pct":  float(FUNDING_ABSOLUTE_FLOOR) * 100,
+        "min_oi_m":            FUNDING_MIN_OI_USD / 1_000_000,
+        "window_minutes":      int(FUNDING_EXECUTION_WINDOW_MINUTES),
+        "fixing_hours":        list(FUNDING_FIXING_HOURS_UTC),
+        "allow_long_fade":     bool(FUNDING_ALLOW_LONG_FADE),
+        "allow_short_fade":    bool(FUNDING_ALLOW_SHORT_FADE),
+        "require_low_vol":     bool(FUNDING_REQUIRE_LOW_VOL),
+        "margin_usd":          float(FUNDING_MARGIN_USD),
+        "leverage":            int(FUNDING_LEVERAGE),
+        "notional_usd":        float(FUNDING_MARGIN_USD) * int(FUNDING_LEVERAGE),
+        "closed_count":        len(closed),
+        "win_rate_display":    (f"{sum(1 for p in pnl_list if p > 0) / len(pnl_list) * 100:.1f}%"
+                                if pnl_list else "—"),
+        "net_pnl_display":     _v2_pnl_display(sum(pnl_list)),
     }
 
 

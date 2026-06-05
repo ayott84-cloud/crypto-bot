@@ -1,6 +1,123 @@
 <h1 class="tab-heading">Funding</h1>
-<p class="phase-note phase-note--placeholder">
-  Migrates in a later D.1 commit: funding distribution sparkline per coin,
-  universe-mode banner (<code>OI</code> vs legacy <code>TOP100</code>),
-  open positions, latest signal scan.
+
+{% if funding_meta.paused %}
+<div class="banner banner--paused" role="status">
+  <span class="banner__label">PAUSED</span>
+  <span class="banner__msg">
+    <code>FUNDING_PAUSED=true</code> — bot is not opening new entries.
+    Existing positions still manage to exit.
+  </span>
+</div>
+{% elif funding_meta.closed_count == 0 %}
+<div class="banner banner--info" role="status">
+  <span class="banner__label">AWAITING SIGNAL</span>
+  <span class="banner__msg">
+    Bot is live. Zero closed trades yet — funding extremes meeting all
+    filters haven't fired in the execution window since last reset.
+  </span>
+</div>
+{% endif %}
+
+<section class="config-grid" aria-label="Funding bot configuration">
+  <h2 class="config-grid__heading">Configuration</h2>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Universe mode</span>
+    <span class="kv-row__v">
+      <code>{{ funding_meta.universe_mode }}</code>
+      <span class="kv-row__hint">
+        {% if funding_meta.universe_mode == "OI" %}
+          OI ≥ ${{ "%.0f"|format(funding_meta.universe_min_oi_m) }}M from HL metaAndAssetCtxs
+        {% else %}
+          Top-100 market cap (legacy)
+        {% endif %}
+      </span>
+    </span>
+  </div>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Percentile threshold</span>
+    <span class="kv-row__v">
+      <code>{{ funding_meta.percentile }}th</code>
+      <span class="kv-row__hint">of 30-day rolling distribution</span>
+    </span>
+  </div>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Absolute floor</span>
+    <span class="kv-row__v">
+      <code>{{ "%.3f"|format(funding_meta.absolute_floor_pct) }}%</code>
+      <span class="kv-row__hint">per 8h funding period (fees gate)</span>
+    </span>
+  </div>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Min OI (per signal)</span>
+    <span class="kv-row__v">
+      <code>${{ "%.0f"|format(funding_meta.min_oi_m) }}M</code>
+      <span class="kv-row__hint">post-universe safety net</span>
+    </span>
+  </div>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Execution window</span>
+    <span class="kv-row__v">
+      <code>±{{ funding_meta.window_minutes }}min</code>
+      <span class="kv-row__hint">
+        around {% for h in funding_meta.fixing_hours %}{{ "%02d"|format(h) }}:00{% if not loop.last %} · {% endif %}{% endfor %} UTC
+      </span>
+    </span>
+  </div>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Vol regime gate</span>
+    <span class="kv-row__v">
+      <code>{{ "LOW only" if funding_meta.require_low_vol else "any" }}</code>
+      <span class="kv-row__hint">ATR vs 20-period SMA</span>
+    </span>
+  </div>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Direction toggles</span>
+    <span class="kv-row__v">
+      <span class="dir dir--long" style="opacity: {{ '1' if funding_meta.allow_long_fade else '0.3' }};">
+        LONG {{ "ON" if funding_meta.allow_long_fade else "OFF" }}
+      </span>
+      <span class="dir dir--short" style="opacity: {{ '1' if funding_meta.allow_short_fade else '0.3' }};">
+        SHORT {{ "ON" if funding_meta.allow_short_fade else "OFF" }}
+      </span>
+    </span>
+  </div>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Sizing</span>
+    <span class="kv-row__v">
+      <code>${{ "%.0f"|format(funding_meta.margin_usd) }} margin × {{ funding_meta.leverage }}x = ${{ "%.0f"|format(funding_meta.notional_usd) }} notional</code>
+      <span class="kv-row__hint">half-size validation</span>
+    </span>
+  </div>
+</section>
+
+<section class="kv-grid" aria-label="Funding bot performance">
+  <div class="kv-cell">
+    <span class="kv-cell__k">CLOSED TRADES</span>
+    <span class="kv-cell__v">{{ funding_meta.closed_count }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">WIN RATE</span>
+    <span class="kv-cell__v">{{ funding_meta.win_rate_display }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">NET PnL</span>
+    <span class="kv-cell__v
+                {% if funding_meta.net_pnl_display.startswith('+') %}is-up
+                {% elif funding_meta.net_pnl_display.startswith('−') %}is-down{% endif %}">
+      {{ funding_meta.net_pnl_display }}
+    </span>
+  </div>
+</section>
+
+<p class="phase-note">
+  Phase D.1c · funding tab shows config + state. Per-coin funding-rate
+  distribution sparklines and the live universe size come in D.2.
 </p>

@@ -1,6 +1,54 @@
 <h1 class="tab-heading">Whale</h1>
-<p class="phase-note phase-note--placeholder">
-  Whale is currently <strong>paused</strong> (<code>WHALE_PAUSED=true</code>).
-  Tab content migrates in a later D.1 commit: post-mortem stats, dormant
-  banner with peer-review consensus note, recent SL hits table.
+
+{% if whale_meta.paused %}
+<div class="banner banner--dormant" role="status">
+  <span class="banner__label">DORMANT · PAUSED</span>
+  <span class="banner__msg">{{ whale_meta.pause_reason }}</span>
+</div>
+{% endif %}
+
+<section class="kv-grid" aria-label="Whale post-mortem stats">
+  <div class="kv-cell">
+    <span class="kv-cell__k">NET PnL</span>
+    <span class="kv-cell__v
+                {% if whale_meta.net_pnl_display.startswith('+') %}is-up
+                {% elif whale_meta.net_pnl_display.startswith('−') %}is-down{% endif %}">
+      {{ whale_meta.net_pnl_display }}
+    </span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">CLOSED</span>
+    <span class="kv-cell__v">{{ whale_meta.closed_count }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">W / L / F</span>
+    <span class="kv-cell__v">
+      {{ whale_meta.wins }} <span class="kv-cell__sep">·</span>
+      {{ whale_meta.losses }} <span class="kv-cell__sep">·</span>
+      {{ whale_meta.flats }}
+    </span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">WIN RATE</span>
+    <span class="kv-cell__v">{{ whale_meta.win_rate_display }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">BEST TRADE</span>
+    <span class="kv-cell__v is-up">{{ whale_meta.best_display }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">WORST TRADE</span>
+    <span class="kv-cell__v is-down">{{ whale_meta.worst_display }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">AVG LOSS</span>
+    <span class="kv-cell__v is-down">{{ whale_meta.avg_loss_display }}</span>
+  </div>
+</section>
+
+<p class="phase-note">
+  Phase D.1c · whale tab is now post-mortem only — actionable controls land
+  if/when the bot is redesigned and unpaused. To re-enable, set
+  <code>WHALE_PAUSED=false</code> in <code>.env</code> and restart the
+  whale service; the dashboard pill flips back to LIVE on next cycle.
 </p>

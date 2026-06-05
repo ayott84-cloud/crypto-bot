@@ -369,6 +369,131 @@
 .result-pill--flat { color: var(--warn); }
 .result-pill--open { color: var(--ink-3); }
 
+/* ── Banner (paused / dormant / awaiting) ──────────────────────────────── */
+
+.banner {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-5);
+  background: var(--surface-1);
+  border-left: 3px solid var(--ink-3);
+}
+
+.banner--dormant { border-left-color: var(--b-whale); }
+.banner--paused  { border-left-color: var(--warn); }
+.banner--info    { border-left-color: var(--info); }
+
+.banner__label {
+  font-family: var(--font-display);
+  font-size: var(--fs-10);
+  letter-spacing: 0.12em;
+  color: var(--ink-1);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.banner__msg {
+  color: var(--ink-2);
+  font-size: var(--fs-13);
+}
+
+/* ── KV grid (responsive stat cards) ───────────────────────────────────── */
+
+.kv-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1px;
+  background: var(--rule-soft);
+  border: var(--border-thin);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-bottom: var(--space-5);
+}
+
+.kv-cell {
+  background: var(--surface-1);
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.kv-cell__k {
+  font-family: var(--font-display);
+  font-size: var(--fs-9);
+  letter-spacing: 0.12em;
+  color: var(--ink-3);
+}
+
+.kv-cell__v {
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum" 1, "zero" 1, "ss02" 1;
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-size: var(--fs-24);
+  line-height: var(--lh-tight);
+  font-weight: 300;
+  color: var(--ink-1);
+}
+
+.kv-cell__v.is-up   { color: var(--up); }
+.kv-cell__v.is-down { color: var(--down); }
+.kv-cell__sep       { color: var(--ink-3); margin: 0 var(--space-1); }
+
+/* ── Config grid (label / value+hint rows) ─────────────────────────────── */
+
+.config-grid {
+  background: var(--surface-1);
+  border: var(--border-thin);
+  border-radius: var(--radius-md);
+  padding: var(--space-5);
+  margin-bottom: var(--space-5);
+}
+
+.config-grid__heading {
+  margin: 0 0 var(--space-4);
+  font-family: var(--font-display);
+  font-size: var(--fs-10);
+  letter-spacing: 0.12em;
+  color: var(--ink-3);
+  text-transform: uppercase;
+}
+
+.kv-row {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: var(--border-thin);
+}
+.kv-row:last-child { border-bottom: 0; }
+
+.kv-row__k {
+  font-family: var(--font-ui);
+  color: var(--ink-2);
+  font-size: var(--fs-13);
+}
+
+.kv-row__v {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  color: var(--ink-1);
+  font-size: var(--fs-13);
+}
+
+.kv-row__v code {
+  font-size: var(--fs-13);
+}
+
+.kv-row__hint {
+  color: var(--ink-3);
+  font-size: var(--fs-12);
+}
+
 /* ── Breakpoints ─────────────────────────────────────────────────────────── */
 
 @media (max-width: 1024px) {
@@ -387,4 +512,6 @@
   .colophon { padding: var(--space-2) var(--space-3); }
   .trades-toolbar { flex-direction: column; align-items: stretch; gap: var(--space-2); }
   .trades-table-wrap { max-height: calc(100vh - 380px); }
+  .banner { flex-direction: column; align-items: flex-start; gap: var(--space-1); }
+  .kv-row { grid-template-columns: 1fr; gap: var(--space-1); }
 }
