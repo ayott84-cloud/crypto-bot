@@ -17,6 +17,15 @@ from __future__ import annotations
 from typing import Mapping
 
 
+def is_fade_direction_enabled(direction: str, allow_long: bool, allow_short: bool) -> bool:
+    """Phase C.3 direction toggle. Defensive default: unknown direction → False."""
+    if direction == "LONG":
+        return bool(allow_long)
+    if direction == "SHORT":
+        return bool(allow_short)
+    return False
+
+
 def get_perp_universe_by_oi(hl_ctx_map: Mapping, min_oi_usd: float) -> set[str]:
     """Return the set of coin names with `ctx.oi_usd >= min_oi_usd`.
 

@@ -75,6 +75,12 @@ FUNDING_ATR_SMA_PERIOD = 20
 FUNDING_USE_TREND_FILTER = True
 FUNDING_TREND_EMA_PERIOD = 20
 
+# Phase C.3 direction toggles — disable one side when a macro regime makes
+# fading that direction structurally unprofitable (sustained bull → short
+# fades on positive funding only; sustained bear → long fades only).
+FUNDING_ALLOW_LONG_FADE = os.getenv("FUNDING_ALLOW_LONG_FADE", "true").lower() in ("true", "1", "yes")
+FUNDING_ALLOW_SHORT_FADE = os.getenv("FUNDING_ALLOW_SHORT_FADE", "true").lower() in ("true", "1", "yes")
+
 # Per-coin cooldown after a position closes (avoid re-fading the same coin
 # repeatedly during one funding extreme).
 FUNDING_COOLDOWN_HOURS = 8  # next funding cycle

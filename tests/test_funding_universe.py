@@ -23,7 +23,7 @@ sys.path.insert(0, str(BOT_DIR))
 
 import pytest
 
-from funding_universe import get_perp_universe_by_oi
+from funding_universe import get_perp_universe_by_oi, is_fade_direction_enabled
 
 
 class FakeCtx:
@@ -102,3 +102,31 @@ def test_extreme_funding_coins_outside_top100_are_included_when_oi_qualifies():
         "VIC":  FakeCtx(30_000_000),
     }
     assert get_perp_universe_by_oi(ctx_map, min_oi_usd=20_000_000) == {"HOME", "VIC"}
+
+
+# ─── C.3: direction toggles ─────────────────────────────────────────────────
+
+def test_direction_enabled_when_both_allowed():
+    assert is_fade_direction_enabled("LONG",  allow_long=True,  allow_short=True) is True
+    assert is_fade_direction_enabled("SHORT", allow_long=True,  allow_short=True) is True
+
+
+def test_long_disabled_blocks_long_but_not_short():
+    assert is_fade_direction_enabled("LONG",  allow_long=False, allow_short=True) is False
+    assert is_fade_direction_enabled("SHORT", allow_long=False, allow_short=True) is True
+
+
+def test_short_disabled_blocks_short_but_not_long():
+    assert is_fade_direction_enabled("LONG",  allow_long=True, allow_short=False) is True
+    assert is_fade_direction_enabled("SHORT", allow_long=True, allow_short=False) is False
+
+
+def test_both_disabled_blocks_both():
+    assert is_fade_direction_enabled("LONG",  allow_long=False, allow_short=False) is False
+    assert is_fade_direction_enabled("SHORT", allow_long=False, allow_short=False) is False
+
+
+def test_unknown_direction_string_is_blocked():
+    """Defensive default — an unexpected direction string never trades."""
+    assert is_fade_direction_enabled("FLAT",  allow_long=True, allow_short=True) is False
+    assert is_fade_direction_enabled("",      allow_long=True, allow_short=True) is False

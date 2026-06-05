@@ -49,8 +49,9 @@ from funding_config import (
     FUNDING_ATR_PERIOD, FUNDING_ATR_INTERVAL, FUNDING_ATR_SMA_PERIOD,
     FUNDING_TREND_EMA_PERIOD,
     FUNDING_UNIVERSE_MODE, FUNDING_UNIVERSE_MIN_OI_USD,
+    FUNDING_ALLOW_LONG_FADE, FUNDING_ALLOW_SHORT_FADE,
 )
-from funding_universe import get_perp_universe_by_oi
+from funding_universe import get_perp_universe_by_oi, is_fade_direction_enabled
 from funding_signals import (
     classify, compute_atr_and_sma, compute_ema_and_slope, trend_allows_fade,
     in_execution_window,
@@ -456,6 +457,12 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
         if extreme is None:
             continue
         direction = "SHORT" if extreme == "top" else "LONG"
+        # Phase C.3 direction toggle — skip this candidate if the operator
+        # has disabled fades in this direction for the current macro regime.
+        if not is_fade_direction_enabled(direction,
+                                          allow_long=FUNDING_ALLOW_LONG_FADE,
+                                          allow_short=FUNDING_ALLOW_SHORT_FADE):
+            continue
         trend_ok = trend_allows_fade(direction, last_close, ema, slope_sign)
 
         sig = classify(
