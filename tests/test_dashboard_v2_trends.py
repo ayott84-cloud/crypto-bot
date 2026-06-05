@@ -126,6 +126,65 @@ def test_wr_trend_flat_when_no_closed_trades():
     assert t["direction"] == "flat"
 
 
+# ─── Date format compatibility (Phase D.7g bugfix) ────────────────────────
+# Production trades are written via datetime.now().isoformat() which
+# produces "2026-05-15T14:30:45.123456" (T separator + microseconds).
+# The trend parser MUST handle both that and the space-separated format
+# the tests use, or trends won't render for any real trade.
+
+def _trade_iso(bot, days_ago, net_pnl):
+    """Build a closed-trade row whose date_opened uses ISO 8601 with T."""
+    dt = datetime.now(timezone.utc) - timedelta(days=days_ago)
+    return {
+        "id": 1,
+        "date_opened": dt.isoformat(),  # ← T-separated, with microseconds
+        "date_closed": dt.isoformat(),
+        "symbol": "BTCUSDT", "direction": "LONG",
+        "strategy": "x", "bot": bot,
+        "entry_price": 100, "exit_price": 105 if net_pnl > 0 else 95,
+        "quantity": 1, "leverage": 10,
+        "net_pnl": net_pnl, "result": result_for(net_pnl),
+        "exit_reason": "",
+    }
+
+
+def result_for(pnl):
+    return "WIN" if pnl > 0 else "LOSS"
+
+
+def test_trend_parses_iso_format_with_t_separator():
+    """Production dates use ISO format with T; parser must accept them."""
+    trades = [
+        _trade_iso("Momentum",  5, +30.0),
+        _trade_iso("Momentum", 40, +10.0),
+    ]
+    t = dashboard._v2_trend(trades, "Momentum", "net_pnl", days=30)
+    # Both windows have data, so trend should be available + up
+    assert t["available"] is True
+    assert t["direction"] == "up"
+
+
+def test_trend_parses_iso_format_with_microseconds():
+    trades = [_trade_iso("Funding", 5, +25.0)]
+    t = dashboard._v2_trend(trades, "Funding", "net_pnl", days=30)
+    assert t["available"] is True
+
+
+def test_trend_parses_iso_format_with_timezone_suffix():
+    """Some rows may carry +00:00 or Z; both should parse."""
+    dt = datetime.now(timezone.utc) - timedelta(days=5)
+    iso_with_tz = dt.isoformat()  # already has +00:00 because dt is tz-aware
+    trade = {
+        "id": 1, "date_opened": iso_with_tz, "date_closed": iso_with_tz,
+        "symbol": "BTC", "direction": "LONG", "strategy": "x",
+        "bot": "Momentum", "entry_price": 100, "exit_price": 105,
+        "quantity": 1, "leverage": 10, "net_pnl": 10.0, "result": "WIN",
+        "exit_reason": "",
+    }
+    t = dashboard._v2_trend([trade], "Momentum", "net_pnl", days=30)
+    assert t["available"] is True
+
+
 # ─── Per-bot filtering ─────────────────────────────────────────────────────
 
 def test_trend_ignores_other_bots_trades():

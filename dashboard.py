@@ -921,9 +921,25 @@ def _v2_equity_series(trades: List[dict], days: int = 90) -> dict:
     }
 
 
+def _fmt_dollar(v: float) -> str:
+    """Compact $-formatter for chart axis labels."""
+    if v == 0:
+        return "$0"
+    sign = "-" if v < 0 else ""
+    av = abs(v)
+    if av >= 1000:
+        return f"{sign}${av/1000:.1f}k"
+    return f"{sign}${av:.0f}"
+
+
+def _fmt_date_short(iso_date: str) -> str:
+    """`2026-06-05` → `06-05` (MM-DD only, no year clutter)."""
+    return iso_date[5:] if len(iso_date) >= 10 else iso_date
+
+
 def _v2_equity_curve_svg(series_data: dict, width: int = 720,
-                          height: int = 200) -> str:
-    """Render the 4-series equity curve as inline SVG."""
+                          height: int = 220) -> str:
+    """Render the 4-series equity curve as inline SVG with axis labels."""
     all_values = []
     for s in series_data["series"]:
         all_values.extend(s["values"])
@@ -939,15 +955,27 @@ def _v2_equity_curve_svg(series_data: dict, width: int = 720,
     if n < 2:
         return ""
 
+    # Axis padding — reserves room for labels around the plot area
+    pad_left   = 52
+    pad_right  = 12
+    pad_top    = 8
+    pad_bottom = 22
+
+    plot_w = width  - pad_left - pad_right
+    plot_h = height - pad_top  - pad_bottom
+
     span = vmax - vmin
 
+    def _x(i):
+        return pad_left + i / (n - 1) * plot_w
+
     def _y(v):
-        return height - ((v - vmin) / span) * height
+        return pad_top + plot_h - ((v - vmin) / span) * plot_h
 
     polylines = []
     for s in series_data["series"]:
         pts = " ".join(
-            f"{i / (n - 1) * width:.1f},{_y(v):.1f}"
+            f"{_x(i):.1f},{_y(v):.1f}"
             for i, v in enumerate(s["values"])
         )
         is_aggregate = s["modifier"] == "aggregate"
@@ -961,18 +989,47 @@ def _v2_equity_curve_svg(series_data: dict, width: int = 720,
 
     zero_y = _y(0)
     zero_line = (
-        f'<line class="equity-curve__zero" x1="0" y1="{zero_y:.1f}" '
-        f'x2="{width}" y2="{zero_y:.1f}" stroke-width="1" '
+        f'<line class="equity-curve__zero" x1="{pad_left}" y1="{zero_y:.1f}" '
+        f'x2="{width - pad_right}" y2="{zero_y:.1f}" stroke-width="1" '
         f'stroke-dasharray="3,5"/>'
     )
 
+    # ── Y-axis labels (max, zero if in range, min) ──────────────────────
+    y_label_x = pad_left - 6
+    y_labels = [
+        f'<text class="chart-axis chart-axis--y" x="{y_label_x}" '
+        f'y="{pad_top + 4}" text-anchor="end">{_fmt_dollar(vmax)}</text>',
+        f'<text class="chart-axis chart-axis--y" x="{y_label_x}" '
+        f'y="{height - pad_bottom}" text-anchor="end">{_fmt_dollar(vmin)}</text>',
+    ]
+    if vmin < 0 < vmax:
+        y_labels.append(
+            f'<text class="chart-axis chart-axis--y" x="{y_label_x}" '
+            f'y="{zero_y + 4:.1f}" text-anchor="end">$0</text>'
+        )
+
+    # ── X-axis labels (start, middle, end dates) ────────────────────────
+    labels = series_data["labels"]
+    mid_idx = n // 2
+    x_y = height - 6
+    x_labels = [
+        f'<text class="chart-axis chart-axis--x" x="{_x(0):.1f}" '
+        f'y="{x_y}" text-anchor="start">{_fmt_date_short(labels[0])}</text>',
+        f'<text class="chart-axis chart-axis--x" x="{_x(mid_idx):.1f}" '
+        f'y="{x_y}" text-anchor="middle">{_fmt_date_short(labels[mid_idx])}</text>',
+        f'<text class="chart-axis chart-axis--x" x="{_x(n - 1):.1f}" '
+        f'y="{x_y}" text-anchor="end">{_fmt_date_short(labels[-1])}</text>',
+    ]
+
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" '
-        f'viewBox="0 0 {width} {height}" preserveAspectRatio="none" '
+        f'viewBox="0 0 {width} {height}" '
         f'width="100%" height="{height}" '
         f'role="img" aria-label="{n}-day cumulative PnL curves">'
         f'{zero_line}'
         f'{"".join(polylines)}'
+        f'{"".join(y_labels)}'
+        f'{"".join(x_labels)}'
         f'</svg>'
     )
 
@@ -1002,8 +1059,8 @@ def _v2_daily_pnl_bars(trades: List[dict], days: int = 30) -> List[dict]:
 
 
 def _v2_daily_pnl_svg(bars: List[dict], width: int = 720,
-                       height: int = 120) -> str:
-    """Render daily P/L as a green-up / red-down bar chart in inline SVG."""
+                       height: int = 140) -> str:
+    """Render daily P/L as a green-up / red-down bar chart with axis labels."""
     if not bars:
         return ""
 
@@ -1011,41 +1068,73 @@ def _v2_daily_pnl_svg(bars: List[dict], width: int = 720,
     vmax = max((abs(v) for v in values), default=0.0) or 1.0
     n = len(bars)
 
-    slot = width / n
+    # Axis padding for labels
+    pad_left   = 52
+    pad_right  = 12
+    pad_top    = 8
+    pad_bottom = 22
+    plot_w = width  - pad_left - pad_right
+    plot_h = height - pad_top  - pad_bottom
+
+    slot = plot_w / n
     bar_w = slot * 0.7
     bar_gap = slot * 0.15
-    zero_y = height / 2
+    zero_y = pad_top + plot_h / 2
 
     rects = []
     for i, b in enumerate(bars):
-        x = i * slot + bar_gap
+        x = pad_left + i * slot + bar_gap
         if b["pnl"] >= 0:
-            h = (b["pnl"] / vmax) * (height / 2)
+            h = (b["pnl"] / vmax) * (plot_h / 2)
             y = zero_y - h
             cls = "daily-bar daily-bar--up"
         else:
-            h = (abs(b["pnl"]) / vmax) * (height / 2)
+            h = (abs(b["pnl"]) / vmax) * (plot_h / 2)
             y = zero_y
             cls = "daily-bar daily-bar--down"
         if h < 0.5 and b["pnl"] == 0:
-            continue  # don't draw zero-height rects
+            continue
         rects.append(
             f'<rect class="{cls}" x="{x:.1f}" y="{y:.1f}" '
             f'width="{bar_w:.1f}" height="{max(h, 0.5):.1f}"/>'
         )
 
     zero_line = (
-        f'<line class="daily-pnl__zero" x1="0" y1="{zero_y:.1f}" '
-        f'x2="{width}" y2="{zero_y:.1f}" stroke-width="1"/>'
+        f'<line class="daily-pnl__zero" x1="{pad_left}" y1="{zero_y:.1f}" '
+        f'x2="{width - pad_right}" y2="{zero_y:.1f}" stroke-width="1"/>'
     )
+
+    # ── Y-axis labels (max+, $0, max-) ──────────────────────────────────
+    y_label_x = pad_left - 6
+    y_labels = [
+        f'<text class="chart-axis chart-axis--y" x="{y_label_x}" '
+        f'y="{pad_top + 4}" text-anchor="end">{_fmt_dollar(vmax)}</text>',
+        f'<text class="chart-axis chart-axis--y" x="{y_label_x}" '
+        f'y="{zero_y + 4:.1f}" text-anchor="end">$0</text>',
+        f'<text class="chart-axis chart-axis--y" x="{y_label_x}" '
+        f'y="{height - pad_bottom}" text-anchor="end">{_fmt_dollar(-vmax)}</text>',
+    ]
+
+    # ── X-axis labels (start, end dates) ────────────────────────────────
+    x_y = height - 6
+    first_x = pad_left + bar_gap
+    last_x  = pad_left + (n - 1) * slot + bar_gap + bar_w
+    x_labels = [
+        f'<text class="chart-axis chart-axis--x" x="{first_x:.1f}" '
+        f'y="{x_y}" text-anchor="start">{_fmt_date_short(bars[0]["date"])}</text>',
+        f'<text class="chart-axis chart-axis--x" x="{last_x:.1f}" '
+        f'y="{x_y}" text-anchor="end">{_fmt_date_short(bars[-1]["date"])}</text>',
+    ]
 
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" '
-        f'viewBox="0 0 {width} {height}" preserveAspectRatio="none" '
+        f'viewBox="0 0 {width} {height}" '
         f'width="100%" height="{height}" '
         f'role="img" aria-label="Daily PnL last {n} days">'
         f'{zero_line}'
         f'{"".join(rects)}'
+        f'{"".join(y_labels)}'
+        f'{"".join(x_labels)}'
         f'</svg>'
     )
 
@@ -1073,7 +1162,18 @@ def _v2_trend(trades: List[dict], bot_label: str, metric: str,
     cutoff_prior = now - timedelta(days=days * 2)
 
     def _parse(t):
-        s = t.get("date_closed") or t.get("date_opened") or ""
+        s = (t.get("date_closed") or t.get("date_opened") or "").strip()
+        if not s:
+            return None
+        # Production writes via datetime.now().isoformat() — ISO 8601 with
+        # 'T' separator and microseconds, sometimes with timezone suffix.
+        # Test fixtures use space-separated. fromisoformat handles both.
+        try:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+        # Fallback for unusual legacy formats
         for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
             try:
                 return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)

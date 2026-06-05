@@ -189,6 +189,71 @@ def test_daily_pnl_svg_has_role_img_and_aria_label():
     assert 'aria-label="' in svg
 
 
+# ─── Axis labels (Phase D.7h) ──────────────────────────────────────────────
+
+def test_equity_curve_svg_renders_y_axis_dollar_labels():
+    """Y-axis must show the high and low PnL values for the curve."""
+    trades = [
+        _trade("Momentum",  5, +100.0),
+        _trade("Momentum", 40, -50.0),
+    ]
+    data = dashboard._v2_equity_series(trades, days=90)
+    svg = dashboard._v2_equity_curve_svg(data)
+    # Y-axis labels are <text class="chart-axis chart-axis--y">
+    assert 'class="chart-axis chart-axis--y"' in svg
+    # Should show dollar-formatted values (e.g. "$100" or "+$100")
+    assert "$" in svg
+
+
+def test_equity_curve_svg_renders_x_axis_date_labels():
+    """X-axis must show the start, middle, and end date of the window."""
+    trades = [_trade("Momentum", 5, +30.0)]
+    data = dashboard._v2_equity_series(trades, days=90)
+    svg = dashboard._v2_equity_curve_svg(data)
+    assert 'class="chart-axis chart-axis--x"' in svg
+    # The first and last labels in the window should appear (as MM-DD or full date)
+    first_label = data["labels"][0]  # e.g. "2026-03-07"
+    last_label  = data["labels"][-1]
+    # Render in MM-DD style — confirm at least the day component is present
+    assert first_label[-5:] in svg or first_label in svg
+    assert last_label[-5:]  in svg or last_label  in svg
+
+
+def test_equity_curve_svg_includes_zero_y_label_when_zero_in_range():
+    """When the data crosses zero, mark $0 on the Y-axis."""
+    trades = [
+        _trade("Momentum", 5,  +50.0),
+        _trade("Momentum", 6,  -50.0),
+    ]
+    data = dashboard._v2_equity_series(trades, days=90)
+    svg = dashboard._v2_equity_curve_svg(data)
+    assert ">$0<" in svg
+
+
+def test_daily_pnl_svg_renders_y_axis_max_label():
+    """Daily bars need a max-value label so operator knows scale."""
+    bars = [
+        {"date": "2026-06-01", "pnl": +25.0},
+        {"date": "2026-06-02", "pnl": -10.0},
+    ]
+    svg = dashboard._v2_daily_pnl_svg(bars)
+    assert 'class="chart-axis chart-axis--y"' in svg
+    assert "$" in svg
+
+
+def test_daily_pnl_svg_renders_x_axis_first_and_last_dates():
+    bars = [
+        {"date": "2026-06-01", "pnl": +5.0},
+        {"date": "2026-06-15", "pnl": -3.0},
+        {"date": "2026-06-30", "pnl": +1.0},
+    ]
+    svg = dashboard._v2_daily_pnl_svg(bars)
+    assert 'class="chart-axis chart-axis--x"' in svg
+    # First + last date components should appear
+    assert "06-01" in svg
+    assert "06-30" in svg
+
+
 # ─── Overview render integration ───────────────────────────────────────────
 
 def test_overview_renders_equity_curve_panel():

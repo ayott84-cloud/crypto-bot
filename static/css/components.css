@@ -259,6 +259,16 @@
   stroke: var(--rule-hard);
 }
 
+/* Chart axis labels (D.7h) — both equity curve + daily bars */
+.chart-axis {
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  fill: var(--ink-3);
+}
+.chart-axis--y { dominant-baseline: middle; }
+.chart-axis--x { dominant-baseline: hanging; }
+
 /* ── Trend chip (▲ ▼ —) ─────────────────────────────────────────────────── */
 /* Small directional indicator that lives next to a metric. Inherits font-size
  * from the surrounding line, so it scales with whichever block uses it. */
