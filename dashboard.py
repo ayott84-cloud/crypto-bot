@@ -26,6 +26,7 @@ from config import (
     BACKTEST_YEARS, BACKTEST_CAPITAL, BACKTEST_QTY_PCT,
     DRY_RUN,
 )
+from blocker_labels import blocker_label
 
 # Whale bot data (optional — dashboard still renders if whale_config missing)
 try:
@@ -459,7 +460,7 @@ def _render_signal_status_rows(signal_status: dict) -> str:
         if info:
             status_color = "#4ade80" if info.get("would_enter") else "#9ca3af"
             status_text = "READY 🟢" if info.get("would_enter") else "WAITING"
-            blocked = info.get("blocked_by") or ""
+            blocked = blocker_label(info.get("blocked_by"))
             filters = info.get("filters", {})
             values = info.get("values", {})
             cells = "".join(cell(filters.get(k)) for k, _ in FILTER_COLUMNS)
