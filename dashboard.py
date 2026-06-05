@@ -2352,8 +2352,8 @@ def _v2_trade_rows(trades: List[dict]) -> List[dict]:
 def build_dashboard(executor, state: dict) -> None:
     """Convenience: gather data and generate dashboard.
 
-    Phase D: when DASHBOARD_V2=true, render via dashboard_renderer + Jinja2
-    templates. Default false → legacy generate_dashboard path.
+    Phase D.6: V2 (Jinja2 templates) is now the default. Operators can
+    opt back into the legacy f-string renderer with DASHBOARD_V2=false.
     """
     from dashboard_renderer import dashboard_v2_enabled, render
 

@@ -24,27 +24,29 @@ import dashboard_renderer
 
 
 # ─── Feature flag ──────────────────────────────────────────────────────────
+# Phase D.6: default flipped to ON. V2 is now the default; DASHBOARD_V2=false
+# opts out to the legacy renderer.
 
-def test_dashboard_v2_disabled_by_default(monkeypatch):
+def test_dashboard_v2_enabled_by_default(monkeypatch):
     monkeypatch.delenv("DASHBOARD_V2", raising=False)
-    assert dashboard_renderer.dashboard_v2_enabled() is False
-
-
-def test_dashboard_v2_enabled_when_flag_set(monkeypatch):
-    monkeypatch.setenv("DASHBOARD_V2", "true")
     assert dashboard_renderer.dashboard_v2_enabled() is True
 
 
-def test_dashboard_v2_accepts_alternate_truthy_values(monkeypatch):
-    for v in ("1", "yes", "TRUE", "True"):
-        monkeypatch.setenv("DASHBOARD_V2", v)
-        assert dashboard_renderer.dashboard_v2_enabled() is True
+def test_dashboard_v2_disabled_when_flag_explicitly_false(monkeypatch):
+    monkeypatch.setenv("DASHBOARD_V2", "false")
+    assert dashboard_renderer.dashboard_v2_enabled() is False
 
 
-def test_dashboard_v2_disabled_for_explicit_false_or_garbage(monkeypatch):
-    for v in ("false", "0", "no", "off", "asdf"):
+def test_dashboard_v2_accepts_alternate_falsy_values(monkeypatch):
+    for v in ("0", "no", "off", "FALSE", "False"):
         monkeypatch.setenv("DASHBOARD_V2", v)
         assert dashboard_renderer.dashboard_v2_enabled() is False
+
+
+def test_dashboard_v2_enabled_for_truthy_or_garbage(monkeypatch):
+    for v in ("true", "1", "yes", "TRUE", "asdf"):
+        monkeypatch.setenv("DASHBOARD_V2", v)
+        assert dashboard_renderer.dashboard_v2_enabled() is True
 
 
 # ─── Static-asset inlining ─────────────────────────────────────────────────

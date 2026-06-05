@@ -5,9 +5,10 @@ Loads templates from `templates/` and inlines `static/css/*.css` +
 deploy model is preserved: build_dashboard() emits one `dashboard.html`
 the dashboard-push.timer force-pushes to the render-dashboard branch.
 
-Feature-flagged behind `DASHBOARD_V2` (env var). Default false → legacy
-f-string renderer keeps shipping. Set DASHBOARD_V2=true on the droplet
-to opt in.
+Feature-flagged behind `DASHBOARD_V2` (env var). As of Phase D.6 the
+default is ON — V2 ships unless the operator opts out via
+DASHBOARD_V2=false. The legacy f-string renderer is still wired up as a
+fallback escape hatch; Phase D.7 will retire it.
 
 This module is intentionally small. The template tree under templates/
 is where the actual presentation logic lives.
@@ -28,8 +29,14 @@ _STATIC_DIR = _BOT_DIR / "static"
 
 
 def dashboard_v2_enabled() -> bool:
-    """Feature flag — default off. Flip via env: DASHBOARD_V2=true."""
-    return os.getenv("DASHBOARD_V2", "false").lower() in ("true", "1", "yes")
+    """Feature flag — default ON as of Phase D.6.
+
+    V2 is the default Quant Cockpit renderer. Operators can opt back into
+    the legacy f-string dashboard with DASHBOARD_V2=false (or 0/no/off).
+    """
+    return os.getenv("DASHBOARD_V2", "true").lower() not in (
+        "false", "0", "no", "off"
+    )
 
 
 def _lazy_env():
