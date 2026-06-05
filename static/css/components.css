@@ -175,6 +175,23 @@
   color: var(--ink-3);
 }
 
+/* ── Trend chip (▲ ▼ —) ─────────────────────────────────────────────────── */
+/* Small directional indicator that lives next to a metric. Inherits font-size
+ * from the surrounding line, so it scales with whichever block uses it. */
+
+.trend-chip {
+  display: inline-block;
+  margin-left: 0.35em;
+  font-size: 0.65em;
+  line-height: 1;
+  vertical-align: 0.15em;
+  font-family: var(--font-mono);
+}
+
+.trend-chip--up   { color: var(--up); }
+.trend-chip--down { color: var(--down); }
+.trend-chip--flat { color: var(--ink-3); }
+
 .bot-card__spark {
   margin-top: var(--space-3);
   border-top: var(--border-thin);

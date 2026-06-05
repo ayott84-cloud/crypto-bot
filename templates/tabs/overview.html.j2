@@ -15,9 +15,19 @@
     <p class="bot-card__pnl
               {% if bot.net_pnl > 0 %}is-up{% elif bot.net_pnl < 0 %}is-down{% endif %}">
       {{ bot.net_pnl_display }}
+      {% if bot.pnl_trend and bot.pnl_trend.available %}
+      <span class="trend-chip trend-chip--{{ bot.pnl_trend.direction }}"
+            aria-label="30-day Net PnL trend: {{ bot.pnl_trend.direction }}"
+            title="vs prior 30 days">{{ bot.pnl_trend.glyph }}</span>
+      {% endif %}
     </p>
     <p class="bot-card__meta">
       {{ bot.trade_count }} closed · WR {{ bot.win_rate_display }}
+      {% if bot.wr_trend and bot.wr_trend.available %}
+      <span class="trend-chip trend-chip--{{ bot.wr_trend.direction }}"
+            aria-label="30-day Win Rate trend: {{ bot.wr_trend.direction }}"
+            title="vs prior 30 days">{{ bot.wr_trend.glyph }}</span>
+      {% endif %}
     </p>
     {% if bot.spark_svg %}
     <div class="bot-card__spark" aria-hidden="true">{{ bot.spark_svg|safe }}</div>

@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import subprocess
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -148,7 +148,7 @@ def _compute_bot_status() -> Dict[str, dict]:
     Momentum bot saves state.json every cycle (~5 min). Whale bot writes
     .whale_heartbeat every cycle (~15 min). Stale threshold = 2x poll interval.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime, timedelta, timezone
     import time
 
     bot_dir = Path(__file__).resolve().parent
@@ -544,6 +544,8 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
         net_pnl = sum(float(t.get("net_pnl") or 0) for t in closed)
         wins = sum(1 for t in closed if (t.get("net_pnl") or 0) > 0)
         win_rate = (wins / len(closed) * 100) if closed else 0.0
+        pnl_trend = _v2_trend(trades, bot_label, "net_pnl",  days=30)
+        wr_trend  = _v2_trend(trades, bot_label, "win_rate", days=30)
         return {
             "class":    bot_class,
             "monogram": monogram,
@@ -554,6 +556,8 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
             "net_pnl_display": _v2_pnl_display(net_pnl),
             "trade_count": len(closed),
             "win_rate_display": (f"{win_rate:.0f}%" if closed else "—"),
+            "pnl_trend":  {**pnl_trend, "glyph": _v2_trend_glyph(pnl_trend["direction"])},
+            "wr_trend":   {**wr_trend,  "glyph": _v2_trend_glyph(wr_trend["direction"])},
         }
 
     bot_status = data.get("bot_status") or {}
@@ -632,6 +636,18 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
     trades = trades or []
     # _v2_why_silent reads data["_trades_cache"]; emulate that shape for tests
     data_stub = overrides.pop("data", {"signal_status": {}, "_trades_cache": trades})
+
+    def _trend_pair(bot_label):
+        p = _v2_trend(trades, bot_label, "net_pnl", days=30)
+        w = _v2_trend(trades, bot_label, "win_rate", days=30)
+        return (
+            {**p, "glyph": _v2_trend_glyph(p["direction"])},
+            {**w, "glyph": _v2_trend_glyph(w["direction"])},
+        )
+
+    p_m, w_m = _trend_pair("Momentum")
+    p_w, w_w = _trend_pair("Whale")
+    p_f, w_f = _trend_pair("Funding")
     ctx = {
         "operator": "ayott84", "env": "paper", "freshness": "0s",
         "build_sha": "abc12345", "build_ts": "2026-06-05 00:00 UTC",
@@ -640,6 +656,7 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
              "state": "live", "seen_label": "0s ago",
              "net_pnl": 0, "net_pnl_display": "$0.00",
              "trade_count": 0, "win_rate_display": "—",
+             "pnl_trend": p_m, "wr_trend": w_m,
              "spark_svg": _v2_sparkline_svg(
                  _v2_sparkline_points(trades, "Momentum"),
                  stroke_class="spark__line spark__line--momentum",
@@ -649,6 +666,7 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
              "state": "dormant", "seen_label": "paused",
              "net_pnl": 0, "net_pnl_display": "$0.00",
              "trade_count": 0, "win_rate_display": "—",
+             "pnl_trend": p_w, "wr_trend": w_w,
              "spark_svg": _v2_sparkline_svg(
                  _v2_sparkline_points(trades, "Whale"),
                  stroke_class="spark__line spark__line--whale",
@@ -658,6 +676,7 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
              "state": "live", "seen_label": "0s ago",
              "net_pnl": 0, "net_pnl_display": "$0.00",
              "trade_count": 0, "win_rate_display": "—",
+             "pnl_trend": p_f, "wr_trend": w_f,
              "spark_svg": _v2_sparkline_svg(
                  _v2_sparkline_points(trades, "Funding"),
                  stroke_class="spark__line spark__line--funding",
@@ -846,6 +865,88 @@ def _v2_sparkline_svg(points: List[float], width: int = 120, height: int = 24,
             f'<polyline class="{stroke_class}" points="{path}" '
             f'fill="none" stroke-width="1.25" stroke-linejoin="round" '
             f'stroke-linecap="round"/></svg>')
+
+
+# ─── Trend computation (Phase D.7d) ─────────────────────────────────────────
+
+def _v2_trend_glyph(direction: str) -> str:
+    """Map a trend direction to its display glyph."""
+    return {"up": "▲", "down": "▼"}.get(direction, "—")
+
+
+def _v2_trend(trades: List[dict], bot_label: str, metric: str,
+              days: int = 30) -> dict:
+    """Compare trailing N-day window of a metric against the prior N-day window.
+
+    metric: "net_pnl" or "win_rate".
+    Returns {"direction": "up"|"down"|"flat", "delta": float, "available": bool}.
+
+    "available" is False only when neither window has any closed trades for
+    this bot — in that case direction is "flat" and the caller can hide the
+    chip.
+    """
+    now = datetime.now(timezone.utc)
+    cutoff_now   = now - timedelta(days=days)
+    cutoff_prior = now - timedelta(days=days * 2)
+
+    def _parse(t):
+        s = t.get("date_closed") or t.get("date_opened") or ""
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+        return None
+
+    bot_trades = [t for t in trades if t.get("bot") == bot_label]
+    closed = [t for t in bot_trades
+              if t.get("exit_price") not in (None, 0, "0", "")]
+
+    current, prior = [], []
+    for t in closed:
+        dt = _parse(t)
+        if dt is None:
+            continue
+        if dt >= cutoff_now:
+            current.append(t)
+        elif dt >= cutoff_prior:
+            prior.append(t)
+
+    if not current and not prior:
+        return {"direction": "flat", "delta": 0.0, "available": False}
+
+    def _value(window):
+        if not window:
+            return None
+        if metric == "net_pnl":
+            return sum(float(t.get("net_pnl") or 0) for t in window)
+        if metric == "win_rate":
+            wins = sum(1 for t in window
+                       if (t.get("result") or "").upper() == "WIN")
+            return (wins / len(window) * 100.0) if window else 0.0
+        return 0.0
+
+    cur = _value(current)
+    pri = _value(prior)
+
+    # First-signal: prior empty, current populated → infer from sign/value.
+    if pri is None:
+        if cur is None or cur == 0:
+            return {"direction": "flat", "delta": 0.0, "available": True}
+        return {"direction": "up" if cur > 0 else "down",
+                "delta": cur, "available": True}
+    # Current empty, prior populated → metric has gone silent; show flat.
+    if cur is None:
+        return {"direction": "flat", "delta": 0.0, "available": True}
+
+    delta = cur - pri
+    if delta > 0:
+        direction = "up"
+    elif delta < 0:
+        direction = "down"
+    else:
+        direction = "flat"
+    return {"direction": direction, "delta": delta, "available": True}
 
 
 def _v2_projection() -> dict:
