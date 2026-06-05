@@ -4,6 +4,27 @@
 (function () {
   'use strict';
 
+  // ── Theme toggle (light/dark, persisted to localStorage) ──────────────
+  // Applied as early as possible so there's no FOUC into dark mode on a
+  // page that the operator has saved as light.
+  const THEME_KEY = 'cb-theme';
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved === 'light' || saved === 'dark') {
+      document.documentElement.dataset.theme = saved;
+    }
+  } catch (e) { /* localStorage unavailable — fall back to default */ }
+
+  const toggleBtn = document.querySelector('[data-theme-toggle]');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+      const current = document.documentElement.dataset.theme || 'dark';
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.documentElement.dataset.theme = next;
+      try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+    });
+  }
+
   const tabs   = Array.from(document.querySelectorAll('.tab-nav [role="tab"]'));
   const panels = Array.from(document.querySelectorAll('[role="tabpanel"]'));
 

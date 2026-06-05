@@ -1830,6 +1830,12 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
                         if t.get("exit_price") not in (None, 0, "0", "")]
     portfolio_net = sum(float(t.get("net_pnl") or 0) for t in portfolio_closed)
 
+    # Sparklines — last 30d cumulative PnL per bot + portfolio aggregate.
+    spark_momentum = _v2_sparkline_points(trades, "Momentum", days=30)
+    spark_whale    = _v2_sparkline_points(trades, "Whale",    days=30)
+    spark_funding  = _v2_sparkline_points(trades, "Funding",  days=30)
+    spark_portfolio = _v2_sparkline_points(trades, None,      days=30)
+
     now = datetime.now(timezone.utc)
     return {
         "operator":  os.getenv("OPERATOR", "ayott84"),
@@ -1838,12 +1844,18 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
         "build_sha": (os.getenv("GIT_SHA") or "local")[:8],
         "build_ts":  now.strftime("%Y-%m-%d %H:%M UTC"),
         "bots": [
-            _bot_card("momentum", "M", "Momentum", "Momentum",
-                      bot_status.get("momentum", {})),
-            _bot_card("whale",    "W", "Whale",    "Whale",
-                      bot_status.get("whale", {})),
-            _bot_card("funding",  "F", "Funding",  "Funding",
-                      bot_status.get("funding", {})),
+            {**_bot_card("momentum", "M", "Momentum", "Momentum",
+                         bot_status.get("momentum", {})),
+             "spark_svg": _v2_sparkline_svg(spark_momentum,
+                                             stroke_class="spark__line spark__line--momentum")},
+            {**_bot_card("whale",    "W", "Whale",    "Whale",
+                         bot_status.get("whale", {})),
+             "spark_svg": _v2_sparkline_svg(spark_whale,
+                                             stroke_class="spark__line spark__line--whale")},
+            {**_bot_card("funding",  "F", "Funding",  "Funding",
+                         bot_status.get("funding", {})),
+             "spark_svg": _v2_sparkline_svg(spark_funding,
+                                             stroke_class="spark__line spark__line--funding")},
         ],
         "portfolio": {
             "net_pnl":          portfolio_net,
@@ -1851,6 +1863,8 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
             "closed_count":     len(portfolio_closed),
             "open_count":       metrics.get("open_positions", 0),
             "win_rate_display": f"{metrics.get('win_rate', 0):.1f}%",
+            "spark_svg":        _v2_sparkline_svg(spark_portfolio, width=200, height=32,
+                                                   stroke_class="spark__line"),
         },
         "trades": _v2_trade_rows(trades),
         "whale_meta":   _v2_whale_meta(trades),
@@ -1875,19 +1889,28 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
             {"class": "momentum", "monogram": "M", "name": "Momentum",
              "state": "live", "seen_label": "0s ago",
              "net_pnl": 0, "net_pnl_display": "$0.00",
-             "trade_count": 0, "win_rate_display": "—"},
+             "trade_count": 0, "win_rate_display": "—",
+             "spark_svg": _v2_sparkline_svg(_v2_sparkline_points(trades, "Momentum"),
+                                              stroke_class="spark__line spark__line--momentum")},
             {"class": "whale", "monogram": "W", "name": "Whale",
              "state": "dormant", "seen_label": "paused",
              "net_pnl": 0, "net_pnl_display": "$0.00",
-             "trade_count": 0, "win_rate_display": "—"},
+             "trade_count": 0, "win_rate_display": "—",
+             "spark_svg": _v2_sparkline_svg(_v2_sparkline_points(trades, "Whale"),
+                                              stroke_class="spark__line spark__line--whale")},
             {"class": "funding", "monogram": "F", "name": "Funding",
              "state": "live", "seen_label": "0s ago",
              "net_pnl": 0, "net_pnl_display": "$0.00",
-             "trade_count": 0, "win_rate_display": "—"},
+             "trade_count": 0, "win_rate_display": "—",
+             "spark_svg": _v2_sparkline_svg(_v2_sparkline_points(trades, "Funding"),
+                                              stroke_class="spark__line spark__line--funding")},
         ],
         "portfolio": {"net_pnl": 0, "net_pnl_display": "$0.00",
                       "closed_count": 0, "open_count": 0,
-                      "win_rate_display": "—"},
+                      "win_rate_display": "—",
+                      "spark_svg": _v2_sparkline_svg(
+                          _v2_sparkline_points(trades), width=200, height=32,
+                          stroke_class="spark__line")},
         "trades":       _v2_trade_rows(trades),
         "whale_meta":   _v2_whale_meta(trades),
         "funding_meta": _v2_funding_meta(trades),
@@ -1895,6 +1918,88 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
     }
     ctx.update(overrides)
     return ctx
+
+
+def _v2_sparkline_points(trades: List[dict], bot_label: str | None = None,
+                          days: int = 30) -> List[float]:
+    """Cumulative PnL over the last `days` calendar days, one point per day.
+
+    If `bot_label` is None, aggregates across all bots (portfolio sparkline).
+    Filters to closed trades only. Returns a list of cumulative PnL floats
+    in chronological order — length up to `days` (fewer if there's no
+    older history). Empty input → empty list.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    closed = [t for t in trades
+              if t.get("exit_price") not in (None, 0, "0", "")
+              and (bot_label is None or t.get("bot") == bot_label)]
+    if not closed:
+        return []
+
+    by_day: dict[str, float] = {}
+    for t in closed:
+        d = (t.get("date_opened") or "")[:10]
+        if not d:
+            continue
+        by_day[d] = by_day.get(d, 0.0) + float(t.get("net_pnl") or 0)
+
+    if not by_day:
+        return []
+
+    # Build a contiguous N-day window ending today; missing days carry 0.
+    now = datetime.now(timezone.utc).date()
+    window = [(now - timedelta(days=i)) for i in range(days - 1, -1, -1)]
+    daily = [by_day.get(d.isoformat(), 0.0) for d in window]
+
+    # Trim leading days with no activity so the sparkline starts on first trade
+    first_nonzero = next((i for i, v in enumerate(daily) if v != 0), 0)
+    # But always include at least 2 points so the line draws
+    if first_nonzero > 0:
+        first_nonzero = max(0, first_nonzero - 1)
+    daily = daily[first_nonzero:]
+
+    cum = []
+    running = 0.0
+    for v in daily:
+        running += v
+        cum.append(round(running, 2))
+    return cum
+
+
+def _v2_sparkline_svg(points: List[float], width: int = 120, height: int = 24,
+                       stroke_class: str = "spark__line") -> str:
+    """Render a list of PnL points as inline SVG path. Returns "" if empty.
+
+    Color is applied via CSS class — the sign of the last point picks
+    .spark__line--up or .spark__line--down at render time in the caller.
+    """
+    if not points or len(points) < 2:
+        return ""
+    lo = min(points)
+    hi = max(points)
+    span = (hi - lo) or 1.0
+    n = len(points)
+    pad = 2
+    inner_w = width - pad * 2
+    inner_h = height - pad * 2
+    coords = []
+    for i, v in enumerate(points):
+        x = pad + (i / (n - 1)) * inner_w
+        y = pad + (1 - (v - lo) / span) * inner_h
+        coords.append(f"{x:.1f},{y:.1f}")
+    zero_y = None
+    if lo < 0 < hi:
+        zero_y = pad + (hi / span) * inner_h
+    path = " ".join(coords)
+    zero_line = (f'<line x1="{pad}" y1="{zero_y:.1f}" x2="{width - pad}" y2="{zero_y:.1f}" '
+                 f'class="spark__zero"/>' if zero_y is not None else "")
+    return (f'<svg class="spark" viewBox="0 0 {width} {height}" '
+            f'width="{width}" height="{height}" aria-hidden="true">'
+            f'{zero_line}'
+            f'<polyline class="{stroke_class}" points="{path}" '
+            f'fill="none" stroke-width="1.25" stroke-linejoin="round" '
+            f'stroke-linecap="round"/></svg>')
 
 
 def _v2_projection() -> dict:

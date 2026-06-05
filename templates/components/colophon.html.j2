@@ -6,4 +6,12 @@
   <span class="colophon__chip">FRESH · {{ freshness|upper }}</span>
   <span class="colophon__sep">//</span>
   <span class="colophon__chip">BUILD · {{ build_sha|upper }}</span>
+  <button
+    type="button"
+    class="theme-toggle"
+    data-theme-toggle
+    aria-label="Toggle light/dark theme">
+    <span class="theme-toggle__icon theme-toggle__icon--dark" aria-hidden="true">DARK</span>
+    <span class="theme-toggle__icon theme-toggle__icon--light" aria-hidden="true">LIGHT</span>
+  </button>
 </div>

@@ -19,6 +19,30 @@
 .colophon__chip { white-space: nowrap; }
 .colophon__sep  { opacity: 0.4; }
 
+/* Theme toggle — pinned to the right of the colophon. Shows the OPPOSITE
+ * theme label (i.e. "LIGHT" in dark mode, "DARK" in light mode) so the
+ * label describes what clicking will *do*, not the current state. */
+.theme-toggle {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-2);
+  color: var(--ink-2);
+  font-family: var(--font-display);
+  font-size: var(--fs-9);
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  transition: color var(--motion-fast) var(--ease),
+              border-color var(--motion-fast) var(--ease);
+}
+.theme-toggle:hover { color: var(--ink-1); border-color: var(--rule-hard); }
+.theme-toggle:focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+
+.theme-toggle__icon                          { display: none; }
+:root[data-theme="dark"]  .theme-toggle__icon--light { display: inline; }
+:root[data-theme="light"] .theme-toggle__icon--dark  { display: inline; }
+
 /* ── Status pill (breathing LIVE dot) ────────────────────────────────────── */
 
 .status-pill {
@@ -149,6 +173,40 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-3);
+}
+
+.bot-card__spark {
+  margin-top: var(--space-3);
+  border-top: var(--border-thin);
+  padding-top: var(--space-3);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.portfolio-strip__spark {
+  grid-column: 1 / -1;
+  margin-top: var(--space-2);
+  display: flex;
+  justify-content: flex-start;
+}
+
+/* ── Sparkline (SVG inline) ──────────────────────────────────────────────── */
+
+.spark { display: block; }
+
+.spark__line {
+  stroke: var(--ink-3);
+  fill: none;
+}
+
+.spark__line--momentum { stroke: var(--b-momentum); }
+.spark__line--whale    { stroke: var(--b-whale); }
+.spark__line--funding  { stroke: var(--b-funding); }
+
+.spark__zero {
+  stroke: var(--rule-soft);
+  stroke-width: 0.75;
+  stroke-dasharray: 2 2;
 }
 
 /* ── Portfolio totals strip ──────────────────────────────────────────────── */

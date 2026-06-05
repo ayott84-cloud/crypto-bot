@@ -19,6 +19,9 @@
     <p class="bot-card__meta">
       {{ bot.trade_count }} closed · WR {{ bot.win_rate_display }}
     </p>
+    {% if bot.spark_svg %}
+    <div class="bot-card__spark" aria-hidden="true">{{ bot.spark_svg|safe }}</div>
+    {% endif %}
   </article>
   {% endfor %}
 </section>
@@ -30,6 +33,9 @@
                 {% if portfolio.net_pnl > 0 %}is-up{% elif portfolio.net_pnl < 0 %}is-down{% endif %}">
       {{ portfolio.net_pnl_display }}
     </span>
+    {% if portfolio.spark_svg %}
+    <div class="portfolio-strip__spark" aria-hidden="true">{{ portfolio.spark_svg|safe }}</div>
+    {% endif %}
   </div>
   <div class="portfolio-strip__cell">
     <span class="portfolio-strip__label">CLOSED</span>
