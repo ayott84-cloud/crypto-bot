@@ -589,6 +589,16 @@ a {
   stroke: var(--rule-hard);
 }
 
+/* Chart axis labels (D.7h) — both equity curve + daily bars */
+.chart-axis {
+  font-family: var(--font-display);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  fill: var(--ink-3);
+}
+.chart-axis--y { dominant-baseline: middle; }
+.chart-axis--x { dominant-baseline: hanging; }
+
 /* ── Trend chip (▲ ▼ —) ─────────────────────────────────────────────────── */
 /* Small directional indicator that lives next to a metric. Inherits font-size
  * from the surrounding line, so it scales with whichever block uses it. */
@@ -1085,7 +1095,7 @@ a {
   <span class="colophon__sep">//</span>
   <span class="colophon__chip">FRESH · 0S</span>
   <span class="colophon__sep">//</span>
-  <span class="colophon__chip">BUILD · 1B311233</span>
+  <span class="colophon__chip">BUILD · 5C69E6B3</span>
   <button
     type="button"
     class="theme-toggle"
@@ -1121,9 +1131,15 @@ a {
 </span>    <p class="bot-card__pnl
 is-up">
       +$78.21
+      <span class="trend-chip trend-chip--down"
+            aria-label="30-day Net PnL trend: down"
+            title="vs prior 30 days">▼</span>
     </p>
     <p class="bot-card__meta">
       17 closed · WR 65%
+      <span class="trend-chip trend-chip--down"
+            aria-label="30-day Win Rate trend: down"
+            title="vs prior 30 days">▼</span>
     </p>
     <div class="bot-card__spark" aria-hidden="true"><svg class="spark" viewBox="0 0 120 24" width="120" height="24" role="img" aria-label="Momentum 30-day cumulative PnL: up from −$2.82 to +$9.90 over 30 days"><line x1="2" y1="19.4" x2="118" y2="19.4" class="spark__zero"/><polyline class="spark__line spark__line--momentum" points="2.0,22.0 6.0,22.0 10.0,22.0 14.0,2.0 18.0,2.0 22.0,16.7 26.0,16.7 30.0,9.8 34.0,10.3 38.0,10.3 42.0,10.3 46.0,10.3 50.0,10.3 54.0,10.3 58.0,10.3 62.0,10.3 66.0,10.3 70.0,10.3 74.0,10.3 78.0,10.3 82.0,10.3 86.0,10.3 90.0,10.3 94.0,10.3 98.0,10.3 102.0,10.3 106.0,10.3 110.0,10.3 114.0,10.3 118.0,10.3" fill="none" stroke-width="1.25" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
     <div class="why-panel why-panel--silent" role="note">
@@ -1144,9 +1160,15 @@ is-up">
 </span>    <p class="bot-card__pnl
 is-down">
       −$225.67
+      <span class="trend-chip trend-chip--up"
+            aria-label="30-day Net PnL trend: up"
+            title="vs prior 30 days">▲</span>
     </p>
     <p class="bot-card__meta">
       23 closed · WR 9%
+      <span class="trend-chip trend-chip--down"
+            aria-label="30-day Win Rate trend: down"
+            title="vs prior 30 days">▼</span>
     </p>
     <div class="bot-card__spark" aria-hidden="true"><svg class="spark" viewBox="0 0 120 24" width="120" height="24" role="img" aria-label="Whale 30-day cumulative PnL: down from $0.00 to −$99.56 over 30 days"><polyline class="spark__line spark__line--whale" points="2.0,2.0 6.0,18.9 10.0,22.0 14.0,22.0 18.0,22.0 22.0,18.8 26.0,18.8 30.0,18.8 34.0,18.8 38.0,18.8 42.0,18.8 46.0,18.8 50.0,18.8 54.0,18.8 58.0,18.8 62.0,18.8 66.0,18.8 70.0,18.8 74.0,18.8 78.0,18.8 82.0,18.8 86.0,18.8 90.0,18.8 94.0,18.8 98.0,18.8 102.0,18.8 106.0,18.8 110.0,18.8 114.0,18.8 118.0,18.8" fill="none" stroke-width="1.25" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
     <div class="why-panel why-panel--dormant" role="note">
@@ -1163,7 +1185,7 @@ is-down">
   <span class="status-pill__dot" aria-hidden="true"></span>
   <span class="status-pill__state">LIVE</span>
   <span class="status-pill__sep">·</span>
-  <span class="status-pill__seen">25m ago</span>
+  <span class="status-pill__seen">8s ago</span>
 </span>    <p class="bot-card__pnl
 ">
       $0.00
@@ -1212,14 +1234,14 @@ is-down">
       <li class="chart-legend__item"><span class="chart-legend__dot chart-legend__dot--funding"></span>Funding</li>
     </ul>
   </header>
-  <div class="chart-panel__svg"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 200" preserveAspectRatio="none" width="100%" height="200" role="img" aria-label="90-day cumulative PnL curves"><line class="equity-curve__zero" x1="0" y1="52.5" x2="720" y2="52.5" stroke-width="1" stroke-dasharray="3,5"/><polyline class="equity-curve__series equity-curve__series--aggregate" points="0.0,52.5 8.1,52.5 16.2,52.5 24.3,52.5 32.4,52.5 40.4,52.5 48.5,52.5 56.6,52.5 64.7,52.5 72.8,52.5 80.9,52.5 89.0,52.5 97.1,52.5 105.2,52.5 113.3,52.5 121.3,52.5 129.4,52.5 137.5,52.5 145.6,52.5 153.7,52.5 161.8,52.5 169.9,52.5 178.0,52.5 186.1,52.5 194.2,52.5 202.2,52.5 210.3,52.5 218.4,52.5 226.5,52.5 234.6,52.5 242.7,52.5 250.8,52.5 258.9,52.5 267.0,52.5 275.1,52.5 283.1,52.5 291.2,52.5 299.3,52.5 307.4,52.5 315.5,52.5 323.6,52.5 331.7,52.5 339.8,52.5 347.9,52.5 356.0,52.5 364.0,52.5 372.1,52.5 380.2,52.5 388.3,52.5 396.4,52.5 404.5,52.5 412.6,38.3 420.7,20.6 428.8,20.6 436.9,39.3 444.9,49.3 453.0,49.3 461.1,77.7 469.2,71.4 477.3,87.4 485.4,89.1 493.5,149.6 501.6,160.6 509.7,147.5 517.8,147.5 525.8,145.6 533.9,145.6 542.0,141.0 550.1,141.4 558.2,141.4 566.3,141.4 574.4,141.4 582.5,141.4 590.6,141.4 598.7,141.4 606.7,141.4 614.8,141.4 622.9,141.4 631.0,141.4 639.1,141.4 647.2,141.4 655.3,141.4 663.4,141.4 671.5,141.4 679.6,141.4 687.6,141.4 695.7,141.4 703.8,141.4 711.9,141.4 720.0,141.4" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/><polyline class="equity-curve__series equity-curve__series--momentum" points="0.0,52.5 8.1,52.5 16.2,52.5 24.3,52.5 32.4,52.5 40.4,52.5 48.5,52.5 56.6,52.5 64.7,52.5 72.8,52.5 80.9,52.5 89.0,52.5 97.1,52.5 105.2,52.5 113.3,52.5 121.3,52.5 129.4,52.5 137.5,52.5 145.6,52.5 153.7,52.5 161.8,52.5 169.9,52.5 178.0,52.5 186.1,52.5 194.2,52.5 202.2,52.5 210.3,52.5 218.4,52.5 226.5,52.5 234.6,52.5 242.7,52.5 250.8,52.5 258.9,52.5 267.0,52.5 275.1,52.5 283.1,52.5 291.2,52.5 299.3,52.5 307.4,52.5 315.5,52.5 323.6,52.5 331.7,52.5 339.8,52.5 347.9,52.5 356.0,52.5 364.0,52.5 372.1,52.5 380.2,52.5 388.3,52.5 396.4,52.5 404.5,52.5 412.6,52.5 420.7,34.8 428.8,34.8 436.9,34.8 444.9,34.8 453.0,34.8 461.1,34.8 469.2,28.5 477.3,11.4 485.4,13.1 493.5,13.1 501.6,13.1 509.7,0.0 517.8,0.0 525.8,9.6 533.9,9.6 542.0,5.1 550.1,5.4 558.2,5.4 566.3,5.4 574.4,5.4 582.5,5.4 590.6,5.4 598.7,5.4 606.7,5.4 614.8,5.4 622.9,5.4 631.0,5.4 639.1,5.4 647.2,5.4 655.3,5.4 663.4,5.4 671.5,5.4 679.6,5.4 687.6,5.4 695.7,5.4 703.8,5.4 711.9,5.4 720.0,5.4" fill="none" stroke-width="1.25" stroke-linejoin="round" stroke-linecap="round"/><polyline class="equity-curve__series equity-curve__series--whale" points="0.0,52.5 8.1,52.5 16.2,52.5 24.3,52.5 32.4,52.5 40.4,52.5 48.5,52.5 56.6,52.5 64.7,52.5 72.8,52.5 80.9,52.5 89.0,52.5 97.1,52.5 105.2,52.5 113.3,52.5 121.3,52.5 129.4,52.5 137.5,52.5 145.6,52.5 153.7,52.5 161.8,52.5 169.9,52.5 178.0,52.5 186.1,52.5 194.2,52.5 202.2,52.5 210.3,52.5 218.4,52.5 226.5,52.5 234.6,52.5 242.7,52.5 250.8,52.5 258.9,52.5 267.0,52.5 275.1,52.5 283.1,52.5 291.2,52.5 299.3,52.5 307.4,52.5 315.5,52.5 323.6,52.5 331.7,52.5 339.8,52.5 347.9,52.5 356.0,52.5 364.0,52.5 372.1,52.5 380.2,52.5 388.3,52.5 396.4,52.5 404.5,52.5 412.6,38.3 420.7,38.3 428.8,38.3 436.9,57.0 444.9,67.1 453.0,67.1 461.1,95.4 469.2,95.4 477.3,128.5 485.4,128.5 493.5,189.0 501.6,200.0 509.7,200.0 517.8,200.0 525.8,188.5 533.9,188.5 542.0,188.5 550.1,188.5 558.2,188.5 566.3,188.5 574.4,188.5 582.5,188.5 590.6,188.5 598.7,188.5 606.7,188.5 614.8,188.5 622.9,188.5 631.0,188.5 639.1,188.5 647.2,188.5 655.3,188.5 663.4,188.5 671.5,188.5 679.6,188.5 687.6,188.5 695.7,188.5 703.8,188.5 711.9,188.5 720.0,188.5" fill="none" stroke-width="1.25" stroke-linejoin="round" stroke-linecap="round"/><polyline class="equity-curve__series equity-curve__series--funding" points="0.0,52.5 8.1,52.5 16.2,52.5 24.3,52.5 32.4,52.5 40.4,52.5 48.5,52.5 56.6,52.5 64.7,52.5 72.8,52.5 80.9,52.5 89.0,52.5 97.1,52.5 105.2,52.5 113.3,52.5 121.3,52.5 129.4,52.5 137.5,52.5 145.6,52.5 153.7,52.5 161.8,52.5 169.9,52.5 178.0,52.5 186.1,52.5 194.2,52.5 202.2,52.5 210.3,52.5 218.4,52.5 226.5,52.5 234.6,52.5 242.7,52.5 250.8,52.5 258.9,52.5 267.0,52.5 275.1,52.5 283.1,52.5 291.2,52.5 299.3,52.5 307.4,52.5 315.5,52.5 323.6,52.5 331.7,52.5 339.8,52.5 347.9,52.5 356.0,52.5 364.0,52.5 372.1,52.5 380.2,52.5 388.3,52.5 396.4,52.5 404.5,52.5 412.6,52.5 420.7,52.5 428.8,52.5 436.9,52.5 444.9,52.5 453.0,52.5 461.1,52.5 469.2,52.5 477.3,52.5 485.4,52.5 493.5,52.5 501.6,52.5 509.7,52.5 517.8,52.5 525.8,52.5 533.9,52.5 542.0,52.5 550.1,52.5 558.2,52.5 566.3,52.5 574.4,52.5 582.5,52.5 590.6,52.5 598.7,52.5 606.7,52.5 614.8,52.5 622.9,52.5 631.0,52.5 639.1,52.5 647.2,52.5 655.3,52.5 663.4,52.5 671.5,52.5 679.6,52.5 687.6,52.5 695.7,52.5 703.8,52.5 711.9,52.5 720.0,52.5" fill="none" stroke-width="1.25" stroke-linejoin="round" stroke-linecap="round"/></svg></div>
+  <div class="chart-panel__svg"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 220" width="100%" height="220" role="img" aria-label="90-day cumulative PnL curves"><line class="equity-curve__zero" x1="52" y1="57.9" x2="708" y2="57.9" stroke-width="1" stroke-dasharray="3,5"/><polyline class="equity-curve__series equity-curve__series--aggregate" points="52.0,57.9 59.4,57.9 66.7,57.9 74.1,57.9 81.5,57.9 88.9,57.9 96.2,57.9 103.6,57.9 111.0,57.9 118.3,57.9 125.7,57.9 133.1,57.9 140.4,57.9 147.8,57.9 155.2,57.9 162.6,57.9 169.9,57.9 177.3,57.9 184.7,57.9 192.0,57.9 199.4,57.9 206.8,57.9 214.2,57.9 221.5,57.9 228.9,57.9 236.3,57.9 243.6,57.9 251.0,57.9 258.4,57.9 265.8,57.9 273.1,57.9 280.5,57.9 287.9,57.9 295.2,57.9 302.6,57.9 310.0,57.9 317.3,57.9 324.7,57.9 332.1,57.9 339.5,57.9 346.8,57.9 354.2,57.9 361.6,57.9 368.9,57.9 376.3,57.9 383.7,57.9 391.1,57.9 398.4,57.9 405.8,57.9 413.2,57.9 420.5,57.9 427.9,44.4 435.3,27.6 442.7,27.6 450.0,45.3 457.4,54.9 464.8,54.9 472.1,81.8 479.5,75.8 486.9,91.0 494.2,92.6 501.6,150.1 509.0,160.5 516.4,148.1 523.7,148.1 531.1,146.3 538.5,146.3 545.8,142.0 553.2,142.3 560.6,142.3 568.0,142.3 575.3,142.3 582.7,142.3 590.1,142.3 597.4,142.3 604.8,142.3 612.2,142.3 619.6,142.3 626.9,142.3 634.3,142.3 641.7,142.3 649.0,142.3 656.4,142.3 663.8,142.3 671.1,142.3 678.5,142.3 685.9,142.3 693.3,142.3 700.6,142.3 708.0,142.3" fill="none" stroke-width="2.0" stroke-linejoin="round" stroke-linecap="round"/><polyline class="equity-curve__series equity-curve__series--momentum" points="52.0,57.9 59.4,57.9 66.7,57.9 74.1,57.9 81.5,57.9 88.9,57.9 96.2,57.9 103.6,57.9 111.0,57.9 118.3,57.9 125.7,57.9 133.1,57.9 140.4,57.9 147.8,57.9 155.2,57.9 162.6,57.9 169.9,57.9 177.3,57.9 184.7,57.9 192.0,57.9 199.4,57.9 206.8,57.9 214.2,57.9 221.5,57.9 228.9,57.9 236.3,57.9 243.6,57.9 251.0,57.9 258.4,57.9 265.8,57.9 273.1,57.9 280.5,57.9 287.9,57.9 295.2,57.9 302.6,57.9 310.0,57.9 317.3,57.9 324.7,57.9 332.1,57.9 339.5,57.9 346.8,57.9 354.2,57.9 361.6,57.9 368.9,57.9 376.3,57.9 383.7,57.9 391.1,57.9 398.4,57.9 405.8,57.9 413.2,57.9 420.5,57.9 427.9,57.9 435.3,41.1 442.7,41.1 450.0,41.1 457.4,41.1 464.8,41.1 472.1,41.1 479.5,35.1 486.9,18.8 494.2,20.4 501.6,20.4 509.0,20.4 516.4,8.0 523.7,8.0 531.1,17.2 538.5,17.2 545.8,12.9 553.2,13.2 560.6,13.2 568.0,13.2 575.3,13.2 582.7,13.2 590.1,13.2 597.4,13.2 604.8,13.2 612.2,13.2 619.6,13.2 626.9,13.2 634.3,13.2 641.7,13.2 649.0,13.2 656.4,13.2 663.8,13.2 671.1,13.2 678.5,13.2 685.9,13.2 693.3,13.2 700.6,13.2 708.0,13.2" fill="none" stroke-width="1.25" stroke-linejoin="round" stroke-linecap="round"/><polyline class="equity-curve__series equity-curve__series--whale" points="52.0,57.9 59.4,57.9 66.7,57.9 74.1,57.9 81.5,57.9 88.9,57.9 96.2,57.9 103.6,57.9 111.0,57.9 118.3,57.9 125.7,57.9 133.1,57.9 140.4,57.9 147.8,57.9 155.2,57.9 162.6,57.9 169.9,57.9 177.3,57.9 184.7,57.9 192.0,57.9 199.4,57.9 206.8,57.9 214.2,57.9 221.5,57.9 228.9,57.9 236.3,57.9 243.6,57.9 251.0,57.9 258.4,57.9 265.8,57.9 273.1,57.9 280.5,57.9 287.9,57.9 295.2,57.9 302.6,57.9 310.0,57.9 317.3,57.9 324.7,57.9 332.1,57.9 339.5,57.9 346.8,57.9 354.2,57.9 361.6,57.9 368.9,57.9 376.3,57.9 383.7,57.9 391.1,57.9 398.4,57.9 405.8,57.9 413.2,57.9 420.5,57.9 427.9,44.4 435.3,44.4 442.7,44.4 450.0,62.2 457.4,71.7 464.8,71.7 472.1,98.6 479.5,98.6 486.9,130.1 494.2,130.1 501.6,187.6 509.0,198.0 516.4,198.0 523.7,198.0 531.1,187.0 538.5,187.0 545.8,187.0 553.2,187.0 560.6,187.0 568.0,187.0 575.3,187.0 582.7,187.0 590.1,187.0 597.4,187.0 604.8,187.0 612.2,187.0 619.6,187.0 626.9,187.0 634.3,187.0 641.7,187.0 649.0,187.0 656.4,187.0 663.8,187.0 671.1,187.0 678.5,187.0 685.9,187.0 693.3,187.0 700.6,187.0 708.0,187.0" fill="none" stroke-width="1.25" stroke-linejoin="round" stroke-linecap="round"/><polyline class="equity-curve__series equity-curve__series--funding" points="52.0,57.9 59.4,57.9 66.7,57.9 74.1,57.9 81.5,57.9 88.9,57.9 96.2,57.9 103.6,57.9 111.0,57.9 118.3,57.9 125.7,57.9 133.1,57.9 140.4,57.9 147.8,57.9 155.2,57.9 162.6,57.9 169.9,57.9 177.3,57.9 184.7,57.9 192.0,57.9 199.4,57.9 206.8,57.9 214.2,57.9 221.5,57.9 228.9,57.9 236.3,57.9 243.6,57.9 251.0,57.9 258.4,57.9 265.8,57.9 273.1,57.9 280.5,57.9 287.9,57.9 295.2,57.9 302.6,57.9 310.0,57.9 317.3,57.9 324.7,57.9 332.1,57.9 339.5,57.9 346.8,57.9 354.2,57.9 361.6,57.9 368.9,57.9 376.3,57.9 383.7,57.9 391.1,57.9 398.4,57.9 405.8,57.9 413.2,57.9 420.5,57.9 427.9,57.9 435.3,57.9 442.7,57.9 450.0,57.9 457.4,57.9 464.8,57.9 472.1,57.9 479.5,57.9 486.9,57.9 494.2,57.9 501.6,57.9 509.0,57.9 516.4,57.9 523.7,57.9 531.1,57.9 538.5,57.9 545.8,57.9 553.2,57.9 560.6,57.9 568.0,57.9 575.3,57.9 582.7,57.9 590.1,57.9 597.4,57.9 604.8,57.9 612.2,57.9 619.6,57.9 626.9,57.9 634.3,57.9 641.7,57.9 649.0,57.9 656.4,57.9 663.8,57.9 671.1,57.9 678.5,57.9 685.9,57.9 693.3,57.9 700.6,57.9 708.0,57.9" fill="none" stroke-width="1.25" stroke-linejoin="round" stroke-linecap="round"/><text class="chart-axis chart-axis--y" x="46" y="12" text-anchor="end">$87</text><text class="chart-axis chart-axis--y" x="46" y="198" text-anchor="end">-$245</text><text class="chart-axis chart-axis--y" x="46" y="61.9" text-anchor="end">$0</text><text class="chart-axis chart-axis--x" x="52.0" y="214" text-anchor="start">03-08</text><text class="chart-axis chart-axis--x" x="383.7" y="214" text-anchor="middle">04-22</text><text class="chart-axis chart-axis--x" x="708.0" y="214" text-anchor="end">06-05</text></svg></div>
 </section>
 
 <section class="chart-panel daily-pnl" aria-label="Daily PnL over last 30 days">
   <header class="chart-panel__head">
     <h2 class="chart-panel__title">Daily P/L · 30 days</h2>
   </header>
-  <div class="chart-panel__svg"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 120" preserveAspectRatio="none" width="100%" height="120" role="img" aria-label="Daily PnL last 30 days"><line class="daily-pnl__zero" x1="0" y1="60.0" x2="720" y2="60.0" stroke-width="1"/><rect class="daily-bar daily-bar--down" x="3.6" y="60.0" width="16.8" height="1.7"/><rect class="daily-bar daily-bar--down" x="27.6" y="60.0" width="16.8" height="60.0"/><rect class="daily-bar daily-bar--down" x="51.6" y="60.0" width="16.8" height="10.9"/><rect class="daily-bar daily-bar--up" x="75.6" y="47.0" width="16.8" height="13.0"/><rect class="daily-bar daily-bar--up" x="123.6" y="58.1" width="16.8" height="1.9"/><rect class="daily-bar daily-bar--up" x="171.6" y="55.5" width="16.8" height="4.5"/><rect class="daily-bar daily-bar--down" x="195.6" y="60.0" width="16.8" height="0.5"/></svg></div>
+  <div class="chart-panel__svg"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 140" width="100%" height="140" role="img" aria-label="Daily PnL last 30 days"><line class="daily-pnl__zero" x1="52" y1="63.0" x2="708" y2="63.0" stroke-width="1"/><rect class="daily-bar daily-bar--down" x="55.3" y="63.0" width="15.3" height="1.5"/><rect class="daily-bar daily-bar--down" x="77.1" y="63.0" width="15.3" height="55.0"/><rect class="daily-bar daily-bar--down" x="99.0" y="63.0" width="15.3" height="10.0"/><rect class="daily-bar daily-bar--up" x="120.9" y="51.1" width="15.3" height="11.9"/><rect class="daily-bar daily-bar--up" x="164.6" y="61.3" width="15.3" height="1.7"/><rect class="daily-bar daily-bar--up" x="208.3" y="58.9" width="15.3" height="4.1"/><rect class="daily-bar daily-bar--down" x="230.2" y="63.0" width="15.3" height="0.5"/><text class="chart-axis chart-axis--y" x="46" y="12" text-anchor="end">$100</text><text class="chart-axis chart-axis--y" x="46" y="67.0" text-anchor="end">$0</text><text class="chart-axis chart-axis--y" x="46" y="118" text-anchor="end">-$100</text><text class="chart-axis chart-axis--x" x="55.3" y="134" text-anchor="start">05-07</text><text class="chart-axis chart-axis--x" x="704.7" y="134" text-anchor="end">06-05</text></svg></div>
 </section>    </section>
     <section role="tabpanel" id="tab-trades"     tabindex="0" hidden>
 <h1 class="tab-heading">Trade Log</h1>
@@ -3047,7 +3069,7 @@ is-down">
   </main>
 
   <footer class="page-foot">
-    <span class="page-foot__build">Build · 1b311233 · 2026-06-05 18:59 UTC</span>
+    <span class="page-foot__build">Build · 5c69e6b3 · 2026-06-05 19:02 UTC</span>
   </footer>
 
   <script>
