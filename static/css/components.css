@@ -183,6 +183,48 @@
   justify-content: flex-end;
 }
 
+/* ── Why-silent panel (D.3 hero callout) ─────────────────────────────────── */
+/* Lives inside each bot card — explains in one sentence why the bot isn't
+ * producing trades right now. Hidden when the bot is healthy. Color-coded
+ * by kind: silent (amber) / dormant (whale-violet) / info (steel blue). */
+
+.why-panel {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--ink-3);
+}
+
+.why-panel--silent  { border-left-color: var(--warn); }
+.why-panel--dormant { border-left-color: var(--b-whale); }
+.why-panel--info    { border-left-color: var(--info); }
+
+.why-panel__heading {
+  font-family: var(--font-display);
+  font-size: var(--fs-9);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.why-panel__label {
+  font-family: var(--font-ui);
+  font-size: var(--fs-14);
+  font-weight: 500;
+  color: var(--ink-1);
+  line-height: var(--lh-snug);
+}
+
+.why-panel__detail {
+  color: var(--ink-2);
+  font-size: var(--fs-12);
+  line-height: var(--lh-snug);
+}
+
 .portfolio-strip__spark {
   grid-column: 1 / -1;
   margin-top: var(--space-2);

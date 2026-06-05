@@ -1836,6 +1836,10 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
     spark_funding  = _v2_sparkline_points(trades, "Funding",  days=30)
     spark_portfolio = _v2_sparkline_points(trades, None,      days=30)
 
+    # Stash trades on the data dict so _v2_why_silent() can read them
+    # without us threading them through every call site.
+    data["_trades_cache"] = trades
+
     now = datetime.now(timezone.utc)
     return {
         "operator":  os.getenv("OPERATOR", "ayott84"),
@@ -1847,15 +1851,18 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
             {**_bot_card("momentum", "M", "Momentum", "Momentum",
                          bot_status.get("momentum", {})),
              "spark_svg": _v2_sparkline_svg(spark_momentum,
-                                             stroke_class="spark__line spark__line--momentum")},
+                                             stroke_class="spark__line spark__line--momentum"),
+             "why":       _v2_why_silent("momentum", data)},
             {**_bot_card("whale",    "W", "Whale",    "Whale",
                          bot_status.get("whale", {})),
              "spark_svg": _v2_sparkline_svg(spark_whale,
-                                             stroke_class="spark__line spark__line--whale")},
+                                             stroke_class="spark__line spark__line--whale"),
+             "why":       _v2_why_silent("whale", data)},
             {**_bot_card("funding",  "F", "Funding",  "Funding",
                          bot_status.get("funding", {})),
              "spark_svg": _v2_sparkline_svg(spark_funding,
-                                             stroke_class="spark__line spark__line--funding")},
+                                             stroke_class="spark__line spark__line--funding"),
+             "why":       _v2_why_silent("funding", data)},
         ],
         "portfolio": {
             "net_pnl":          portfolio_net,
@@ -1882,6 +1889,8 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
     via kwargs.
     """
     trades = trades or []
+    # _v2_why_silent reads data["_trades_cache"]; emulate that shape for tests
+    data_stub = overrides.pop("data", {"signal_status": {}, "_trades_cache": trades})
     ctx = {
         "operator": "ayott84", "env": "paper", "freshness": "0s",
         "build_sha": "abc12345", "build_ts": "2026-06-05 00:00 UTC",
@@ -1891,19 +1900,22 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
              "net_pnl": 0, "net_pnl_display": "$0.00",
              "trade_count": 0, "win_rate_display": "—",
              "spark_svg": _v2_sparkline_svg(_v2_sparkline_points(trades, "Momentum"),
-                                              stroke_class="spark__line spark__line--momentum")},
+                                              stroke_class="spark__line spark__line--momentum"),
+             "why": _v2_why_silent("momentum", data_stub)},
             {"class": "whale", "monogram": "W", "name": "Whale",
              "state": "dormant", "seen_label": "paused",
              "net_pnl": 0, "net_pnl_display": "$0.00",
              "trade_count": 0, "win_rate_display": "—",
              "spark_svg": _v2_sparkline_svg(_v2_sparkline_points(trades, "Whale"),
-                                              stroke_class="spark__line spark__line--whale")},
+                                              stroke_class="spark__line spark__line--whale"),
+             "why": _v2_why_silent("whale", data_stub)},
             {"class": "funding", "monogram": "F", "name": "Funding",
              "state": "live", "seen_label": "0s ago",
              "net_pnl": 0, "net_pnl_display": "$0.00",
              "trade_count": 0, "win_rate_display": "—",
              "spark_svg": _v2_sparkline_svg(_v2_sparkline_points(trades, "Funding"),
-                                              stroke_class="spark__line spark__line--funding")},
+                                              stroke_class="spark__line spark__line--funding"),
+             "why": _v2_why_silent("funding", data_stub)},
         ],
         "portfolio": {"net_pnl": 0, "net_pnl_display": "$0.00",
                       "closed_count": 0, "open_count": 0,
@@ -1918,6 +1930,79 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
     }
     ctx.update(overrides)
     return ctx
+
+
+def _v2_why_silent(bot_class: str, data: Dict[str, Any]) -> dict | None:
+    """Compute the one-sentence "why isn't this bot trading?" answer.
+
+    Returns None when the bot is healthy and trading — the panel hides.
+    Otherwise returns {"label", "detail", "kind"} with kind in
+    {"silent" | "dormant" | "info"} for CSS class selection.
+    """
+    from collections import Counter
+
+    if bot_class == "whale":
+        try:
+            from whale_config import WHALE_PAUSED
+        except ImportError:
+            WHALE_PAUSED = False
+        if WHALE_PAUSED:
+            return {
+                "label":  "Paused by operator",
+                "detail": "Peer-review consensus: 12/14 trades SL-hit. "
+                          "Retire or redesign before re-enabling.",
+                "kind":   "dormant",
+            }
+        return None
+
+    if bot_class == "funding":
+        try:
+            from funding_config import (
+                FUNDING_PAUSED, FUNDING_UNIVERSE_MODE,
+            )
+        except ImportError:
+            FUNDING_PAUSED = False
+            FUNDING_UNIVERSE_MODE = "OI"
+        if FUNDING_PAUSED:
+            return {
+                "label":  "Paused",
+                "detail": "FUNDING_PAUSED=true — no new entries until cleared.",
+                "kind":   "dormant",
+            }
+        # No funding trade has closed yet — explain the filters
+        funding_trades = [t for t in data.get("_trades_cache", [])
+                          if t.get("bot") == "Funding"]
+        closed = [t for t in funding_trades
+                  if t.get("exit_price") not in (None, 0, "0", "")]
+        if not closed:
+            return {
+                "label":  "Awaiting first signal",
+                "detail": (f"Universe mode = {FUNDING_UNIVERSE_MODE}. No funding "
+                           f"extreme has met all filters (percentile, abs floor, "
+                           f"OI, low-vol regime, trend, ±30min window) since launch."),
+                "kind":   "info",
+            }
+        return None
+
+    # Momentum: aggregate blocked_by across all monitored assets
+    signal_status = data.get("signal_status") or {}
+    if not signal_status:
+        return None
+    blocked_counts = Counter(
+        info.get("blocked_by")
+        for info in signal_status.values()
+        if not info.get("would_enter") and info.get("blocked_by")
+    )
+    if not blocked_counts:
+        return None
+    total = len(signal_status)
+    top_reason, top_count = blocked_counts.most_common(1)[0]
+    from blocker_labels import blocker_label
+    return {
+        "label":  blocker_label(top_reason),
+        "detail": f"{top_count}/{total} strategies blocked by this filter",
+        "kind":   "silent",
+    }
 
 
 def _v2_sparkline_points(trades: List[dict], bot_label: str | None = None,

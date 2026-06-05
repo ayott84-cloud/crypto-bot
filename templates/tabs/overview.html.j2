@@ -22,6 +22,13 @@
     {% if bot.spark_svg %}
     <div class="bot-card__spark" aria-hidden="true">{{ bot.spark_svg|safe }}</div>
     {% endif %}
+    {% if bot.why %}
+    <div class="why-panel why-panel--{{ bot.why.kind }}" role="note">
+      <span class="why-panel__heading">why no trades?</span>
+      <span class="why-panel__label">{{ bot.why.label }}</span>
+      <span class="why-panel__detail">{{ bot.why.detail }}</span>
+    </div>
+    {% endif %}
   </article>
   {% endfor %}
 </section>
