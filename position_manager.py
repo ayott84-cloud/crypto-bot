@@ -49,6 +49,7 @@ _WHALE_PREFIX = "WHALE_"
 _FUNDING_PREFIX = "FUNDING_"
 _BREAKOUT_PREFIX = "BREAKOUT_"
 _PAIR_PREFIX = "PAIR_"
+_REVERSAL_PREFIX = "REVERSAL_"
 
 # Ordered (prefix, bot) — first match wins. Add new bots here.
 BOT_PREFIXES = (
@@ -56,6 +57,7 @@ BOT_PREFIXES = (
     (_FUNDING_PREFIX, "funding"),
     (_BREAKOUT_PREFIX, "breakout"),
     (_PAIR_PREFIX, "pair"),
+    (_REVERSAL_PREFIX, "reversal"),
 )
 DEFAULT_BOT = "momentum"
 
@@ -66,6 +68,7 @@ _WHALE_TOPLEVEL = {"whale_cooldowns"}
 _FUNDING_TOPLEVEL: set = set()
 _BREAKOUT_TOPLEVEL: set = set()
 _PAIR_TOPLEVEL: set = set()
+_REVERSAL_TOPLEVEL: set = set()
 
 # Per-bot top-level key sets — used by _merge_state to preserve other bots'
 # top-level state when one bot saves.
@@ -75,6 +78,7 @@ _TOPLEVEL_BY_BOT = {
     "funding": _FUNDING_TOPLEVEL,
     "breakout": _BREAKOUT_TOPLEVEL,
     "pair": _PAIR_TOPLEVEL,
+    "reversal": _REVERSAL_TOPLEVEL,
 }
 
 

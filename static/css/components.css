@@ -121,6 +121,7 @@
 .monogram--funding  { color: var(--b-funding); }
 .monogram--breakout { color: var(--b-breakout); }
 .monogram--pair     { color: var(--b-pair); }
+.monogram--reversal { color: var(--b-reversal); }
 
 /* ── Hero status board (5 bot cards: auto-fit grid, wraps responsively) ─── */
 
@@ -474,6 +475,7 @@
 .spark__line--funding  { stroke: var(--b-funding); }
 .spark__line--breakout { stroke: var(--b-breakout); }
 .spark__line--pair     { stroke: var(--b-pair); }
+.spark__line--reversal { stroke: var(--b-reversal); }
 
 .spark__zero {
   stroke: var(--rule-soft);

@@ -37,6 +37,7 @@
   --b-funding:  #d4ad58;       /* amber — slow-burn strategy */
   --b-breakout: #7ed4a6;       /* sage-green — trend follower */
   --b-pair:     #e89674;       /* warm peach — mean reversion */
+  --b-reversal: #c97ad4;       /* magenta — counter-trend reversal */
 
   /* ── Spatial — 8px grid ────────────────────────────────────────────── */
   --space-1: 4px;

@@ -245,6 +245,8 @@ def _compute_bot_status() -> Dict[str, dict]:
     breakout = _classify(bot_dir / ".breakout_heartbeat", 600)
     # Pair: .pair_heartbeat — 5-min poll, fresh threshold 10min
     pair = _classify(bot_dir / ".pair_heartbeat", 600)
+    # Reversal: .reversal_heartbeat — 5-min poll, fresh threshold 10min
+    reversal = _classify(bot_dir / ".reversal_heartbeat", 600)
 
     return {
         "momentum": momentum,
@@ -252,6 +254,7 @@ def _compute_bot_status() -> Dict[str, dict]:
         "funding":  funding,
         "breakout": breakout,
         "pair":     pair,
+        "reversal": reversal,
     }
 
 
@@ -644,6 +647,7 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
     spark_funding  = _v2_sparkline_points(trades, "Funding",  days=30)
     spark_breakout = _v2_sparkline_points(trades, "Breakout", days=30)
     spark_pair     = _v2_sparkline_points(trades, "Pair",     days=30)
+    spark_reversal = _v2_sparkline_points(trades, "Reversal", days=30)
     spark_portfolio = _v2_sparkline_points(trades, None,      days=30)
 
     # Stash trades on the data dict so _v2_why_silent() can read them
@@ -693,6 +697,13 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
                  stroke_class="spark__line spark__line--pair",
                  label="Pair 30-day cumulative PnL"),
              "why":       _v2_why_silent("pair", data)},
+            {**_bot_card("reversal", "R", "Reversal", "Reversal",
+                         bot_status.get("reversal", {})),
+             "spark_svg": _v2_sparkline_svg(
+                 spark_reversal,
+                 stroke_class="spark__line spark__line--reversal",
+                 label="Reversal 30-day cumulative PnL"),
+             "why":       _v2_why_silent("reversal", data)},
         ],
         "portfolio": {
             "net_pnl":          portfolio_net,
@@ -791,6 +802,7 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
     p_f, w_f = _trend_pair("Funding")
     p_b, w_b = _trend_pair("Breakout")
     p_p, w_p = _trend_pair("Pair")
+    p_r, w_r = _trend_pair("Reversal")
     ctx = {
         "operator": "ayott84", "env": "paper", "freshness": "0s",
         "build_sha": "abc12345", "build_ts": "2026-06-05 00:00 UTC",
@@ -845,6 +857,16 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
                  stroke_class="spark__line spark__line--pair",
                  label="Pair 30-day cumulative PnL"),
              "why": _v2_why_silent("pair", data_stub)},
+            {"class": "reversal", "monogram": "R", "name": "Reversal",
+             "state": "dormant", "seen_label": "paused",
+             "net_pnl": 0, "net_pnl_display": "$0.00",
+             "trade_count": 0, "win_rate_display": "—",
+             "pnl_trend": p_r, "wr_trend": w_r,
+             "spark_svg": _v2_sparkline_svg(
+                 _v2_sparkline_points(trades, "Reversal"),
+                 stroke_class="spark__line spark__line--reversal",
+                 label="Reversal 30-day cumulative PnL"),
+             "why": _v2_why_silent("reversal", data_stub)},
         ],
         "portfolio": {"net_pnl": 0, "net_pnl_display": "$0.00",
                       "closed_count": 0, "open_count": 0,
@@ -933,6 +955,31 @@ def _v2_why_silent(bot_class: str, data: Dict[str, Any]) -> dict | None:
             return {
                 "label":  "Awaiting z-score extreme",
                 "detail": "Live. ETH/BTC ratio hasn't hit |z|≥2 since launch.",
+                "kind":   "info",
+            }
+        return None
+
+    if bot_class == "reversal":
+        try:
+            from reversal_config import REVERSAL_PAUSED
+        except ImportError:
+            REVERSAL_PAUSED = True
+        if REVERSAL_PAUSED:
+            return {
+                "label":  "Paused — pending backtest validation",
+                "detail": "REVERSAL_PAUSED=true. RSI(VWAP)+extreme-reversal "
+                          "strategy from Alex Carter spec; enable per asset "
+                          "after backtest PF≥1.3 with ≥100 trades.",
+                "kind":   "dormant",
+            }
+        rev_trades = [t for t in data.get("_trades_cache", [])
+                      if t.get("bot") == "Reversal"]
+        if not rev_trades:
+            return {
+                "label":  "Awaiting RSI+extreme alignment",
+                "detail": "Live. No bar has printed RSI(VWAP) outside 10/90 "
+                          "with a 3× range capitulation candle and matching "
+                          "dot polarity since launch.",
                 "kind":   "info",
             }
         return None
@@ -1585,6 +1632,7 @@ _PAUSE_FLAGS = {
     "whale":    ("whale_config",    "WHALE_PAUSED"),
     "breakout": ("breakout_config", "BREAKOUT_PAUSED"),
     "pair":     ("pair_config",     "PAIR_PAUSED"),
+    "reversal": ("reversal_config", "REVERSAL_PAUSED"),
 }
 
 

@@ -24,17 +24,17 @@ import dashboard
 from dashboard_renderer import render
 
 
-def test_overview_renders_all_five_bot_cards():
+def test_overview_renders_all_six_bot_cards():
     html = render("base.html.j2", dashboard._v2_test_context([]))
-    for name in ("Momentum", "Whale", "Funding", "Breakout", "Pair"):
+    for name in ("Momentum", "Whale", "Funding", "Breakout", "Pair", "Reversal"):
         assert f">{name}<" in html, f"Missing bot card: {name}"
 
 
-def test_overview_renders_all_five_monograms():
+def test_overview_renders_all_six_monograms():
     html = render("base.html.j2", dashboard._v2_test_context([]))
     for css_class in ("monogram--momentum", "monogram--whale",
                        "monogram--funding", "monogram--breakout",
-                       "monogram--pair"):
+                       "monogram--pair", "monogram--reversal"):
         assert css_class in html, f"Missing CSS class: {css_class}"
 
 
@@ -67,13 +67,22 @@ def test_pair_why_panel_explains_paused_state():
     assert "PAIR_PAUSED" in html or "z-score backtest" in html
 
 
-def test_compute_bot_status_returns_all_five_keys(tmp_path, monkeypatch):
-    """_compute_bot_status() exposes a status entry for each of the 5 bots."""
-    # Point BOT_DIR at an empty tmp_path so every heartbeat returns NEVER
+def test_compute_bot_status_returns_all_six_keys(tmp_path, monkeypatch):
+    """_compute_bot_status() exposes a status entry for each of the 6 bots."""
     monkeypatch.setattr(dashboard, "BOT_DIR", tmp_path)
-    # Recreate the function's bot_dir via monkeypatched Path(__file__)
-    # The function reads from Path(__file__).resolve().parent so we can't
-    # easily redirect; just verify the keys exist in the live call.
     status = dashboard._compute_bot_status()
-    for key in ("momentum", "whale", "funding", "breakout", "pair"):
+    for key in ("momentum", "whale", "funding", "breakout", "pair", "reversal"):
         assert key in status, f"Missing bot status: {key}"
+
+
+def test_reversal_card_shows_paused_when_reversal_paused_true(monkeypatch):
+    import reversal_config
+    monkeypatch.setattr(reversal_config, "REVERSAL_PAUSED", True)
+    ctx = dashboard._v2_test_context([])
+    rev_card = next(b for b in ctx["bots"] if b["class"] == "reversal")
+    assert rev_card["state"] == "dormant"
+
+
+def test_reversal_why_panel_explains_paused_state():
+    html = render("base.html.j2", dashboard._v2_test_context([]))
+    assert "REVERSAL_PAUSED" in html or "extreme-reversal" in html

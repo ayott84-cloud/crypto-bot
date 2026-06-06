@@ -12,6 +12,9 @@ with a public dashboard on Render.
   Donchian channel breakouts. Enable per-asset via `allow_short`/`BREAKOUT_PAUSED`.
 - **crypto-pair** (systemd, PAUSED by default) — runs `pair_main.py`, ETH/BTC
   z-score mean reversion. Enable via `PAIR_PAUSED=false`.
+- **crypto-reversal** (systemd, PAUSED by default) — runs `reversal_main.py`,
+  RSI-VWAP extreme reversal (Alex Carter spec). Enable via
+  `REVERSAL_PAUSED=false`.
 - **dashboard-push.timer** (systemd) — every 10 min, pushes `dashboard.html`
   to the `render-dashboard` branch. Render auto-redeploys on push.
 

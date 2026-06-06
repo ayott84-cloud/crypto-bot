@@ -1,0 +1,203 @@
+"""Phase I — RSI-VWAP Extreme Reversal signals.
+
+Implements Alex Carter Trading's spec (extracted from Whop product
+screenshots):
+
+  RSI VWAP (length 15) computed on session VWAP instead of close.
+  Extreme Reversal Setup: 3× average-range capitulation candle detector.
+
+  LONG  when RSI(VWAP) < 10 AND rising AND bullish dot (close low) — same bar
+  SHORT when RSI(VWAP) > 90 AND falling AND bearish dot (close high) — same bar
+
+Public functions:
+  compute_vwap(df)                  → Series (anchored intraday VWAP)
+  compute_rsi_vwap(df, length)      → Series
+  is_extreme_bar(df, mult, sma_len) → bool
+  reversal_dot_polarity(df, pct)    → "bullish" | "bearish" | None
+  analyze_reversal_entry(df, cfg, rsi_vwap_series=None) → dict
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Optional
+
+try:
+    import pandas as pd
+    import numpy as np
+except ImportError:
+    pd = None
+    np = None
+
+logger = logging.getLogger("crypto_bot.reversal_signals")
+
+
+# ─── VWAP + RSI(VWAP) ──────────────────────────────────────────────────────
+
+def compute_vwap(df):
+    """Session-anchored VWAP (resets per session — caller passes one session
+    of bars at a time, or runs continuously on a multi-day window).
+
+    Uses typical price = (H+L+C)/3 × volume, cumulative.
+    """
+    tp = (df["high"] + df["low"] + df["close"]) / 3.0
+    vol = df["volume"].astype(float)
+    cum_tp_vol = (tp * vol).cumsum()
+    cum_vol = vol.cumsum()
+    # Avoid div-by-zero on bars with zero cumulative volume
+    return cum_tp_vol / cum_vol.where(cum_vol > 0)
+
+
+def compute_rsi_vwap(df, length: int = 15):
+    """RSI computed against the VWAP series (not close prices).
+
+    Standard Wilder's RSI applied to the VWAP series. NaN for the first
+    `length` bars (insufficient deltas).
+    """
+    vwap = compute_vwap(df).ffill()
+    delta = vwap.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    # Wilder's smoothing = EMA with alpha = 1/length
+    avg_gain = gain.ewm(alpha=1.0 / length, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1.0 / length, adjust=False).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    rsi = 100 - (100 / (1 + rs))
+    # When avg_loss==0 (monotonic up), RS is infinite → RSI = 100.
+    # When avg_gain==0 (monotonic down), RS = 0 → RSI = 0.
+    rsi = rsi.where(~(avg_loss == 0), 100.0)
+    rsi = rsi.where(~((avg_gain == 0) & (avg_loss > 0)), 0.0)
+    return rsi
+
+
+# ─── Extreme Reversal Setup ───────────────────────────────────────────────
+
+def is_extreme_bar(df, range_mult: float = 3.0,
+                    range_sma_length: int = 14) -> bool:
+    """True when the latest bar's range >= range_mult × SMA(range, length)."""
+    if df is None or len(df) < range_sma_length + 1:
+        return False
+    bar_range = (df["high"] - df["low"]).astype(float)
+    avg = bar_range.iloc[-range_sma_length - 1:-1].mean()
+    last_range = float(bar_range.iloc[-1])
+    if avg <= 0:
+        return False
+    return bool(last_range >= range_mult * avg)
+
+
+def reversal_dot_polarity(df, close_position_pct: float = 0.30):
+    """Where in the latest bar's range does the close sit?
+
+    Returns "bullish" if close is in the bottom `close_position_pct`
+    (sellers exhausted — buyers stepping in to defend lows).
+    Returns "bearish" if close is in the top `close_position_pct`
+    (buyers exhausted — sellers stepping in to fade highs).
+    Returns None when close is somewhere in the middle.
+    """
+    if df is None or len(df) == 0:
+        return None
+    last = df.iloc[-1]
+    high = float(last["high"])
+    low  = float(last["low"])
+    close = float(last["close"])
+    rng = high - low
+    if rng <= 0:
+        return None
+    position = (close - low) / rng  # 0.0 = low, 1.0 = high
+    if position <= close_position_pct:
+        return "bullish"
+    if position >= 1.0 - close_position_pct:
+        return "bearish"
+    return None
+
+
+# ─── Entry analyzer ───────────────────────────────────────────────────────
+
+def analyze_reversal_entry(df, cfg: dict, rsi_vwap_series=None) -> dict:
+    """Return entry decision dict. rsi_vwap_series override is for testing —
+    in production we compute it from the dataframe."""
+    result = {
+        "would_enter": False,
+        "blocked_by":  None,
+        "direction":   None,
+        "filters":     {
+            "extreme_bar": None, "dot": None,
+            "rsi_extreme": None, "cloud": None,
+        },
+        "values": {},
+    }
+
+    need = max(cfg.get("range_sma_length", 14), cfg.get("rsi_length", 15)) + 4
+    if df is None or len(df) < need:
+        result["blocked_by"] = "insufficient_data"
+        return result
+
+    rsi = (rsi_vwap_series
+           if rsi_vwap_series is not None
+           else compute_rsi_vwap(df, length=cfg.get("rsi_length", 15)))
+    if rsi is None or len(rsi) < 2 or pd.isna(rsi.iloc[-1]) or pd.isna(rsi.iloc[-2]):
+        result["blocked_by"] = "insufficient_data"
+        return result
+
+    curr_rsi = float(rsi.iloc[-1])
+    prev_rsi = float(rsi.iloc[-2])
+    result["values"]["rsi_curr"] = curr_rsi
+    result["values"]["rsi_prev"] = prev_rsi
+
+    # 1. Extreme bar — both directions need this
+    extreme = is_extreme_bar(df, range_mult=cfg.get("range_mult", 3.0),
+                              range_sma_length=cfg.get("range_sma_length", 14))
+    result["filters"]["extreme_bar"] = extreme
+    if not extreme:
+        result["blocked_by"] = "no_extreme_bar"
+        return result
+
+    # 2. Dot polarity
+    polarity = reversal_dot_polarity(df,
+                                     close_position_pct=cfg.get("close_position_pct", 0.30))
+    result["filters"]["dot"] = polarity
+    result["values"]["dot"] = polarity
+
+    # Decide direction. Both RSI side AND dot polarity must agree.
+    oversold = cfg.get("oversold", 10.0)
+    overbought = cfg.get("overbought", 90.0)
+
+    # LONG side: RSI < oversold AND rising AND bullish dot
+    if curr_rsi < oversold:
+        result["filters"]["rsi_extreme"] = True
+        rising = curr_rsi > prev_rsi
+        result["filters"]["cloud"] = "green" if rising else "red"
+        if not rising:
+            result["blocked_by"] = "wrong_cloud"
+            return result
+        if polarity != "bullish":
+            result["blocked_by"] = "wrong_dot"
+            return result
+        if not cfg.get("allow_long", True):
+            result["blocked_by"] = "allow_long_disabled"
+            return result
+        result["would_enter"] = True
+        result["direction"] = "LONG"
+        return result
+
+    # SHORT side: RSI > overbought AND falling AND bearish dot
+    if curr_rsi > overbought:
+        result["filters"]["rsi_extreme"] = True
+        falling = curr_rsi < prev_rsi
+        result["filters"]["cloud"] = "red" if falling else "green"
+        if not falling:
+            result["blocked_by"] = "wrong_cloud"
+            return result
+        if polarity != "bearish":
+            result["blocked_by"] = "wrong_dot"
+            return result
+        if not cfg.get("allow_short", True):
+            result["blocked_by"] = "allow_short_disabled"
+            return result
+        result["would_enter"] = True
+        result["direction"] = "SHORT"
+        return result
+
+    result["filters"]["rsi_extreme"] = False
+    result["blocked_by"] = "rsi_not_extreme"
+    return result

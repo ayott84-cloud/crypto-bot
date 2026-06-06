@@ -46,6 +46,12 @@ def test_bot_of_key_pair_prefix():
     assert _bot_of_key("PAIR_ETHBTC_SHORT_LEG") == "pair"
 
 
+def test_bot_of_key_reversal_prefix():
+    """Phase I: REVERSAL_ prefix routes to the RSI-VWAP reversal bot."""
+    assert _bot_of_key("REVERSAL_BTC_1H") == "reversal"
+    assert _bot_of_key("REVERSAL_ETH_1H") == "reversal"
+
+
 def test_bot_of_key_momentum_default_plain():
     assert _bot_of_key("BTC") == "momentum"
 
