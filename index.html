@@ -48,6 +48,7 @@
   --b-funding:  #d4ad58;       /* amber — slow-burn strategy */
   --b-breakout: #7ed4a6;       /* sage-green — trend follower */
   --b-pair:     #e89674;       /* warm peach — mean reversion */
+  --b-reversal: #c97ad4;       /* magenta — counter-trend reversal */
 
   /* ── Spatial — 8px grid ────────────────────────────────────────────── */
   --space-1: 4px;
@@ -454,6 +455,7 @@ a {
 .monogram--funding  { color: var(--b-funding); }
 .monogram--breakout { color: var(--b-breakout); }
 .monogram--pair     { color: var(--b-pair); }
+.monogram--reversal { color: var(--b-reversal); }
 
 /* ── Hero status board (5 bot cards: auto-fit grid, wraps responsively) ─── */
 
@@ -807,6 +809,7 @@ a {
 .spark__line--funding  { stroke: var(--b-funding); }
 .spark__line--breakout { stroke: var(--b-breakout); }
 .spark__line--pair     { stroke: var(--b-pair); }
+.spark__line--reversal { stroke: var(--b-reversal); }
 
 .spark__zero {
   stroke: var(--rule-soft);
@@ -1217,7 +1220,7 @@ a {
   <span class="colophon__sep">//</span>
   <span class="colophon__chip">FRESH · 0S</span>
   <span class="colophon__sep">//</span>
-  <span class="colophon__chip">BUILD · B9758BF0</span>
+  <span class="colophon__chip">BUILD · E3907F86</span>
   <button
     type="button"
     class="theme-toggle"
@@ -1307,7 +1310,7 @@ is-down">
   <span class="status-pill__dot" aria-hidden="true"></span>
   <span class="status-pill__state">LIVE</span>
   <span class="status-pill__sep">·</span>
-  <span class="status-pill__seen">34m ago</span>
+  <span class="status-pill__seen">43m ago</span>
 </span>    <p class="bot-card__pnl
 ">
       $0.00
@@ -1363,6 +1366,28 @@ is-down">
       <span class="why-panel__heading">why no trades?</span>
       <span class="why-panel__label">Paused — pending backtest validation</span>
       <span class="why-panel__detail">PAIR_PAUSED=true. Enable after ETH/BTC z-score backtest passes PF≥1.5 over 5 years.</span>
+    </div>
+  </article>
+  <article class="bot-card bot-card--reversal">
+    <header class="bot-card__head">
+<span class="monogram monogram--reversal" aria-hidden="true">R</span>      <h2 class="bot-card__name">Reversal</h2>
+    </header>
+<span class="status-pill status-pill--dormant" role="status" aria-live="polite">
+  <span class="status-pill__dot" aria-hidden="true"></span>
+  <span class="status-pill__state">DORMANT</span>
+  <span class="status-pill__sep">·</span>
+  <span class="status-pill__seen">paused</span>
+</span>    <p class="bot-card__pnl
+">
+      $0.00
+    </p>
+    <p class="bot-card__meta">
+      0 closed · WR —
+    </p>
+    <div class="why-panel why-panel--dormant" role="note">
+      <span class="why-panel__heading">why no trades?</span>
+      <span class="why-panel__label">Paused — pending backtest validation</span>
+      <span class="why-panel__detail">REVERSAL_PAUSED=true. RSI(VWAP)+extreme-reversal strategy from Alex Carter spec; enable per asset after backtest PF≥1.3 with ≥100 trades.</span>
     </div>
   </article>
 </section>
@@ -3269,7 +3294,7 @@ is-down">
   </main>
 
   <footer class="page-foot">
-    <span class="page-foot__build">Build · b9758bf0 · 2026-06-06 13:12 UTC</span>
+    <span class="page-foot__build">Build · e3907f86 · 2026-06-06 13:21 UTC</span>
   </footer>
 
   <script>
