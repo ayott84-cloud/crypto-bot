@@ -34,6 +34,12 @@ def test_bot_of_key_funding_prefix():
     assert _bot_of_key("FUNDING_ETH") == "funding"
 
 
+def test_bot_of_key_breakout_prefix():
+    """Phase G: BREAKOUT_ prefix routes to the breakout bot."""
+    assert _bot_of_key("BREAKOUT_BTC_4H") == "breakout"
+    assert _bot_of_key("BREAKOUT_ETH_1D") == "breakout"
+
+
 def test_bot_of_key_momentum_default_plain():
     assert _bot_of_key("BTC") == "momentum"
 

@@ -1,0 +1,115 @@
+"""Donchian breakout bot configuration (Phase G).
+
+Donchian breakout fills the silent-momentum gap: when BTC isn't trending
+and the EMA-crossover momentum bot stands aside, individual alts can
+still print clean N-bar highs/lows with strong ADX. Different signal
+events than the momentum bot — diversifies the fleet.
+
+Defaults follow plan G.1 + the public-pattern backtest research:
+  - Donchian 20 on 4h / Daily timeframes
+  - SHORT off by default; flip per asset after backtest validates
+  - PAUSED by default until backtest + 60 days paper validate
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+_BOT_DIR = Path(__file__).resolve().parent
+
+# ─── Master pause flag ─────────────────────────────────────────────────────
+# Set BREAKOUT_PAUSED=false in .env after backtest + paper validation.
+# Defaults TRUE so deploying the code never opens a live position
+# accidentally.
+BREAKOUT_PAUSED = os.getenv("BREAKOUT_PAUSED", "true").lower() in ("true", "1", "yes")
+
+# ─── Polling cadence ───────────────────────────────────────────────────────
+# Same as momentum: 5-minute poll. Each asset's own timeframe (4h, 1d)
+# governs how often a real signal CAN fire.
+BREAKOUT_POLL_INTERVAL_SECONDS = 300
+
+# ─── State + naming ────────────────────────────────────────────────────────
+BREAKOUT_STATE_KEY_PREFIX = "BREAKOUT_"
+BREAKOUT_STRATEGY_TAG = "Breakout"  # for log_trade + dashboard bot column
+
+# Heartbeat file the dashboard checks for LIVE/STALE/NEVER pill.
+BREAKOUT_HEARTBEAT_FILE = _BOT_DIR / ".breakout_heartbeat"
+
+# ─── Position sizing + caps ────────────────────────────────────────────────
+# Half-size during validation per plan F/G pattern. Lift after paper PF >= 1.5.
+BREAKOUT_MARGIN_PER_TRADE = 25.0
+BREAKOUT_LEVERAGE = 10
+# Max concurrent breakout positions. Consumes slots out of the global
+# MAX_POSITIONS pool (currently 8); cap at 2 during validation.
+MAX_BREAKOUT_POSITIONS = 2
+
+# ─── Per-asset configs ─────────────────────────────────────────────────────
+# Defaults below are the plan G baseline. Override per asset once
+# TradingView backtest validates. Add/remove assets here as needed.
+BREAKOUT_ASSETS = {
+    "BTC_4H": {
+        "symbol":               "BTCUSDT",
+        "interval":             "4h",
+        "donchian_period":      20,
+        "donchian_exit_period": 10,
+        "atr_period":           14,
+        "atr_sma_period":       20,
+        "adx_period":           14,
+        "adx_threshold":        20,    # entry gate
+        "adx_exit_threshold":   15,    # exit trigger (trend dying)
+        "sl_atr_mult":          1.5,
+        "allow_short":          False,  # off until per-asset backtest
+        "sl_atr_mult_short":    1.0,    # tighter SL for shorts
+        "strategy_name":        "BTC 4H Breakout",
+        "use_btc_filter":       False,  # breakout IS the directional signal
+    },
+    "ETH_4H": {
+        "symbol":               "ETHUSDT",
+        "interval":             "4h",
+        "donchian_period":      20,
+        "donchian_exit_period": 10,
+        "atr_period":           14,
+        "atr_sma_period":       20,
+        "adx_period":           14,
+        "adx_threshold":        20,
+        "adx_exit_threshold":   15,
+        "sl_atr_mult":          1.5,
+        "allow_short":          False,
+        "sl_atr_mult_short":    1.0,
+        "strategy_name":        "ETH 4H Breakout",
+        "use_btc_filter":       False,
+    },
+    "SOL_4H": {
+        "symbol":               "SOLUSDT",
+        "interval":             "4h",
+        "donchian_period":      20,
+        "donchian_exit_period": 10,
+        "atr_period":           14,
+        "atr_sma_period":       20,
+        "adx_period":           14,
+        "adx_threshold":        20,
+        "adx_exit_threshold":   15,
+        "sl_atr_mult":          1.5,
+        "allow_short":          False,
+        "sl_atr_mult_short":    1.0,
+        "strategy_name":        "SOL 4H Breakout",
+        "use_btc_filter":       False,
+    },
+    "BTC_1D": {
+        "symbol":               "BTCUSDT",
+        "interval":             "1d",
+        "donchian_period":      20,
+        "donchian_exit_period": 10,
+        "atr_period":           14,
+        "atr_sma_period":       20,
+        "adx_period":           14,
+        "adx_threshold":        20,
+        "adx_exit_threshold":   15,
+        "sl_atr_mult":          1.5,
+        "allow_short":          False,
+        "sl_atr_mult_short":    1.0,
+        "strategy_name":        "BTC 1D Breakout",
+        "use_btc_filter":       False,
+    },
+}
