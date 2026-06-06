@@ -407,6 +407,172 @@ def analyze_entry_signal(
     return result
 
 
+def analyze_short_entry_signal(
+    df: pd.DataFrame,
+    cfg: dict,
+    btc_close: Optional[float] = None,
+    btc_ema: Optional[float] = None,
+) -> dict:
+    """SHORT-side mirror of analyze_entry_signal.
+
+    Each directional filter is inverted; vol/strength filters (ATR regime,
+    ADX, volume) remain direction-agnostic.
+
+    RSI band for SHORT defaults to (30, 50) — the downside-momentum band
+    where most clean reversal shorts live. Configurable per asset via
+    cfg["rsi_min_short"] and cfg["rsi_max_short"].
+
+    Returns the same dict shape as analyze_entry_signal so dashboard
+    diagnostic rendering can treat LONG and SHORT identically.
+    """
+    result = {
+        "would_enter": False,
+        "blocked_by": None,
+        "filters": {
+            "trend": None,
+            "close_above_ema": None,  # name kept for parity; "True" means SHORT-side OK
+            "atr_regime": None,
+            "rsi_crossover": None,
+            "macd": None,
+            "pmo": None,
+            "volume": None,
+            "mfi": None,
+            "adx": None,
+            "btc_filter": None,
+        },
+        "values": {},
+        "direction": "SHORT",
+    }
+
+    if len(df) < 3:
+        result["blocked_by"] = "insufficient_data"
+        return result
+
+    curr = df.iloc[-2]
+    prev = df.iloc[-3]
+
+    result["values"] = {
+        "close": float(curr["close"]) if not pd.isna(curr.get("close")) else None,
+        "ema_fast": float(curr["ema_fast"]) if not pd.isna(curr.get("ema_fast")) else None,
+        "ema_slow": float(curr["ema_slow"]) if not pd.isna(curr.get("ema_slow")) else None,
+        "atr": float(curr["atr"]) if not pd.isna(curr.get("atr")) else None,
+        "atr_sma": float(curr["atr_sma"]) if not pd.isna(curr.get("atr_sma")) else None,
+        "rsi": float(curr["rsi"]) if not pd.isna(curr.get("rsi")) else None,
+        "rsi_sma": float(curr["rsi_sma"]) if not pd.isna(curr.get("rsi_sma")) else None,
+        "macd_hist": float(curr["macd_hist"]) if not pd.isna(curr.get("macd_hist")) else None,
+    }
+
+    required = ["ema_fast", "ema_slow", "atr", "atr_sma", "rsi", "rsi_sma", "macd_hist"]
+    for col in required:
+        if pd.isna(curr.get(col)) or pd.isna(prev.get(col)):
+            result["blocked_by"] = "nan_indicators"
+            return result
+
+    def fail(key):
+        result["filters"][key] = False
+        if result["blocked_by"] is None:
+            result["blocked_by"] = key
+
+    # 1. Trend (EMA20 < EMA50) — INVERTED
+    result["filters"]["trend"] = bool(curr["ema_fast"] < curr["ema_slow"])
+    if not result["filters"]["trend"]:
+        fail("trend")
+
+    # 2. Price below EMA — INVERTED (filter key kept as close_above_ema for parity)
+    if cfg["close_above"] == "ema_fast":
+        close_ok = bool(curr["close"] < curr["ema_fast"])
+    else:
+        close_ok = bool(curr["close"] < curr["ema_slow"])
+    result["filters"]["close_above_ema"] = close_ok
+    if not close_ok and result["blocked_by"] is None:
+        fail("close_above_ema")
+
+    # 3. ATR regime — SAME (high vol either direction)
+    atr_ok = bool((not pd.isna(curr["atr_sma"])) and curr["atr"] > curr["atr_sma"])
+    result["filters"]["atr_regime"] = atr_ok
+    if not atr_ok and result["blocked_by"] is None:
+        fail("atr_regime")
+
+    # 4. RSI crossover DOWN through SMA, IN inverted band [rsi_min_short, rsi_max_short]
+    rsi_cross_down = bool((curr["rsi"] < curr["rsi_sma"]) and (prev["rsi"] >= prev["rsi_sma"]))
+    rsi_min_s = cfg.get("rsi_min_short", 30)
+    rsi_max_s = cfg.get("rsi_max_short", 50)
+    rsi_in_range = bool(rsi_min_s <= curr["rsi"] <= rsi_max_s)
+    rsi_ok = bool(rsi_cross_down and rsi_in_range)
+    result["filters"]["rsi_crossover"] = rsi_ok
+    if not rsi_ok and result["blocked_by"] is None:
+        fail("rsi_crossover")
+
+    # 5. MACD — INVERTED (hist < 0 strict, or hist<0 OR line<signal loose)
+    if cfg["macd_mode"] == "strict":
+        macd_ok = bool(curr["macd_hist"] < 0)
+    else:
+        macd_ok = bool((curr["macd_hist"] < 0) or (curr["macd_line"] < curr["macd_signal_line"]))
+    result["filters"]["macd"] = macd_ok
+    if not macd_ok and result["blocked_by"] is None:
+        fail("macd")
+
+    # 6. PMO — INVERTED (pmo < signal)
+    if cfg.get("use_pmo", False):
+        pmo_ok = bool(
+            not pd.isna(curr.get("pmo"))
+            and not pd.isna(curr.get("pmo_signal"))
+            and curr["pmo"] < curr["pmo_signal"]
+        )
+        result["filters"]["pmo"] = pmo_ok
+        if not pd.isna(curr.get("pmo")):
+            result["values"]["pmo"] = float(curr["pmo"])
+        if not pmo_ok and result["blocked_by"] is None:
+            fail("pmo")
+
+    # 7. Volume — SAME (need participation either direction)
+    if cfg.get("use_volume_filter", False):
+        threshold = cfg.get("volume_threshold", 0.8)
+        vol_ok = bool(
+            not pd.isna(curr.get("vol_sma"))
+            and curr["volume"] > threshold * curr["vol_sma"]
+        )
+        result["filters"]["volume"] = vol_ok
+        if not pd.isna(curr.get("vol_sma")):
+            result["values"]["vol_ratio"] = float(curr["volume"] / curr["vol_sma"]) if curr["vol_sma"] else None
+        if not vol_ok and result["blocked_by"] is None:
+            fail("volume")
+
+    # 8. MFI — INVERTED (mfi < threshold)
+    if cfg.get("use_mfi_filter", False):
+        mfi_threshold = cfg.get("mfi_threshold", 50)
+        mfi_ok = bool(not pd.isna(curr.get("mfi")) and curr["mfi"] < mfi_threshold)
+        result["filters"]["mfi"] = mfi_ok
+        if not pd.isna(curr.get("mfi")):
+            result["values"]["mfi"] = float(curr["mfi"])
+        if not mfi_ok and result["blocked_by"] is None:
+            fail("mfi")
+
+    # 9. ADX — SAME (trend strength is direction-agnostic)
+    if cfg.get("use_adx_filter", False):
+        adx_threshold = cfg.get("adx_threshold", 20)
+        adx_ok = bool(not pd.isna(curr.get("adx")) and curr["adx"] > adx_threshold)
+        result["filters"]["adx"] = adx_ok
+        if not pd.isna(curr.get("adx")):
+            result["values"]["adx"] = float(curr["adx"])
+        if not adx_ok and result["blocked_by"] is None:
+            fail("adx")
+
+    # 10. BTC correlation — INVERTED (alt shorts need BTC downtrend)
+    if cfg.get("use_btc_filter", False):
+        btc_ok = bool(btc_close is not None and btc_ema is not None and btc_close < btc_ema)
+        result["filters"]["btc_filter"] = btc_ok
+        if btc_close is not None:
+            result["values"]["btc_close"] = float(btc_close)
+        if btc_ema is not None:
+            result["values"]["btc_ema"] = float(btc_ema)
+        if not btc_ok and result["blocked_by"] is None:
+            fail("btc_filter")
+
+    result["would_enter"] = result["blocked_by"] is None
+    return result
+
+
 def get_entry_reason(df: pd.DataFrame, cfg: dict) -> str:
     """Build a human-readable entry reason string."""
     curr = df.iloc[-2]
