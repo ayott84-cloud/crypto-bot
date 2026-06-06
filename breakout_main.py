@@ -132,6 +132,28 @@ def open_breakout_position(
         direction=direction,
     )
 
+    # Email open notification (fire-and-forget; failures logged in notifier)
+    try:
+        from notifier import notify_trade_opened
+        # SL/TP1/TP2 prices for the email body — directional math
+        sign = -1.0 if direction == "SHORT" else 1.0
+        tp1_mult = cfg.get("donchian_exit_period", 20) / 10.0  # rough estimate
+        notify_trade_opened(
+            symbol=symbol,
+            entry_price=current_price,
+            quantity=str(qty),
+            leverage=BREAKOUT_LEVERAGE,
+            sl_price=sl_price,
+            tp1_price=current_price + sign * 1.5 * atr_at_entry,
+            tp2_price=current_price + sign * 3.0 * atr_at_entry,
+            atr_at_entry=atr_at_entry,
+            strategy=cfg.get("strategy_name", BREAKOUT_STRATEGY_TAG),
+            entry_reason=f"Donchian {cfg.get('donchian_period', 55)}-bar break {direction}",
+            direction=direction,
+        )
+    except Exception as e:
+        logger.warning("[%s] open notification failed: %s", asset_name, e)
+
 
 def close_breakout_position(
     executor: Executor, state: dict, state_key: str, reason: str,
@@ -174,6 +196,35 @@ def close_breakout_position(
     except Exception as e:
         logger.error("[%s] log_trade failed: %s — journal will be reconciled",
                      state_key, e)
+
+    # Email close notification (fire-and-forget)
+    try:
+        from notifier import notify_trade_closed
+        entry = float(pos["entry_price"])
+        atr   = float(pos.get("atr_at_entry") or 0)
+        sign  = -1.0 if direction == "SHORT" else 1.0
+        portfolio_value = 0.0
+        try:
+            bal = executor.get_account_balance()
+            portfolio_value = float(bal.get("balance", 0) if bal else 0)
+        except Exception:
+            pass
+        notify_trade_closed(
+            symbol=symbol,
+            direction=direction,
+            entry_price=entry,
+            exit_price=float(exit_price or entry),
+            quantity=float(pos["quantity"]),
+            leverage=BREAKOUT_LEVERAGE,
+            sl_price=entry - sign * 2.5 * atr,
+            tp1_price=entry + sign * 1.5 * atr,
+            tp2_price=entry + sign * 3.0 * atr,
+            exit_reason=reason,
+            strategy=pos.get("strategy", BREAKOUT_STRATEGY_TAG),
+            portfolio_value=portfolio_value,
+        )
+    except Exception as e:
+        logger.warning("[%s] close notification failed: %s", state_key, e)
 
 
 def _count_open_breakouts(state: dict) -> int:

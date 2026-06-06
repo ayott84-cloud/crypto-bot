@@ -108,6 +108,25 @@ def open_pair_position(
         entry_ratio=current_ratio, entry_z=z,
     )
 
+    # Email open notification — single email for the pair (mentions both legs)
+    try:
+        from notifier import notify_trade_opened
+        notify_trade_opened(
+            symbol=f"ETH/BTC pair ({direction})",
+            entry_price=current_ratio,
+            quantity=f"{eth_qty} ETH / {btc_qty} BTC",
+            leverage=PAIR_LEVERAGE,
+            sl_price=current_ratio * 1.05 if is_long_eth else current_ratio * 0.95,
+            tp1_price=current_ratio if abs(z) < 0.5 else current_ratio * (1 - 0.5 * z / abs(z)),
+            tp2_price=current_ratio,
+            atr_at_entry=0.0,
+            strategy=PAIR_STRATEGY_TAG,
+            entry_reason=f"z-score {z:+.2f}, ratio {current_ratio:.6f}",
+            direction="LONG" if is_long_eth else "SHORT",
+        )
+    except Exception as e:
+        logger.warning("pair-open notification failed: %s", e)
+
 
 def close_pair_position(executor: Executor, state: dict, reason: str) -> None:
     """Close BOTH legs of the pair. Reason applied to both journal rows."""
@@ -151,6 +170,42 @@ def close_pair_position(executor: Executor, state: dict, reason: str) -> None:
     _close_one(PAIR_LONG_LEG_KEY,  long_leg)
     _close_one(PAIR_SHORT_LEG_KEY, short_leg)
     logger.info("PAIR CLOSED — %s", reason)
+
+    # Email close notification — single email for the pair
+    try:
+        from notifier import notify_trade_closed
+        # Combine both legs' PnL into one report (use long_leg as anchor)
+        anchor = long_leg or short_leg or {}
+        entry = float(anchor.get("entry_ratio") or anchor.get("entry_price") or 0)
+        # Best-effort current price for ratio display
+        try:
+            eth_now = executor.get_symbol_price(PAIR_LONG_SYMBOL) or 0
+            btc_now = executor.get_symbol_price(PAIR_SHORT_SYMBOL) or 1
+            current_ratio = float(eth_now) / float(btc_now) if btc_now else entry
+        except Exception:
+            current_ratio = entry
+        portfolio_value = 0.0
+        try:
+            bal = executor.get_account_balance()
+            portfolio_value = float(bal.get("balance", 0) if bal else 0)
+        except Exception:
+            pass
+        notify_trade_closed(
+            symbol="ETH/BTC pair",
+            direction=anchor.get("direction", "LONG"),
+            entry_price=entry,
+            exit_price=current_ratio,
+            quantity=float(anchor.get("quantity") or 0),
+            leverage=PAIR_LEVERAGE,
+            sl_price=entry * 1.05,
+            tp1_price=entry,
+            tp2_price=entry,
+            exit_reason=reason,
+            strategy=PAIR_STRATEGY_TAG,
+            portfolio_value=portfolio_value,
+        )
+    except Exception as e:
+        logger.warning("pair-close notification failed: %s", e)
 
 
 def run_cycle(executor: Executor, state: dict) -> None:
