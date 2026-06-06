@@ -73,19 +73,29 @@ def compute_rsi_vwap(df, length: int = 15):
 # ─── Extreme Reversal Setup ───────────────────────────────────────────────
 
 def is_extreme_bar(df, range_mult: float = 3.0,
-                    range_sma_length: int = 14) -> bool:
-    """True when the latest bar's range >= range_mult × SMA(range, length)."""
-    if df is None or len(df) < range_sma_length + 1:
+                    range_sma_length: int = 14,
+                    bar_offset: int = 0) -> bool:
+    """True when the bar at `-1 - bar_offset` has range >= range_mult × SMA(range, length).
+
+    bar_offset=0 → check the latest bar. bar_offset=1 → check one bar back.
+    Used by the v2 window-bar logic to scan for the extreme event up to
+    N bars in the past."""
+    if df is None or len(df) < range_sma_length + 1 + bar_offset:
         return False
     bar_range = (df["high"] - df["low"]).astype(float)
-    avg = bar_range.iloc[-range_sma_length - 1:-1].mean()
-    last_range = float(bar_range.iloc[-1])
+    # SMA computed over the `range_sma_length` bars preceding the target bar
+    end_idx = len(df) - 1 - bar_offset
+    if end_idx < range_sma_length:
+        return False
+    avg = bar_range.iloc[end_idx - range_sma_length:end_idx].mean()
+    last_range = float(bar_range.iloc[end_idx])
     if avg <= 0:
         return False
     return bool(last_range >= range_mult * avg)
 
 
-def reversal_dot_polarity(df, close_position_pct: float = 0.30):
+def reversal_dot_polarity(df, close_position_pct: float = 0.30,
+                           bar_offset: int = 0):
     """Where in the latest bar's range does the close sit?
 
     Returns "bullish" if close is in the bottom `close_position_pct`
@@ -96,10 +106,13 @@ def reversal_dot_polarity(df, close_position_pct: float = 0.30):
     """
     if df is None or len(df) == 0:
         return None
-    last = df.iloc[-1]
-    high = float(last["high"])
-    low  = float(last["low"])
-    close = float(last["close"])
+    idx = len(df) - 1 - bar_offset
+    if idx < 0:
+        return None
+    bar = df.iloc[idx]
+    high = float(bar["high"])
+    low  = float(bar["low"])
+    close = float(bar["close"])
     rng = high - low
     if rng <= 0:
         return None
@@ -144,19 +157,35 @@ def analyze_reversal_entry(df, cfg: dict, rsi_vwap_series=None) -> dict:
     result["values"]["rsi_curr"] = curr_rsi
     result["values"]["rsi_prev"] = prev_rsi
 
-    # 1. Extreme bar — both directions need this
-    extreme = is_extreme_bar(df, range_mult=cfg.get("range_mult", 3.0),
-                              range_sma_length=cfg.get("range_sma_length", 14))
+    # 1. Extreme bar — scan back `window_bars` bars for the event.
+    #    v1.0 looked at -1 only; v2 allows the conjunction within a 1-3 bar
+    #    window because the dot rarely lines up exactly with RSI extreme.
+    window_bars = max(1, int(cfg.get("window_bars", 3)))
+    extreme_offset = None
+    polarity = None
+    for offset in range(window_bars):
+        if is_extreme_bar(df,
+                           range_mult=cfg.get("range_mult", 3.0),
+                           range_sma_length=cfg.get("range_sma_length", 14),
+                           bar_offset=offset):
+            pol_at_offset = reversal_dot_polarity(
+                df,
+                close_position_pct=cfg.get("close_position_pct", 0.30),
+                bar_offset=offset)
+            if pol_at_offset is not None:
+                extreme_offset = offset
+                polarity = pol_at_offset
+                break
+
+    extreme = extreme_offset is not None
     result["filters"]["extreme_bar"] = extreme
     if not extreme:
         result["blocked_by"] = "no_extreme_bar"
         return result
 
-    # 2. Dot polarity
-    polarity = reversal_dot_polarity(df,
-                                     close_position_pct=cfg.get("close_position_pct", 0.30))
     result["filters"]["dot"] = polarity
     result["values"]["dot"] = polarity
+    result["values"]["extreme_offset"] = extreme_offset
 
     # Decide direction. Both RSI side AND dot polarity must agree.
     oversold = cfg.get("oversold", 10.0)

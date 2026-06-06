@@ -40,17 +40,27 @@ def compute_donchian_channels(df, period: int):
 
 # ─── Entry ─────────────────────────────────────────────────────────────────
 
-def analyze_breakout_entry(df, cfg: dict) -> dict:
+def analyze_breakout_entry(df, cfg: dict, df_1d=None) -> dict:
     """Verbose entry-signal analyzer, parallel-shape to signals.analyze_entry_signal.
 
     Returns dict with would_enter, blocked_by, filters, values, direction.
     Direction is "LONG" or "SHORT" when would_enter is True; None otherwise.
+
+    Phase G.2 added two optional gates:
+      - volume confirmation (use_volume_filter=True): breakout bar volume
+        > volume_threshold_mult × SMA(volume, volume_sma_period)
+      - 1D trend gate (use_trend_filter=True): df_1d must have ema_fast/slow
+        columns; LONG passes when ema_fast > ema_slow, SHORT mirrors
+
+    df_1d may be None when use_trend_filter is False or when 1D data is
+    unavailable — the gate defaults to pass when data is missing.
     """
     result = {
         "would_enter": False,
         "blocked_by":  None,
         "direction":   None,
-        "filters":     {"donchian": None, "atr_regime": None, "adx": None},
+        "filters":     {"donchian": None, "atr_regime": None, "adx": None,
+                         "volume": None, "trend_1d": None},
         "values":      {},
     }
 
@@ -114,6 +124,35 @@ def analyze_breakout_entry(df, cfg: dict) -> dict:
     if not adx_ok:
         result["blocked_by"] = "adx"
         return result
+
+    # 4. Volume confirmation (G.2)
+    if cfg.get("use_volume_filter", False):
+        vol_window = cfg.get("volume_sma_period", 20)
+        threshold_mult = cfg.get("volume_threshold_mult", 1.5)
+        if "volume" in df.columns and len(df) >= vol_window + 1:
+            vol_sma = df["volume"].iloc[-vol_window - 1:-1].mean()
+            current_vol = float(df.iloc[-1]["volume"])
+            vol_ok = bool(vol_sma > 0 and current_vol > threshold_mult * vol_sma)
+            result["filters"]["volume"] = vol_ok
+            result["values"]["volume"] = current_vol
+            result["values"]["vol_sma"] = float(vol_sma)
+            if not vol_ok:
+                result["blocked_by"] = "volume"
+                return result
+
+    # 5. 1D trend gate (G.2). Missing df_1d → pass (don't block on no-data).
+    if cfg.get("use_trend_filter", False) and df_1d is not None and len(df_1d) > 0:
+        if "ema_fast" in df_1d.columns and "ema_slow" in df_1d.columns:
+            last_1d = df_1d.iloc[-1]
+            ef = float(last_1d["ema_fast"])
+            es = float(last_1d["ema_slow"])
+            trend_ok = bool(ef > es if direction == "LONG" else ef < es)
+            result["filters"]["trend_1d"] = trend_ok
+            result["values"]["ema_fast_1d"] = ef
+            result["values"]["ema_slow_1d"] = es
+            if not trend_ok:
+                result["blocked_by"] = "trend_1d"
+                return result
 
     result["would_enter"] = True
     result["direction"] = direction

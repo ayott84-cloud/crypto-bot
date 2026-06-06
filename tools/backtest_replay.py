@@ -141,16 +141,25 @@ def replay_breakout(asset_name: str, cfg: dict, bars: int = 500) -> BacktestRepo
 
     df = _fetch_klines(cfg["symbol"], cfg["interval"], bars)
     df = _compute_indicators(df, cfg)
+
+    # G.2: fetch 1D series for the trend gate
+    df_1d_full = None
+    if cfg.get("use_trend_filter", False):
+        df_1d_full = _fetch_klines(cfg["symbol"], "1d", min(bars, 365))
+        if df_1d_full is not None and len(df_1d_full) >= 50:
+            df_1d_full["ema_fast"] = df_1d_full["close"].ewm(span=20, adjust=False).mean()
+            df_1d_full["ema_slow"] = df_1d_full["close"].ewm(span=50, adjust=False).mean()
+
     report = BacktestReport(bot="breakout", asset=asset_name, bars_seen=len(df))
 
-    # Need at least donchian_period bars before any entry consideration
     start = cfg.get("donchian_period", 20) + cfg.get("atr_sma_period", 20) + 5
-    position = None  # None or dict {direction, entry_bar, entry_price, atr_at_entry}
+    position = None
 
     for i in range(start, len(df)):
         window = df.iloc[: i + 1]
         if position is None:
-            sig = analyze_breakout_entry(window, cfg)
+            # Use whatever 1D bars are available; live bot does the same
+            sig = analyze_breakout_entry(window, cfg, df_1d=df_1d_full)
             if sig["would_enter"]:
                 position = {
                     "direction":    sig["direction"],

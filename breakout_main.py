@@ -234,10 +234,25 @@ def run_cycle(executor: Executor, state: dict) -> None:
             raw = executor.get_klines(cfg["symbol"], cfg["interval"], 100)
             df = _build_dataframe(raw)
             df = _compute_indicators(df, cfg)
-            sig = analyze_breakout_entry(df, cfg)
+            # G.2: optional 1D trend gate — fetch daily klines + compute EMA20/50
+            df_1d = None
+            if cfg.get("use_trend_filter", False):
+                try:
+                    raw_1d = executor.get_klines(cfg["symbol"], "1d", 80)
+                    df_1d = _build_dataframe(raw_1d)
+                    if len(df_1d) >= 50:
+                        df_1d["ema_fast"] = df_1d["close"].ewm(span=20, adjust=False).mean()
+                        df_1d["ema_slow"] = df_1d["close"].ewm(span=50, adjust=False).mean()
+                except Exception as e:
+                    logger.warning("[%s] 1D fetch failed: %s — trend gate defaults to pass",
+                                    asset_name, e)
+                    df_1d = None
+            sig = analyze_breakout_entry(df, cfg, df_1d=df_1d)
             if sig["would_enter"]:
                 open_breakout_position(
                     executor, state, asset_name, cfg, df, sig["direction"])
+            elif sig.get("blocked_by"):
+                logger.debug("[%s] no entry: %s", asset_name, sig["blocked_by"])
         except Exception as e:
             logger.error("[%s] entry cycle errored: %s",
                          asset_name, e, exc_info=True)

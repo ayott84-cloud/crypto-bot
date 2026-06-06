@@ -51,14 +51,18 @@ BREAKOUT_ASSETS = {
     "BTC_4H": {
         "symbol":               "BTCUSDT",
         "interval":             "4h",
-        "donchian_period":      20,
-        "donchian_exit_period": 10,
+        "donchian_period":      55,   # G.2: Turtle System 1 (was 20)
+        "donchian_exit_period": 20,   # G.2: Turtle exit (was 10)
         "atr_period":           14,
         "atr_sma_period":       20,
         "adx_period":           14,
         "adx_threshold":        20,    # entry gate
         "adx_exit_threshold":   15,    # exit trigger (trend dying)
-        "sl_atr_mult":          2.5,   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
+        "sl_atr_mult":          2.5,
+        "use_volume_filter":     True,    # G.2 — require >1.5x SMA volume
+        "volume_threshold_mult": 1.5,
+        "volume_sma_period":     20,
+        "use_trend_filter":      True,    # G.2 — require 1D EMA20/50 agree   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
         "allow_short":          False,  # off until per-asset backtest
         "sl_atr_mult_short":    1.0,    # tighter SL for shorts
         "strategy_name":        "BTC 4H Breakout",
@@ -67,14 +71,18 @@ BREAKOUT_ASSETS = {
     "ETH_4H": {
         "symbol":               "ETHUSDT",
         "interval":             "4h",
-        "donchian_period":      20,
-        "donchian_exit_period": 10,
+        "donchian_period":      55,   # G.2: Turtle System 1 (was 20)
+        "donchian_exit_period": 20,   # G.2: Turtle exit (was 10)
         "atr_period":           14,
         "atr_sma_period":       20,
         "adx_period":           14,
         "adx_threshold":        20,
         "adx_exit_threshold":   15,
-        "sl_atr_mult":          2.5,   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
+        "sl_atr_mult":          2.5,
+        "use_volume_filter":     True,    # G.2 — require >1.5x SMA volume
+        "volume_threshold_mult": 1.5,
+        "volume_sma_period":     20,
+        "use_trend_filter":      True,    # G.2 — require 1D EMA20/50 agree   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
         "allow_short":          False,
         "sl_atr_mult_short":    1.0,
         "strategy_name":        "ETH 4H Breakout",
@@ -83,14 +91,18 @@ BREAKOUT_ASSETS = {
     "SOL_4H": {
         "symbol":               "SOLUSDT",
         "interval":             "4h",
-        "donchian_period":      20,
-        "donchian_exit_period": 10,
+        "donchian_period":      55,   # G.2: Turtle System 1 (was 20)
+        "donchian_exit_period": 20,   # G.2: Turtle exit (was 10)
         "atr_period":           14,
         "atr_sma_period":       20,
         "adx_period":           14,
         "adx_threshold":        20,
         "adx_exit_threshold":   15,
-        "sl_atr_mult":          2.5,   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
+        "sl_atr_mult":          2.5,
+        "use_volume_filter":     True,    # G.2 — require >1.5x SMA volume
+        "volume_threshold_mult": 1.5,
+        "volume_sma_period":     20,
+        "use_trend_filter":      True,    # G.2 — require 1D EMA20/50 agree   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
         "allow_short":          False,
         "sl_atr_mult_short":    1.0,
         "strategy_name":        "SOL 4H Breakout",
@@ -99,14 +111,18 @@ BREAKOUT_ASSETS = {
     "BTC_1D": {
         "symbol":               "BTCUSDT",
         "interval":             "1d",
-        "donchian_period":      20,
-        "donchian_exit_period": 10,
+        "donchian_period":      55,   # G.2: Turtle System 1 (was 20)
+        "donchian_exit_period": 20,   # G.2: Turtle exit (was 10)
         "atr_period":           14,
         "atr_sma_period":       20,
         "adx_period":           14,
         "adx_threshold":        20,
         "adx_exit_threshold":   15,
-        "sl_atr_mult":          2.5,   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
+        "sl_atr_mult":          2.5,
+        "use_volume_filter":     True,    # G.2 — require >1.5x SMA volume
+        "volume_threshold_mult": 1.5,
+        "volume_sma_period":     20,
+        "use_trend_filter":      True,    # G.2 — require 1D EMA20/50 agree   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
         "allow_short":          False,
         "sl_atr_mult_short":    1.0,
         "strategy_name":        "BTC 1D Breakout",
