@@ -603,7 +603,7 @@ def _resolve_build_sha() -> str:
     return "local"
 
 
-def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
+def _build_v2_context(data: Dict[str, Any], state: dict | None = None) -> Dict[str, Any]:
     """Shape gather_dashboard_data output for the Jinja2 templates.
 
     Per-bot stats are recomputed by filtering trades on the `bot` column —
@@ -1906,7 +1906,7 @@ def build_dashboard(executor, state: dict) -> None:
     from dashboard_renderer import render
 
     data = gather_dashboard_data(executor, state)
-    ctx = _build_v2_context(data)
+    ctx = _build_v2_context(data, state=state)
     html = render("base.html.j2", ctx)
     DASHBOARD_FILE.write_text(html, encoding="utf-8")
     logger.info("Dashboard written to %s", DASHBOARD_FILE)
