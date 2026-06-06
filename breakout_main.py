@@ -74,12 +74,15 @@ def _compute_indicators(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
 
 
 def _build_dataframe(raw_klines: list) -> pd.DataFrame:
-    """Convert raw kline rows to a DataFrame with open/high/low/close/volume floats."""
-    df = pd.DataFrame(raw_klines)
-    for col in ("open", "high", "low", "close", "volume"):
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df
+    """Convert raw WEEX positional kline rows to OHLCV DataFrame.
+
+    Delegates to signals.build_dataframe which knows the WEEX column
+    layout (positional array, not dict).
+    """
+    from signals import build_dataframe
+    if not raw_klines:
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+    return build_dataframe(raw_klines).reset_index(drop=True)
 
 
 def open_breakout_position(

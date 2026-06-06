@@ -46,10 +46,12 @@ def _write_heartbeat(path: Path) -> None:
 
 
 def _closes_from_klines(raw_klines: list) -> pd.Series:
-    df = pd.DataFrame(raw_klines)
-    if "close" in df.columns:
-        return pd.to_numeric(df["close"], errors="coerce")
-    return pd.Series([], dtype=float)
+    """Extract close prices from WEEX positional klines via signals helper."""
+    from signals import build_dataframe
+    if not raw_klines:
+        return pd.Series([], dtype=float)
+    df = build_dataframe(raw_klines)
+    return df["close"].reset_index(drop=True)
 
 
 def _pair_is_open(state: dict) -> bool:

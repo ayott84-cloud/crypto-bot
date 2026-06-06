@@ -45,11 +45,11 @@ def _write_heartbeat(path: Path) -> None:
 
 
 def _build_dataframe(raw_klines: list) -> pd.DataFrame:
-    df = pd.DataFrame(raw_klines)
-    for col in ("open", "high", "low", "close", "volume"):
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df
+    """Convert WEEX positional klines to OHLCV DataFrame via signals helper."""
+    from signals import build_dataframe
+    if not raw_klines:
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+    return build_dataframe(raw_klines).reset_index(drop=True)
 
 
 def _compute_atr(df: pd.DataFrame, length: int = 14) -> pd.Series:

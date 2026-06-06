@@ -115,15 +115,20 @@ class BacktestReport:
 # ─── Klines fetcher ────────────────────────────────────────────────────────
 
 def _fetch_klines(symbol: str, interval: str, count: int) -> pd.DataFrame:
-    """Pull klines via the real executor (works in DRY_RUN too — read-only call)."""
+    """Pull klines via the real executor (works in DRY_RUN too — read-only call).
+
+    WEEX returns positional arrays, not dicts — delegates to the existing
+    signals.build_dataframe() helper which knows the WEEX layout.
+    """
     from executor import Executor
+    from signals import build_dataframe
     ex = Executor()
     raw = ex.get_klines(symbol, interval, count)
-    df = pd.DataFrame(raw)
-    for col in ("open", "high", "low", "close", "volume"):
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df.dropna(subset=["close"]).reset_index(drop=True)
+    if not raw:
+        return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
+    df = build_dataframe(raw)
+    # Replay loops index by integer position, not by timestamp
+    return df.reset_index(drop=False).dropna(subset=["close"]).reset_index(drop=True)
 
 
 # ─── Breakout replay ───────────────────────────────────────────────────────

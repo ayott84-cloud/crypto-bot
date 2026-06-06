@@ -34,12 +34,16 @@ def _state(positions=None):
 
 
 def _mock_executor():
+    """Mock executor returning WEEX-positional-format klines (25 bars).
+
+    WEEX kline rows are arrays: [ts_ms, o, h, l, c, v, close_ts, qv, n, tbv, tbqv]
+    """
     ex = MagicMock()
-    ex.get_klines.return_value = [
-        # 25 bars of textbook breakout setup
-        {"open": 100, "high": 102, "low": 99, "close": 101, "volume": 1000}
-        for _ in range(25)
-    ]
+    base = 1_700_000_000_000
+    rows = [[base + i * 60_000, 100.0, 102.0, 99.0, 101.0, 1000.0,
+             base + (i + 1) * 60_000, 100000, 50, 500, 50000]
+            for i in range(25)]
+    ex.get_klines.return_value = rows
     ex.get_symbol_price.return_value = 110.0
     return ex
 

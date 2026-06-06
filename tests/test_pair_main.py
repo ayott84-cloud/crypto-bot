@@ -30,11 +30,16 @@ def _state(positions=None):
 
 
 def _mock_executor_with_klines():
-    """Mock executor that returns 35 bars of close prices for both symbols."""
+    """Mock executor returning WEEX-positional-format klines (35 flat bars).
+
+    WEEX kline rows are arrays: [ts_ms, o, h, l, c, v, close_ts, qv, n, tbv, tbqv]
+    """
     ex = MagicMock()
     def _klines(symbol, interval, count):
-        # Same-shape data for ETH and BTC so ratio is constant (no signal)
-        return [{"open": 100, "high": 101, "low": 99, "close": 100, "volume": 1000}] * count
+        base = 1_700_000_000_000
+        return [[base + i * 60_000, 100.0, 101.0, 99.0, 100.0, 1000.0,
+                 base + (i + 1) * 60_000, 100000, 50, 500, 50000]
+                for i in range(count)]
     ex.get_klines.side_effect = _klines
     ex.get_symbol_price.return_value = 100.0
     return ex
