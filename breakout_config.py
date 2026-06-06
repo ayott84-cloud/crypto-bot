@@ -63,7 +63,7 @@ BREAKOUT_ASSETS = {
         "volume_threshold_mult": 1.5,
         "volume_sma_period":     20,
         "use_trend_filter":      True,    # G.2 — require 1D EMA20/50 agree   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
-        "allow_short":          False,  # off until per-asset backtest
+        "allow_short":          True,    # G.2: enabled — strategy is symmetric, restricting to LONG-only kills it in downtrends  # off until per-asset backtest
         "sl_atr_mult_short":    1.0,    # tighter SL for shorts
         "strategy_name":        "BTC 4H Breakout",
         "use_btc_filter":       False,  # breakout IS the directional signal
@@ -83,7 +83,7 @@ BREAKOUT_ASSETS = {
         "volume_threshold_mult": 1.5,
         "volume_sma_period":     20,
         "use_trend_filter":      True,    # G.2 — require 1D EMA20/50 agree   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
-        "allow_short":          False,
+        "allow_short":          True,    # G.2: enabled — strategy is symmetric, restricting to LONG-only kills it in downtrends
         "sl_atr_mult_short":    1.0,
         "strategy_name":        "ETH 4H Breakout",
         "use_btc_filter":       False,
@@ -103,7 +103,7 @@ BREAKOUT_ASSETS = {
         "volume_threshold_mult": 1.5,
         "volume_sma_period":     20,
         "use_trend_filter":      True,    # G.2 — require 1D EMA20/50 agree   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
-        "allow_short":          False,
+        "allow_short":          True,    # G.2: enabled — strategy is symmetric, restricting to LONG-only kills it in downtrends
         "sl_atr_mult_short":    1.0,
         "strategy_name":        "SOL 4H Breakout",
         "use_btc_filter":       False,
@@ -123,7 +123,7 @@ BREAKOUT_ASSETS = {
         "volume_threshold_mult": 1.5,
         "volume_sma_period":     20,
         "use_trend_filter":      True,    # G.2 — require 1D EMA20/50 agree   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
-        "allow_short":          False,
+        "allow_short":          True,    # G.2: enabled — strategy is symmetric, restricting to LONG-only kills it in downtrends
         "sl_atr_mult_short":    1.0,
         "strategy_name":        "BTC 1D Breakout",
         "use_btc_filter":       False,

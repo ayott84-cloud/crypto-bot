@@ -48,12 +48,12 @@ REVERSAL_ASSETS = {
         "symbol":             "BTCUSDT",
         "interval":           "4h",   # I.2: redesign to 4h primary
         "rsi_length":         15,
-        "oversold":           15.0,   # relaxed from 10 for paper validation
-        "overbought":         85.0,   # relaxed from 90 for paper validation
-        "range_mult":         2.5,    # relaxed from 3.0 for paper validation
-        "range_sma_length":   14,
+        "oversold":           20.0,   # I.2.1: relaxed further from 15   # relaxed from 10 for paper validation
+        "overbought":         80.0,   # I.2.1: relaxed further from 85   # relaxed from 90 for paper validation
+        "range_mult":         2.0,    # I.2.1: relaxed further from 2.5    # relaxed from 3.0 for paper validation
+        "range_sma_length":   10,   # I.2.1: shorter window so recent context dominates
         "close_position_pct": 0.30,
-        "window_bars":        3,      # I.2: allow conjunction within 3-bar window
+        "window_bars":        5,      # I.2.1: widened from 3      # I.2: allow conjunction within 3-bar window
         "allow_long":         True,
         "allow_short":        True,
         # Exits (NOT in source — defaults for paper validation)
@@ -68,12 +68,12 @@ REVERSAL_ASSETS = {
         "symbol":             "ETHUSDT",
         "interval":           "4h",   # I.2: redesign to 4h primary
         "rsi_length":         15,
-        "oversold":           15.0,   # relaxed from 10 for paper validation
-        "overbought":         85.0,   # relaxed from 90 for paper validation
-        "range_mult":         2.5,    # relaxed from 3.0 for paper validation
-        "range_sma_length":   14,
+        "oversold":           20.0,   # I.2.1: relaxed further from 15   # relaxed from 10 for paper validation
+        "overbought":         80.0,   # I.2.1: relaxed further from 85   # relaxed from 90 for paper validation
+        "range_mult":         2.0,    # I.2.1: relaxed further from 2.5    # relaxed from 3.0 for paper validation
+        "range_sma_length":   10,   # I.2.1: shorter window so recent context dominates
         "close_position_pct": 0.30,
-        "window_bars":        3,      # I.2: allow conjunction within 3-bar window
+        "window_bars":        5,      # I.2.1: widened from 3      # I.2: allow conjunction within 3-bar window
         "allow_long":         True,
         "allow_short":        True,
         "atr_length":         14,
@@ -87,12 +87,12 @@ REVERSAL_ASSETS = {
         "symbol":             "SOLUSDT",
         "interval":           "4h",   # I.2: redesign to 4h primary
         "rsi_length":         15,
-        "oversold":           15.0,   # relaxed from 10 for paper validation
-        "overbought":         85.0,   # relaxed from 90 for paper validation
-        "range_mult":         2.5,    # relaxed from 3.0 for paper validation
-        "range_sma_length":   14,
+        "oversold":           20.0,   # I.2.1: relaxed further from 15   # relaxed from 10 for paper validation
+        "overbought":         80.0,   # I.2.1: relaxed further from 85   # relaxed from 90 for paper validation
+        "range_mult":         2.0,    # I.2.1: relaxed further from 2.5    # relaxed from 3.0 for paper validation
+        "range_sma_length":   10,   # I.2.1: shorter window so recent context dominates
         "close_position_pct": 0.30,
-        "window_bars":        3,      # I.2: allow conjunction within 3-bar window
+        "window_bars":        5,      # I.2.1: widened from 3      # I.2: allow conjunction within 3-bar window
         "allow_long":         True,
         "allow_short":        True,
         "atr_length":         14,
