@@ -160,22 +160,38 @@ def main():
     parser.add_argument("--bot", choices=list(_BOTS) + ["all"], default="all")
     args = parser.parse_args()
 
-    # Probe SMTP config first
+    # Probe config first — at least ONE channel must be configured
     try:
         from config import NOTIFY_ENABLED, SMTP_HOST, SMTP_USER, NOTIFY_EMAIL
     except ImportError as e:
         print(f"Config import failed: {e}", file=sys.stderr)
         sys.exit(1)
+    try:
+        from config import DISCORD_WEBHOOK_URL
+    except ImportError:
+        DISCORD_WEBHOOK_URL = ""
 
-    print(f"NOTIFY_ENABLED={NOTIFY_ENABLED}")
-    print(f"SMTP_HOST={SMTP_HOST}")
-    print(f"SMTP_USER={'(set)' if SMTP_USER else '(MISSING)'}")
-    print(f"NOTIFY_EMAIL={NOTIFY_EMAIL or '(MISSING)'}")
+    smtp_ok    = bool(SMTP_USER and NOTIFY_EMAIL)
+    discord_ok = bool(DISCORD_WEBHOOK_URL)
+
+    print(f"NOTIFY_ENABLED       = {NOTIFY_ENABLED}")
+    print(f"SMTP_HOST            = {SMTP_HOST}")
+    print(f"SMTP_USER            = {'(set)' if SMTP_USER else '(MISSING)'}")
+    print(f"NOTIFY_EMAIL         = {NOTIFY_EMAIL or '(MISSING)'}")
+    print(f"DISCORD_WEBHOOK_URL  = {'(set)' if discord_ok else '(MISSING)'}")
     if not NOTIFY_ENABLED:
-        print("\nWARN: NOTIFY_ENABLED is false — emails won't actually send.")
-    if not SMTP_USER or not NOTIFY_EMAIL:
-        print("\nERROR: SMTP_USER and NOTIFY_EMAIL must be configured.")
+        print("\nWARN: NOTIFY_ENABLED is false — nothing will send.")
         sys.exit(1)
+    if not (smtp_ok or discord_ok):
+        print("\nERROR: configure at least one of SMTP_USER+NOTIFY_EMAIL "
+              "or DISCORD_WEBHOOK_URL in .env.")
+        sys.exit(1)
+    if smtp_ok and not discord_ok:
+        print("\nNote: SMTP configured, Discord not. If SMTP is blocked by "
+              "the cloud provider, set DISCORD_WEBHOOK_URL for HTTPS delivery.")
+    if discord_ok and not smtp_ok:
+        print("\nNote: Discord configured, SMTP not. All notifications will "
+              "go to Discord only.")
 
     bots = list(_BOTS) if args.bot == "all" else [args.bot]
     print(f"\nSending {len(bots) * 2} test emails ({len(bots)} bots × OPEN + CLOSE):\n")

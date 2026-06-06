@@ -44,6 +44,15 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 SMTP_USER = os.getenv("SMTP_USER", "")       # your Gmail address
 SMTP_PASS = os.getenv("SMTP_PASS", "")       # Gmail App Password (16 chars)
 
+# ─── Discord webhook (HTTPS) — fallback when SMTP is blocked ────────────────
+# DigitalOcean blocks outbound SMTP by default; Discord webhooks work over
+# HTTPS so they bypass the SMTP block entirely. Create a webhook in any
+# Discord channel (Server Settings → Integrations → Webhooks → New Webhook),
+# copy the URL, and set DISCORD_WEBHOOK_URL in .env. The notifier fires both
+# email AND Discord if both are configured; either one alone if only one is
+# configured.
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
+
 # ─── Trading Parameters ─────────────────────────────────────────────────────
 INITIAL_CAPITAL = 5000.0          # WEEX account seed
 MARGIN_PER_TRADE = 50.0           # USD margin per position

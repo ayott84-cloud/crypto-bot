@@ -19,7 +19,66 @@ from config import (
     NOTIFY_EMAIL, NOTIFY_ENABLED,
 )
 
+try:
+    from config import DISCORD_WEBHOOK_URL
+except ImportError:
+    DISCORD_WEBHOOK_URL = ""
+
 logger = logging.getLogger("crypto_bot.notifier")
+
+
+# ─── Discord webhook (HTTPS — bypasses DO's SMTP block) ────────────────────
+
+def _send_discord_embed(title: str, description: str, color: int,
+                         fields: list) -> bool:
+    """POST a rich-embed message to the configured Discord webhook.
+
+    Returns True on success. Fire-and-forget: failures logged but never raise.
+    Discord embeds support up to 25 fields, each with name + value + inline.
+    """
+    if not NOTIFY_ENABLED or not DISCORD_WEBHOOK_URL:
+        return False
+
+    import json
+    import urllib.request
+    import urllib.error
+
+    payload = {
+        "username": "crypto-bot",
+        "embeds": [{
+            "title":       title[:256],
+            "description": description[:4000],
+            "color":       color,
+            "fields":      fields[:25],
+        }],
+    }
+
+    req = urllib.request.Request(
+        DISCORD_WEBHOOK_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json",
+                 "User-Agent":   "crypto-bot/1.0"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if 200 <= resp.status < 300:
+                logger.info("Discord webhook posted: %s", title)
+                return True
+            logger.warning("Discord webhook returned HTTP %d", resp.status)
+            return False
+    except urllib.error.HTTPError as e:
+        logger.error("Discord webhook HTTPError %d: %s", e.code, e.reason)
+        return False
+    except Exception as e:
+        logger.error("Discord webhook failed: %s", e)
+        return False
+
+
+_DISCORD_GREEN = 0x57CB95
+_DISCORD_RED   = 0xE85A4C
+_DISCORD_BLUE  = 0x5FA8E5
+_DISCORD_AMBER = 0xD4AD58
 
 
 # ─── Low-level sender ──────────────────────────────────────────────────────
@@ -207,7 +266,26 @@ def notify_trade_opened(
   </div>
 </div>"""
 
-    return _send_email(subject, html)
+    # Fan out: SMTP first, Discord second. Either alone is success.
+    ok_email = _send_email(subject, html)
+    color = _DISCORD_GREEN if direction == "LONG" else _DISCORD_RED
+    ok_discord = _send_discord_embed(
+        title=f"📈 OPENED {direction} · {symbol}",
+        description=f"**{strategy}**\n{entry_reason}",
+        color=color,
+        fields=[
+            {"name": "Entry",        "value": f"${_fmt(entry_price, pdec)}", "inline": True},
+            {"name": "Quantity",     "value": f"{quantity}",                  "inline": True},
+            {"name": "Leverage",     "value": f"{leverage}x",                 "inline": True},
+            {"name": "Stop Loss",    "value": f"${_fmt(sl_price, pdec)}",     "inline": True},
+            {"name": "TP1 (50%)",    "value": f"${_fmt(tp1_price, pdec)}",    "inline": True},
+            {"name": "TP2 (full)",   "value": f"${_fmt(tp2_price, pdec)}",    "inline": True},
+            {"name": "Risk (SL)",    "value": f"−${_fmt(loss_sl)} ({pct_sl:.1f}% ROE)",   "inline": True},
+            {"name": "Reward (TP1)", "value": f"+${_fmt(profit_tp1)} ({pct_tp1:.1f}% ROE)", "inline": True},
+            {"name": "Notional",     "value": f"${_fmt(notional)}",           "inline": True},
+        ],
+    )
+    return ok_email or ok_discord
 
 
 # ─── Trade Close Notification ──────────────────────────────────────────────
@@ -293,4 +371,26 @@ def notify_trade_closed(
   </div>
 </div>"""
 
-    return _send_email(subject, html)
+    ok_email = _send_email(subject, html)
+    # Discord embed color reflects the outcome, not the direction
+    if pnl > 0:
+        color = _DISCORD_GREEN
+    elif pnl < 0:
+        color = _DISCORD_RED
+    else:
+        color = _DISCORD_AMBER
+    title_emoji = "✅" if pnl > 0 else ("🛑" if pnl < 0 else "⚪")
+    ok_discord = _send_discord_embed(
+        title=f"{title_emoji} {close_type} · {symbol}",
+        description=f"**{strategy}**\nExit reason: {exit_reason}",
+        color=color,
+        fields=[
+            {"name": "Direction",  "value": direction,                      "inline": True},
+            {"name": "Entry",      "value": f"${_fmt(entry_price, pdec)}",  "inline": True},
+            {"name": "Exit",       "value": f"${_fmt(exit_price, pdec)}",   "inline": True},
+            {"name": "PnL",        "value": f"${_pnl_sign(pnl)}",           "inline": True},
+            {"name": "ROE",        "value": f"{pnl_pct:+.1f}%",             "inline": True},
+            {"name": "Portfolio",  "value": f"${_fmt(portfolio_value)}",    "inline": True},
+        ],
+    )
+    return ok_email or ok_discord
