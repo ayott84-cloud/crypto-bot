@@ -48,12 +48,14 @@ DEFAULT_STATE = {
 _WHALE_PREFIX = "WHALE_"
 _FUNDING_PREFIX = "FUNDING_"
 _BREAKOUT_PREFIX = "BREAKOUT_"
+_PAIR_PREFIX = "PAIR_"
 
 # Ordered (prefix, bot) — first match wins. Add new bots here.
 BOT_PREFIXES = (
     (_WHALE_PREFIX, "whale"),
     (_FUNDING_PREFIX, "funding"),
     (_BREAKOUT_PREFIX, "breakout"),
+    (_PAIR_PREFIX, "pair"),
 )
 DEFAULT_BOT = "momentum"
 
@@ -61,8 +63,9 @@ _MOMENTUM_TOPLEVEL = {
     "last_processed_candle", "signal_status", "last_dashboard_update",
 }
 _WHALE_TOPLEVEL = {"whale_cooldowns"}
-_FUNDING_TOPLEVEL: set = set()  # funding bot has no top-level state today
-_BREAKOUT_TOPLEVEL: set = set()  # breakout bot has no top-level state today
+_FUNDING_TOPLEVEL: set = set()
+_BREAKOUT_TOPLEVEL: set = set()
+_PAIR_TOPLEVEL: set = set()
 
 # Per-bot top-level key sets — used by _merge_state to preserve other bots'
 # top-level state when one bot saves.
@@ -71,6 +74,7 @@ _TOPLEVEL_BY_BOT = {
     "whale": _WHALE_TOPLEVEL,
     "funding": _FUNDING_TOPLEVEL,
     "breakout": _BREAKOUT_TOPLEVEL,
+    "pair": _PAIR_TOPLEVEL,
 }
 
 

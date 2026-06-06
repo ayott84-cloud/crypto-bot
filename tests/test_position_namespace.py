@@ -40,6 +40,12 @@ def test_bot_of_key_breakout_prefix():
     assert _bot_of_key("BREAKOUT_ETH_1D") == "breakout"
 
 
+def test_bot_of_key_pair_prefix():
+    """Phase F: PAIR_ prefix routes to the pair-trade bot."""
+    assert _bot_of_key("PAIR_ETHBTC_LONG_LEG") == "pair"
+    assert _bot_of_key("PAIR_ETHBTC_SHORT_LEG") == "pair"
+
+
 def test_bot_of_key_momentum_default_plain():
     assert _bot_of_key("BTC") == "momentum"
 
