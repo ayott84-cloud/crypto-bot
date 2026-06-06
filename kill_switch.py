@@ -40,6 +40,10 @@ logger = logging.getLogger("crypto_bot.kill_switch")
 CONSECUTIVE_LOSS_LIMIT = 5
 CONSECUTIVE_LOSS_COOLOFF_HOURS = 24
 
+# Phase E.3: tighter per-direction limit for SHORT trades. Crypto shorts have
+# unbounded loss potential (price → ∞); cooler-headed limit during validation.
+CONSECUTIVE_LOSS_LIMIT_SHORT = 2
+
 # Global daily drawdown breaker
 # Negative number; the breaker fires when the trailing-24h closed P&L is
 # below (more negative than) this threshold.
@@ -115,11 +119,17 @@ def _last_win_time(closed: List[dict]) -> Optional[datetime]:
     return None
 
 
-def should_pause(owner: str) -> KillSwitchStatus:
+def should_pause(owner: str, direction: str | None = None) -> KillSwitchStatus:
     """Return (paused, reason). Bots call this before opening a new position.
 
     owner: "momentum", "whale", or any tag string. The consecutive-loss
     breaker filters by owner; the global daily-DD breaker is account-wide.
+
+    direction: optional "LONG" or "SHORT". When set, only same-direction
+    trades count toward the consecutive-loss streak, and the SHORT side
+    uses a tighter limit (CONSECUTIVE_LOSS_LIMIT_SHORT=2) since crypto
+    shorts have unbounded loss potential. None = original behavior
+    (all-direction streak vs CONSECUTIVE_LOSS_LIMIT=5).
     """
     try:
         from journal import read_trades  # local import to avoid module-level cycles
@@ -142,10 +152,18 @@ def should_pause(owner: str) -> KillSwitchStatus:
             f"daily drawdown ${daily_pnl:+.2f} <= ${MAX_DAILY_DRAWDOWN_USD:.2f} threshold (24h trailing)",
         )
 
-    # 2. Per-bot consecutive losses
+    # 2. Per-bot consecutive losses (optionally direction-filtered)
     owned = _filter_to_owner(closed, owner)
+    if direction in ("LONG", "SHORT"):
+        owned = [t for t in owned if (t.get("direction") or "").upper() == direction]
+        limit = CONSECUTIVE_LOSS_LIMIT_SHORT if direction == "SHORT" else CONSECUTIVE_LOSS_LIMIT
+        label = f"{owner}-{direction}"
+    else:
+        limit = CONSECUTIVE_LOSS_LIMIT
+        label = owner
+
     streak = _consecutive_losses_since_last_win(owned)
-    if streak >= CONSECUTIVE_LOSS_LIMIT:
+    if streak >= limit:
         # Check if cooloff has elapsed since the LAST loss
         last_loss = None
         for t in reversed(owned):
@@ -158,7 +176,7 @@ def should_pause(owner: str) -> KillSwitchStatus:
                 remaining = CONSECUTIVE_LOSS_COOLOFF_HOURS - elapsed_hours
                 return KillSwitchStatus(
                     True,
-                    f"{owner} bot has {streak} consecutive losses; cooling off "
+                    f"{label} bot has {streak} consecutive losses; cooling off "
                     f"for {remaining:.1f} more hours",
                 )
 

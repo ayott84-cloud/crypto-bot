@@ -244,6 +244,31 @@ def check_exit_conditions(
     return None, None
 
 
+def is_short_enabled(cfg: dict) -> bool:
+    """Per-asset SHORT enablement gate.
+
+    Defaults to False so SHORT signals never fire on assets that haven't
+    been explicitly approved (via backtest + operator decision). Per plan
+    E.3: every asset starts allow_short=False; flip on individually after
+    TradingView backtest PF >= 2.0 over 5 years with >= 50 trades.
+    """
+    return bool(cfg.get("allow_short", False))
+
+
+def sl_atr_mult_for(cfg: dict, direction: str) -> float:
+    """Direction-aware stop-loss ATR multiplier.
+
+    LONG uses cfg["sl_atr_mult"] (the existing key, unchanged).
+    SHORT uses cfg["sl_atr_mult_short"], defaulting to 0.8 — tighter than
+    LONG per plan E.3 because crypto shorts have unbounded loss potential.
+
+    Unknown direction strings fall back to LONG to fail safe.
+    """
+    if direction.upper() == "SHORT":
+        return float(cfg.get("sl_atr_mult_short", 0.8))
+    return float(cfg.get("sl_atr_mult", 1.0))
+
+
 def check_short_exit_conditions(
     entry_price: float,
     atr_at_entry: float,
