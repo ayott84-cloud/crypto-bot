@@ -626,6 +626,95 @@ a {
 .chart-axis--y { dominant-baseline: middle; }
 .chart-axis--x { dominant-baseline: hanging; }
 
+/* ── Risk metrics + per-regime panels (Phase H) ────────────────────────── */
+
+.risk-metrics,
+.regime-expectancy {
+  margin-top: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-1);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-md);
+}
+
+.risk-metrics__heading,
+.regime-expectancy__heading {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-display);
+  font-size: var(--fs-10);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.risk-metrics__grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+@media (max-width: 1024px) {
+  .risk-metrics__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .risk-metrics__grid { grid-template-columns: 1fr; }
+}
+
+.risk-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.risk-cell__label {
+  font-family: var(--font-display);
+  font-size: var(--fs-9);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.risk-cell__value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-24);
+  font-feature-settings: "tnum" 1, "zero" 1;
+  color: var(--ink-1);
+}
+
+.risk-cell__note {
+  font-size: var(--fs-12);
+  color: var(--ink-3);
+}
+
+/* Per-regime expectancy table */
+.regime-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.regime-table thead th {
+  text-align: left;
+  font-family: var(--font-display);
+  font-size: var(--fs-9);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--rule-hard);
+}
+
+.regime-table tbody td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--rule-soft);
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum" 1, "zero" 1;
+  color: var(--ink-1);
+}
+
+.regime-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
 /* ── Trend chip (▲ ▼ —) ─────────────────────────────────────────────────── */
 /* Small directional indicator that lives next to a metric. Inherits font-size
  * from the surrounding line, so it scales with whichever block uses it. */
@@ -1122,7 +1211,7 @@ a {
   <span class="colophon__sep">//</span>
   <span class="colophon__chip">FRESH · 0S</span>
   <span class="colophon__sep">//</span>
-  <span class="colophon__chip">BUILD · 5EB4BE16</span>
+  <span class="colophon__chip">BUILD · 4415956E</span>
   <button
     type="button"
     class="theme-toggle"
@@ -1212,7 +1301,7 @@ is-down">
   <span class="status-pill__dot" aria-hidden="true"></span>
   <span class="status-pill__state">LIVE</span>
   <span class="status-pill__sep">·</span>
-  <span class="status-pill__seen">55m ago</span>
+  <span class="status-pill__seen">5m ago</span>
 </span>    <p class="bot-card__pnl
 ">
       $0.00
@@ -1250,6 +1339,38 @@ is-down">
     <span class="portfolio-strip__value">32.5%</span>
   </div>
 </section>
+
+<section class="risk-metrics" aria-label="Risk-adjusted performance">
+  <h2 class="risk-metrics__heading">Risk metrics</h2>
+  <div class="risk-metrics__grid">
+    <div class="risk-cell">
+      <span class="risk-cell__label">Sortino</span>
+      <span class="risk-cell__value">-5.62</span>
+      <span class="risk-cell__note">downside-only</span>
+    </div>
+    <div class="risk-cell">
+      <span class="risk-cell__label">Calmar · 90d</span>
+      <span class="risk-cell__value">-2.60</span>
+      <span class="risk-cell__note">return / max DD</span>
+    </div>
+    <div class="risk-cell">
+      <span class="risk-cell__label">Ulcer Index</span>
+      <span class="risk-cell__value">2.69</span>
+      <span class="risk-cell__note">drawdown duration</span>
+    </div>
+    <div class="risk-cell">
+      <span class="risk-cell__label">Max DD</span>
+      <span class="risk-cell__value">4.6%</span>
+      <span class="risk-cell__note">peak-to-trough</span>
+    </div>
+    <div class="risk-cell">
+      <span class="risk-cell__label">Time underwater</span>
+      <span class="risk-cell__value">35 bars</span>
+      <span class="risk-cell__note">since last peak</span>
+    </div>
+  </div>
+</section>
+
 
 <div class="chart-row">
   <section class="chart-panel equity-curve" aria-label="Cumulative PnL over 90 days">
@@ -3098,7 +3219,7 @@ is-down">
   </main>
 
   <footer class="page-foot">
-    <span class="page-foot__build">Build · 5eb4be16 · 2026-06-06 00:09 UTC</span>
+    <span class="page-foot__build">Build · 4415956e · 2026-06-06 00:17 UTC</span>
   </footer>
 
   <script>
