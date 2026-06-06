@@ -30,13 +30,16 @@ WHALE_MARGIN_DIVERGENCE = 75.0      # $ margin for divergence (1.5x size)
 WHALE_LEVERAGE = 10                 # matches bot 1
 
 # ─── Signal thresholds ───────────────────────────────────────────────────────
-# Tightened after 24mo proxy backtest (Apr 2026): aggregate PF 1.20, WR 42.5%.
-# Per-symbol spread was wide; tightening improves quality at the cost of fewer trades.
-MIN_SMART_TRADERS_PER_COIN = 7      # was 5 — coin needs at least this many top-20 traders taking a position
-CONSENSUS_LONG_PCT = 85             # was 80 — smart_long_pct >= this → CONSENSUS_LONG
-CONSENSUS_SHORT_PCT = 85            # was 80 — smart_short_pct >= this → CONSENSUS_SHORT
-DIVERGENCE_LONG_PCT = 75            # was 70 — smart_long_pct >= this AND rekt_short_pct >= this → DIVERGENCE_LONG
-DIVERGENCE_SHORT_PCT = 75           # was 70 — smart_short_pct >= this AND rekt_long_pct >= this → DIVERGENCE_SHORT
+# Phase W.A (Jun 2026) re-tuning after −$225.67 / 12-of-14-SL-hit failure mode:
+# - Tighter min-trader floor (more conviction required before a signal qualifies)
+# - Slightly lower CONSENSUS pct (with the higher floor, absolute trader count
+#   still goes up — same conviction, broader signal universe)
+# - DIVERGENCE thresholds untouched (already strict, contributing few trades)
+MIN_SMART_TRADERS_PER_COIN = 10     # W.A: 7 → 10 (stronger consensus required)
+CONSENSUS_LONG_PCT = 80             # W.A: 85 → 80 (with min=10, still strong)
+CONSENSUS_SHORT_PCT = 80            # W.A: 85 → 80
+DIVERGENCE_LONG_PCT = 75            # smart_long_pct >= this AND rekt_short_pct >= this → DIVERGENCE_LONG
+DIVERGENCE_SHORT_PCT = 75           # smart_short_pct >= this AND rekt_long_pct >= this → DIVERGENCE_SHORT
 CROWDED_TRADE_PCT = 70              # if BOTH smart AND rekt agree at this level, skip (crowded)
 
 # Edge-decay guard: require smart money is currently winning on this coin
@@ -54,8 +57,8 @@ WHALE_COOLDOWN_HOURS = 24
 # ATR is computed on 4H bars fetched from WEEX.
 WHALE_ATR_PERIOD = 14
 WHALE_ATR_INTERVAL = "4h"
-WHALE_SL_ATR_MULT = 1.5
-WHALE_TP_ATR_MULT = 3.0              # 2R reward:risk
+WHALE_SL_ATR_MULT = 2.5              # W.A: 1.5 → 2.5 (12/14 SL-hit failure mode; same fix that helped breakout)
+WHALE_TP_ATR_MULT = 4.0              # W.A: 3.0 → 4.0 (preserve ~1.6R RR with wider SL)
 
 # Soft kill-switch: if whale-bot loses more than this in a rolling 7-day window,
 # pause new entries (existing positions still run their SL/TP).

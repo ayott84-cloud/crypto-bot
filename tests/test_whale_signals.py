@@ -77,17 +77,18 @@ def test_divergence_short_fires():
 
 
 def test_consensus_long_fires():
-    """Smart ≥80% long with no special rekt positioning → CONSENSUS_LONG."""
-    smart = make_stats("WLFI", longs=8, shorts=1, long_notional=2_000_000, upnl=25_000)
-    rekt = make_stats("WLFI", longs=3, shorts=3)  # no opposite bias
+    """Smart ≥80% long with no special rekt positioning → CONSENSUS_LONG.
+    W.A bumped MIN_SMART_TRADERS_PER_COIN to 10 → fixture must hit floor."""
+    smart = make_stats("WLFI", longs=10, shorts=2, long_notional=2_000_000, upnl=25_000)
+    rekt = make_stats("WLFI", longs=3, shorts=3)
     sig = classify("WLFI", smart, rekt, "WLFIUSDT")
     assert sig is not None
     assert sig.signal == CONSENSUS_LONG
 
 
 def test_consensus_short_fires():
-    """Smart ≥85% short → CONSENSUS_SHORT (new tightened threshold)."""
-    smart = make_stats("ZEC", longs=1, shorts=10, short_notional=3_000_000, upnl=10_000)
+    """Smart ≥80% short → CONSENSUS_SHORT (W.A relaxed threshold)."""
+    smart = make_stats("ZEC", longs=2, shorts=10, short_notional=3_000_000, upnl=10_000)
     rekt = make_stats("ZEC", longs=4, shorts=4)
     sig = classify("ZEC", smart, rekt, "ZECUSDT")
     assert sig is not None
@@ -124,8 +125,9 @@ def test_crowded_short_trade_skipped():
 
 
 def test_divergence_requires_rekt_population():
-    """Divergence needs at least 3 rekt traders — 2 isn't enough."""
-    smart = make_stats("XRP", longs=8, shorts=1, long_notional=3_000_000, upnl=30_000)
+    """Divergence needs at least 3 rekt traders — 2 isn't enough.
+    W.A: bumped smart count to clear new min-trader floor of 10."""
+    smart = make_stats("XRP", longs=10, shorts=2, long_notional=3_000_000, upnl=30_000)
     rekt = make_stats("XRP", longs=0, shorts=2)  # only 2 rekt traders
     sig = classify("XRP", smart, rekt, "XRPUSDT")
     # smart_long_pct is 89%, rekt_short_pct is 100% but n=2 — still falls through
