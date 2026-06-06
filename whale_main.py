@@ -71,6 +71,11 @@ except ImportError:
 
 logger = logging.getLogger("whale_bot")
 
+# Phase W.B — module-level persistence state for the filter stack. Tracks
+# how many consecutive polls each (coin, direction) signal has appeared in.
+# Session-local; resets on bot restart. W.C will persist to disk.
+_persistence_state: dict = {}
+
 VERSION = "1.0.0"
 
 
@@ -697,7 +702,21 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
                        recent_pnl, WHALE_MAX_7D_LOSS_USD)
         return
 
-    # 5. Attempt entries (top-ranked signals first)
+    # 5. Apply Phase W.B filter stack to surviving signals
+    #    Multi-TF gate, funding sanity, regime gate, persistence filter.
+    #    Persistence state is session-local — resets when the bot restarts;
+    #    Phase W.C will persist it to disk so re-starts don't lose the
+    #    multi-poll history.
+    global _persistence_state
+    try:
+        from whale_filters import apply_filter_stack, update_persistence_state
+        _persistence_state = update_persistence_state(
+            _persistence_state, signals, current_cycle=getattr(run_cycle, "_cycle", 0))
+    except Exception as e:
+        logger.warning("whale_filters update failed: %s — filters disabled", e)
+        apply_filter_stack = None
+
+    # 6. Attempt entries (top-ranked signals first)
     for sig in signals:
         if not can_open_new_position(state):
             logger.info("No more slots available (8/8 open) — stopping entry loop.")
@@ -708,6 +727,25 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
         if is_on_cooldown(state, sig.coin):
             logger.info("%s on cooldown, skipping", sig.coin)
             continue
+
+        # Phase W.B filter stack
+        if apply_filter_stack is not None:
+            hl_ctx = hl_ctx_map.get(sig.coin)
+            funding_rate_8h = float(hl_ctx.funding_rate) if hl_ctx else None
+            # df_1d=None and regime_label=None for now — those gates default
+            # to pass when data is unavailable. W.C will add real 1D + regime
+            # data sourcing.
+            ok, reasons = apply_filter_stack(
+                coin=sig.coin, direction=sig.direction,
+                df_1d=None, funding_rate_8h=funding_rate_8h,
+                regime_label=None,
+                persistence_state=_persistence_state,
+                current_cycle=getattr(run_cycle, "_cycle", 0),
+            )
+            if not ok:
+                logger.info("[%s %s] filtered: %s",
+                             sig.coin, sig.direction, " · ".join(reasons))
+                continue
 
         # Fetch ATR on 4H klines for SL/TP
         klines = executor.get_klines(sig.weex_symbol, WHALE_ATR_INTERVAL, 100)
