@@ -73,8 +73,55 @@ logger = logging.getLogger("whale_bot")
 
 # Phase W.B — module-level persistence state for the filter stack. Tracks
 # how many consecutive polls each (coin, direction) signal has appeared in.
-# Session-local; resets on bot restart. W.C will persist to disk.
+# Phase W.C persists this to disk via _PERSIST_PATH so restarts don't
+# zero the multi-poll history.
 _persistence_state: dict = {}
+
+# Phase W.C — cohort signal-decay tracker. Records (coin, direction,
+# entry_price) for every fired signal; finalizes the outcome 24h later.
+# Rolling-30d accuracy drives the auto-pause alarm.
+_decay_state: dict = {"pending": [], "resolved": []}
+
+_BOT_DIR_PATH = Path(__file__).resolve().parent
+_PERSIST_PATH = _BOT_DIR_PATH / ".whale_persistence.json"
+_DECAY_PATH = _BOT_DIR_PATH / ".whale_decay.json"
+
+
+def _load_w_state() -> None:
+    """Restore filter+decay state from disk on startup."""
+    global _persistence_state, _decay_state
+    try:
+        import json
+        if _PERSIST_PATH.exists():
+            raw = json.loads(_PERSIST_PATH.read_text(encoding="utf-8"))
+            # JSON keys are strings; reconstruct (coin, direction) tuple keys
+            _persistence_state = {
+                tuple(k.split("|", 1)): v for k, v in raw.items()
+            }
+    except Exception as e:
+        logger.warning("Could not load persistence state: %s", e)
+    try:
+        from whale_decay import load_decay_state
+        _decay_state = load_decay_state(_DECAY_PATH)
+    except Exception as e:
+        logger.warning("Could not load decay state: %s", e)
+
+
+def _save_w_state() -> None:
+    """Persist filter+decay state to disk at the end of each cycle."""
+    try:
+        import json
+        serializable = {
+            f"{c}|{d}": v for (c, d), v in _persistence_state.items()
+        }
+        _PERSIST_PATH.write_text(json.dumps(serializable), encoding="utf-8")
+    except Exception as e:
+        logger.warning("Could not save persistence state: %s", e)
+    try:
+        from whale_decay import save_decay_state
+        save_decay_state(_decay_state, _DECAY_PATH)
+    except Exception as e:
+        logger.warning("Could not save decay state: %s", e)
 
 VERSION = "1.0.0"
 
@@ -702,6 +749,29 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
                        recent_pnl, WHALE_MAX_7D_LOSS_USD)
         return
 
+    # Phase W.C — finalize any pending decay signals whose 24h window elapsed,
+    # then check the rolling 30d cohort accuracy. Auto-pause if it falls below
+    # the alarm threshold.
+    try:
+        from whale_decay import (
+            finalize_signals, cohort_accuracy_30d, should_alarm,
+        )
+        current_prices = {coin: ctx.mark_price for coin, ctx in hl_ctx_map.items()
+                          if getattr(ctx, "mark_price", 0)}
+        now_ts = int(time.time())
+        finalize_signals(_decay_state, current_prices, now_ts)
+        acc = cohort_accuracy_30d(_decay_state, now_ts)
+        if acc and should_alarm(acc):
+            logger.warning("WHALE COHORT DECAY ALARM: 30d accuracy %.1f%% < 50%% — "
+                           "auto-pausing new entries", acc)
+            _save_w_state()
+            return
+        elif acc:
+            logger.info("Cohort 30d accuracy: %.1f%% (%d resolved signals)",
+                         acc, len(_decay_state.get("resolved", [])))
+    except Exception as e:
+        logger.warning("decay tracker step failed: %s", e)
+
     # 5. Apply Phase W.B filter stack to surviving signals
     #    Multi-TF gate, funding sanity, regime gate, persistence filter.
     #    Persistence state is session-local — resets when the bot restarts;
@@ -756,6 +826,19 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
 
         open_whale_position(executor, state, sig, atr)
 
+        # Phase W.C — record this signal for decay tracking
+        try:
+            from whale_decay import record_signal
+            entry_price = hl_ctx_map.get(sig.coin).mark_price if hl_ctx_map.get(sig.coin) else 0
+            if entry_price > 0:
+                record_signal(_decay_state, sig.coin, sig.direction,
+                              entry_price, int(time.time()))
+        except Exception as e:
+            logger.warning("decay record_signal failed: %s", e)
+
+    # Phase W.C — persist filter + decay state for next cycle / next restart
+    _save_w_state()
+
     # 6. Regenerate the HTML dashboard so the Whale Bot tab reflects this cycle.
     #    (Heartbeat is written at the top of the cycle — see _write_heartbeat above.)
     if build_dashboard is not None:
@@ -793,6 +876,13 @@ def run():
     open_whale = sum(1 for k in state.get("positions", {}) if k.startswith(WHALE_STATE_KEY_PREFIX))
     logger.info("State loaded: %d total open positions (%d whale)",
                 len(state.get("positions", {})), open_whale)
+
+    # Phase W.C — restore filter + decay state from disk
+    _load_w_state()
+    logger.info("W.B/W.C state loaded: %d persistence entries, %d pending decay signals, %d resolved",
+                len(_persistence_state),
+                len(_decay_state.get("pending", [])),
+                len(_decay_state.get("resolved", [])))
 
     # Load contract info for all coins we might trade (lazy per-symbol)
     # For efficiency we cache the whole WEEX symbol list upfront.
