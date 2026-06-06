@@ -47,7 +47,7 @@ REVERSAL_ASSETS = {
     "BTC_1D": {
         "symbol":             "BTCUSDT",
         "interval":           "1d",   # I.3: Daily — captures Mar 2020 / May 2021 / Nov 2022 / Aug 2024 capitulations
-        "rsi_length":         15,
+        "rsi_length":         5,    # I.4.1: scaled for Daily — RSI(15) on Daily = 15-day smoothing, too slow for cap events; RSI(5) reacts like RSI(15) does on 1h
         "rsi_source":         "close",  # I.4: peer-review fix — RSI(close) on Daily reacts to cap candles
         "oversold":           15.0,   # I.3: Daily — restore tighter band, real capitulations clear it   # relaxed from 10 for paper validation
         "overbought":         85.0,   # I.3: Daily — restore tighter band   # relaxed from 90 for paper validation
@@ -68,7 +68,7 @@ REVERSAL_ASSETS = {
     "ETH_1D": {
         "symbol":             "ETHUSDT",
         "interval":           "1d",   # I.3: Daily — captures Mar 2020 / May 2021 / Nov 2022 / Aug 2024 capitulations
-        "rsi_length":         15,
+        "rsi_length":         5,    # I.4.1: scaled for Daily — RSI(15) on Daily = 15-day smoothing, too slow for cap events; RSI(5) reacts like RSI(15) does on 1h
         "rsi_source":         "close",  # I.4: peer-review fix — RSI(close) on Daily reacts to cap candles
         "oversold":           15.0,   # I.3: Daily — restore tighter band, real capitulations clear it   # relaxed from 10 for paper validation
         "overbought":         85.0,   # I.3: Daily — restore tighter band   # relaxed from 90 for paper validation
@@ -88,7 +88,7 @@ REVERSAL_ASSETS = {
     "SOL_1D": {
         "symbol":             "SOLUSDT",
         "interval":           "1d",   # I.3: Daily — captures Mar 2020 / May 2021 / Nov 2022 / Aug 2024 capitulations
-        "rsi_length":         15,
+        "rsi_length":         5,    # I.4.1: scaled for Daily — RSI(15) on Daily = 15-day smoothing, too slow for cap events; RSI(5) reacts like RSI(15) does on 1h
         "rsi_source":         "close",  # I.4: peer-review fix — RSI(close) on Daily reacts to cap candles
         "oversold":           15.0,   # I.3: Daily — restore tighter band, real capitulations clear it   # relaxed from 10 for paper validation
         "overbought":         85.0,   # I.3: Daily — restore tighter band   # relaxed from 90 for paper validation
