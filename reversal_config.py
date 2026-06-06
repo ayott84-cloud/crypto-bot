@@ -44,16 +44,16 @@ REVERSAL_REENTRY_LOCKOUT_BARS = 4
 # (sl/tp/time stop) are sensible defaults filling in what the source
 # did not specify — tune during paper validation.
 REVERSAL_ASSETS = {
-    "BTC_4H": {
+    "BTC_1D": {
         "symbol":             "BTCUSDT",
-        "interval":           "4h",   # I.2: redesign to 4h primary
+        "interval":           "1d",   # I.3: Daily — captures Mar 2020 / May 2021 / Nov 2022 / Aug 2024 capitulations
         "rsi_length":         15,
-        "oversold":           20.0,   # I.2.1: relaxed further from 15   # relaxed from 10 for paper validation
-        "overbought":         80.0,   # I.2.1: relaxed further from 85   # relaxed from 90 for paper validation
-        "range_mult":         2.0,    # I.2.1: relaxed further from 2.5    # relaxed from 3.0 for paper validation
-        "range_sma_length":   10,   # I.2.1: shorter window so recent context dominates
+        "oversold":           15.0,   # I.3: Daily — restore tighter band, real capitulations clear it   # relaxed from 10 for paper validation
+        "overbought":         85.0,   # I.3: Daily — restore tighter band   # relaxed from 90 for paper validation
+        "range_mult":         2.5,    # I.3: Daily — 2.5x is achievable on real cap days    # relaxed from 3.0 for paper validation
+        "range_sma_length":   14,   # I.3: standard 14-bar SMA on Daily
         "close_position_pct": 0.30,
-        "window_bars":        5,      # I.2.1: widened from 3      # I.2: allow conjunction within 3-bar window
+        "window_bars":        3,      # I.3: tighter window — Daily candles print clean      # I.2: allow conjunction within 3-bar window
         "allow_long":         True,
         "allow_short":        True,
         # Exits (NOT in source — defaults for paper validation)
@@ -61,45 +61,45 @@ REVERSAL_ASSETS = {
         "sl_atr_mult":        1.5,    # SL at 1.5×ATR adverse
         "tp1_atr_mult":       1.0,    # TP1 at VWAP retrace ~ 1×ATR
         "tp2_r_mult":         1.5,    # TP2 at 1.5R
-        "max_hold_bars":      24,     # time stop: 24h on 1h tf
-        "strategy_name":      "BTC 4H Reversal",
+        "max_hold_bars":      7,      # I.3: 7 days on Daily
+        "strategy_name":      "BTC 1D Reversal",
     },
-    "ETH_4H": {
+    "ETH_1D": {
         "symbol":             "ETHUSDT",
-        "interval":           "4h",   # I.2: redesign to 4h primary
+        "interval":           "1d",   # I.3: Daily — captures Mar 2020 / May 2021 / Nov 2022 / Aug 2024 capitulations
         "rsi_length":         15,
-        "oversold":           20.0,   # I.2.1: relaxed further from 15   # relaxed from 10 for paper validation
-        "overbought":         80.0,   # I.2.1: relaxed further from 85   # relaxed from 90 for paper validation
-        "range_mult":         2.0,    # I.2.1: relaxed further from 2.5    # relaxed from 3.0 for paper validation
-        "range_sma_length":   10,   # I.2.1: shorter window so recent context dominates
+        "oversold":           15.0,   # I.3: Daily — restore tighter band, real capitulations clear it   # relaxed from 10 for paper validation
+        "overbought":         85.0,   # I.3: Daily — restore tighter band   # relaxed from 90 for paper validation
+        "range_mult":         2.5,    # I.3: Daily — 2.5x is achievable on real cap days    # relaxed from 3.0 for paper validation
+        "range_sma_length":   14,   # I.3: standard 14-bar SMA on Daily
         "close_position_pct": 0.30,
-        "window_bars":        5,      # I.2.1: widened from 3      # I.2: allow conjunction within 3-bar window
+        "window_bars":        3,      # I.3: tighter window — Daily candles print clean      # I.2: allow conjunction within 3-bar window
         "allow_long":         True,
         "allow_short":        True,
         "atr_length":         14,
         "sl_atr_mult":        1.5,
         "tp1_atr_mult":       1.0,
         "tp2_r_mult":         1.5,
-        "max_hold_bars":      24,
-        "strategy_name":      "ETH 4H Reversal",
+        "max_hold_bars":      7,
+        "strategy_name":      "ETH 1D Reversal",
     },
-    "SOL_4H": {
+    "SOL_1D": {
         "symbol":             "SOLUSDT",
-        "interval":           "4h",   # I.2: redesign to 4h primary
+        "interval":           "1d",   # I.3: Daily — captures Mar 2020 / May 2021 / Nov 2022 / Aug 2024 capitulations
         "rsi_length":         15,
-        "oversold":           20.0,   # I.2.1: relaxed further from 15   # relaxed from 10 for paper validation
-        "overbought":         80.0,   # I.2.1: relaxed further from 85   # relaxed from 90 for paper validation
-        "range_mult":         2.0,    # I.2.1: relaxed further from 2.5    # relaxed from 3.0 for paper validation
-        "range_sma_length":   10,   # I.2.1: shorter window so recent context dominates
+        "oversold":           15.0,   # I.3: Daily — restore tighter band, real capitulations clear it   # relaxed from 10 for paper validation
+        "overbought":         85.0,   # I.3: Daily — restore tighter band   # relaxed from 90 for paper validation
+        "range_mult":         2.5,    # I.3: Daily — 2.5x is achievable on real cap days    # relaxed from 3.0 for paper validation
+        "range_sma_length":   14,   # I.3: standard 14-bar SMA on Daily
         "close_position_pct": 0.30,
-        "window_bars":        5,      # I.2.1: widened from 3      # I.2: allow conjunction within 3-bar window
+        "window_bars":        3,      # I.3: tighter window — Daily candles print clean      # I.2: allow conjunction within 3-bar window
         "allow_long":         True,
         "allow_short":        True,
         "atr_length":         14,
         "sl_atr_mult":        1.5,
         "tp1_atr_mult":       1.0,
         "tp2_r_mult":         1.5,
-        "max_hold_bars":      24,
-        "strategy_name":      "SOL 4H Reversal",
+        "max_hold_bars":      7,
+        "strategy_name":      "SOL 1D Reversal",
     },
 }

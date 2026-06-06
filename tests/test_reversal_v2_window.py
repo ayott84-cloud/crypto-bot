@@ -125,8 +125,9 @@ def test_window_bars_default_when_unconfigured():
     assert sig["would_enter"] is True
 
 
-def test_default_assets_use_4h_and_window_3():
+def test_default_assets_use_daily_and_window_3():
+    """I.3: switched to Daily timeframe for true capitulation events."""
     from reversal_config import REVERSAL_ASSETS
     for name, cfg in REVERSAL_ASSETS.items():
-        assert cfg["interval"] == "4h", f"{name}: not 4h"
+        assert cfg["interval"] == "1d", f"{name}: not 1d"
         assert cfg.get("window_bars", 1) >= 3, f"{name}: window_bars not >=3"
