@@ -34,27 +34,43 @@ logger = logging.getLogger("crypto_bot.reversal_signals")
 
 # ─── VWAP + RSI(VWAP) ──────────────────────────────────────────────────────
 
-def compute_vwap(df):
-    """Session-anchored VWAP (resets per session — caller passes one session
-    of bars at a time, or runs continuously on a multi-day window).
+def compute_vwap(df, window: int | None = None):
+    """Volume-weighted average price.
 
-    Uses typical price = (H+L+C)/3 × volume, cumulative.
+    window=None → cumulative-from-genesis (only meaningful for
+                   session-anchored intraday data where caller slices
+                   per-session).
+    window=N    → rolling-N-bar VWAP. Use this on Daily/Weekly data
+                   where there's no natural session reset; otherwise the
+                   cumulative VWAP grows monotonically with trend and
+                   delta(VWAP) becomes one-sided, pinning RSI near 100.
+
+    Default in compute_rsi_vwap below is window=20 (Bollinger-style
+    anchor) which keeps RSI(VWAP) meaningfully oscillating on any TF.
     """
     tp = (df["high"] + df["low"] + df["close"]) / 3.0
     vol = df["volume"].astype(float)
-    cum_tp_vol = (tp * vol).cumsum()
-    cum_vol = vol.cumsum()
-    # Avoid div-by-zero on bars with zero cumulative volume
+    tp_vol = tp * vol
+    if window is None:
+        cum_tp_vol = tp_vol.cumsum()
+        cum_vol = vol.cumsum()
+    else:
+        cum_tp_vol = tp_vol.rolling(window=window, min_periods=1).sum()
+        cum_vol = vol.rolling(window=window, min_periods=1).sum()
     return cum_tp_vol / cum_vol.where(cum_vol > 0)
 
 
-def compute_rsi_vwap(df, length: int = 15):
+def compute_rsi_vwap(df, length: int = 15, vwap_window: int = 20):
     """RSI computed against the VWAP series (not close prices).
 
-    Standard Wilder's RSI applied to the VWAP series. NaN for the first
-    `length` bars (insufficient deltas).
+    vwap_window=20 by default — rolling VWAP so RSI(VWAP) oscillates
+    across the full 0-100 range. The earlier cumulative-VWAP impl pinned
+    RSI near 100 because cumulative VWAP grows monotonically with trend.
+
+    Set vwap_window=None to recover the old session-anchored behavior
+    if the caller has already sliced data per-session.
     """
-    vwap = compute_vwap(df).ffill()
+    vwap = compute_vwap(df, window=vwap_window).ffill()
     delta = vwap.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)

@@ -138,8 +138,10 @@ def diagnose(asset_name: str, bars_requested: int) -> None:
     if sample_extreme_bars:
         print(f"\n--- Sample of extreme-range bars ---")
         for s in sample_extreme_bars:
-            print(f"  bar {s['i']}: range={s['range']:.2f} sma={s['sma']:.2f} x={s['x']:.2f} "
-                  f"close_pos={s['close_pos']:.2f if s['close_pos'] else 'N/A'} rsi={s['rsi']}")
+            cp = f"{s['close_pos']:.2f}" if s['close_pos'] is not None else "N/A"
+            rsi_str = f"{s['rsi']:.1f}" if s['rsi'] is not None else "N/A"
+            print(f"  bar {s['i']}: range={s['range']:.2f} sma={s['sma']:.2f} "
+                  f"x={s['x']:.2f} close_pos={cp} rsi={rsi_str}")
     else:
         # If no extreme bars, what's the max range/SMA ratio we ever saw?
         bar_range = (df["high"] - df["low"]).astype(float)
