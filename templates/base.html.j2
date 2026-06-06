@@ -24,6 +24,9 @@
     <button role="tab" aria-selected="false" aria-controls="tab-projection" data-tab="projection">Projection</button>
     <button role="tab" aria-selected="false" aria-controls="tab-whale"      data-tab="whale">Whale</button>
     <button role="tab" aria-selected="false" aria-controls="tab-funding"    data-tab="funding">Funding</button>
+    <button role="tab" aria-selected="false" aria-controls="tab-breakout"   data-tab="breakout">Breakout</button>
+    <button role="tab" aria-selected="false" aria-controls="tab-pair"       data-tab="pair">Pair</button>
+    <button role="tab" aria-selected="false" aria-controls="tab-reversal"   data-tab="reversal">Reversal</button>
   </nav>
 
   <main class="page" id="main-content">
@@ -41,6 +44,15 @@
     </section>
     <section role="tabpanel" id="tab-funding"    tabindex="0" hidden>
       {% include "tabs/funding.html.j2" %}
+    </section>
+    <section role="tabpanel" id="tab-breakout"   tabindex="0" hidden>
+      {% include "tabs/breakout.html.j2" %}
+    </section>
+    <section role="tabpanel" id="tab-pair"       tabindex="0" hidden>
+      {% include "tabs/pair.html.j2" %}
+    </section>
+    <section role="tabpanel" id="tab-reversal"   tabindex="0" hidden>
+      {% include "tabs/reversal.html.j2" %}
     </section>
   </main>
 

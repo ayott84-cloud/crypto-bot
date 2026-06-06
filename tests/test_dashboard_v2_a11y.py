@@ -68,16 +68,16 @@ def test_active_tab_has_aria_current_page():
 
 def test_inactive_tabs_have_aria_selected_false():
     html = render("base.html.j2", dashboard._v2_test_context([]))
-    # 4 inactive tabs after Overview
-    assert html.count('aria-selected="false"') == 4
+    # 7 inactive tabs after Overview (Phase 2C added breakout/pair/reversal)
+    assert html.count('aria-selected="false"') == 7
 
 
 def test_all_panels_have_tabpanel_role_and_tabindex():
     html = render("base.html.j2", dashboard._v2_test_context([]))
-    # 5 tab panels — count the actual <section> opening tag, not the
+    # 8 tab panels — count the actual <section> opening tag, not the
     # substring (which also appears in inlined JS selectors)
-    assert html.count('<section role="tabpanel"') == 5
-    assert html.count('tabindex="0"') >= 5
+    assert html.count('<section role="tabpanel"') == 8
+    assert html.count('tabindex="0"') >= 8
 
 
 # ─── Theme toggle ──────────────────────────────────────────────────────────

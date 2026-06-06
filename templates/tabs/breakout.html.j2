@@ -1,0 +1,122 @@
+<h1 class="tab-heading">Breakout</h1>
+
+{% if breakout_meta.paused %}
+<div class="banner banner--paused" role="status">
+  <span class="banner__label">PAUSED</span>
+  <span class="banner__msg">
+    <code>BREAKOUT_PAUSED=true</code> — Donchian channel breakout strategy
+    awaiting per-asset backtest validation. Enable per asset after
+    TradingView shows PF ≥ 1.8 over 5 years with ≥ 100 trades.
+  </span>
+</div>
+{% elif breakout_meta.closed_count == 0 %}
+<div class="banner banner--info" role="status">
+  <span class="banner__label">AWAITING SIGNAL</span>
+  <span class="banner__msg">
+    Bot is live. No N-bar high/low has printed with ATR &gt; ATR_SMA and
+    ADX &gt; threshold since launch.
+  </span>
+</div>
+{% endif %}
+
+<section class="config-grid" aria-label="Breakout bot configuration">
+  <h2 class="config-grid__heading">Strategy parameters</h2>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Donchian entry period</span>
+    <span class="kv-row__v">
+      <code>{{ breakout_meta.donchian_period }} bars</code>
+      <span class="kv-row__hint">N-bar high/low channel</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Donchian exit period</span>
+    <span class="kv-row__v">
+      <code>{{ breakout_meta.donchian_exit_period }} bars</code>
+      <span class="kv-row__hint">opposite-side cross triggers exit</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">ADX threshold</span>
+    <span class="kv-row__v">
+      <code>&gt; {{ breakout_meta.adx_threshold }}</code>
+      <span class="kv-row__hint">trend-strength gate at entry</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">ADX exit threshold</span>
+    <span class="kv-row__v">
+      <code>&lt; {{ breakout_meta.adx_exit_threshold }}</code>
+      <span class="kv-row__hint">trend dying → exit even if price ok</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">SL distance</span>
+    <span class="kv-row__v">
+      <code>{{ breakout_meta.sl_atr_mult }} × ATR</code>
+      <span class="kv-row__hint">adverse-move stop</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Sizing</span>
+    <span class="kv-row__v">
+      <code>${{ breakout_meta.margin_usd|int }} margin × {{ breakout_meta.leverage }}x</code>
+      <span class="kv-row__hint">= ${{ breakout_meta.notional_usd|int }} notional per signal</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Slot cap</span>
+    <span class="kv-row__v">
+      <code>{{ breakout_meta.max_positions }} concurrent</code>
+    </span>
+  </div>
+</section>
+
+<section class="config-grid" aria-label="Configured assets">
+  <h2 class="config-grid__heading">Configured assets ({{ breakout_meta.assets|length }})</h2>
+  <table class="regime-table">
+    <thead>
+      <tr>
+        <th scope="col">Asset</th>
+        <th scope="col">Symbol</th>
+        <th scope="col">Timeframe</th>
+        <th scope="col">SHORT enabled</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in breakout_meta.assets %}
+      <tr>
+        <td>{{ a.name }}</td>
+        <td>{{ a.symbol }}</td>
+        <td>{{ a.interval }}</td>
+        <td>
+          {% if a.allow_short %}
+            <span class="dir dir--short">ON</span>
+          {% else %}
+            <span class="dir" style="opacity:0.3;">OFF</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="kv-grid" aria-label="Breakout performance">
+  <div class="kv-cell">
+    <span class="kv-cell__k">CLOSED TRADES</span>
+    <span class="kv-cell__v">{{ breakout_meta.closed_count }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">WIN RATE</span>
+    <span class="kv-cell__v">{{ breakout_meta.win_rate_display }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">NET PnL</span>
+    <span class="kv-cell__v
+                {% if breakout_meta.net_pnl_display.startswith('+') %}is-up
+                {% elif breakout_meta.net_pnl_display.startswith('−') %}is-down{% endif %}">
+      {{ breakout_meta.net_pnl_display }}
+    </span>
+  </div>
+</section>

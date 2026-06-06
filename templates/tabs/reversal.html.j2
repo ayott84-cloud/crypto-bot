@@ -1,0 +1,118 @@
+<h1 class="tab-heading">Reversal</h1>
+
+{% if reversal_meta.paused %}
+<div class="banner banner--paused" role="status">
+  <span class="banner__label">PAUSED</span>
+  <span class="banner__msg">
+    <code>REVERSAL_PAUSED=true</code> — RSI(VWAP) + extreme-reversal
+    strategy (Alex Carter spec) awaiting backtest validation.
+  </span>
+</div>
+{% elif reversal_meta.closed_count == 0 %}
+<div class="banner banner--info" role="status">
+  <span class="banner__label">AWAITING SIGNAL</span>
+  <span class="banner__msg">
+    Bot is live. No bar has printed RSI(VWAP) outside 10/90 with a 3×
+    range capitulation candle and matching dot polarity since launch.
+  </span>
+</div>
+{% endif %}
+
+<section class="config-grid" aria-label="Reversal bot configuration">
+  <h2 class="config-grid__heading">Strategy parameters</h2>
+
+  <div class="kv-row">
+    <span class="kv-row__k">RSI length</span>
+    <span class="kv-row__v">
+      <code>{{ reversal_meta.rsi_length }}</code>
+      <span class="kv-row__hint">computed on session VWAP, not close</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Oversold / overbought</span>
+    <span class="kv-row__v">
+      <code>&lt; {{ reversal_meta.oversold }}  /  &gt; {{ reversal_meta.overbought }}</code>
+      <span class="kv-row__hint">extreme bands (tighter than standard 30/70)</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Range multiplier</span>
+    <span class="kv-row__v">
+      <code>≥ {{ reversal_meta.range_mult }}×</code>
+      <span class="kv-row__hint">vs {{ reversal_meta.range_sma_length }}-bar SMA(range) — capitulation candle</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Dot polarity threshold</span>
+    <span class="kv-row__v">
+      <code>{{ (reversal_meta.close_position_pct * 100)|int }}%</code>
+      <span class="kv-row__hint">close in bottom/top X% of bar range</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">SL distance</span>
+    <span class="kv-row__v">
+      <code>{{ reversal_meta.sl_atr_mult }} × ATR</code>
+      <span class="kv-row__hint">adverse-move stop</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Time stop</span>
+    <span class="kv-row__v">
+      <code>{{ reversal_meta.max_hold_bars }} bars</code>
+      <span class="kv-row__hint">mean-reversion that hasn't reverted by then probably won't</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Sizing</span>
+    <span class="kv-row__v">
+      <code>${{ reversal_meta.margin_usd|int }} margin × {{ reversal_meta.leverage }}x</code>
+      <span class="kv-row__hint">= ${{ reversal_meta.notional_usd|int }} notional</span>
+    </span>
+  </div>
+</section>
+
+<section class="config-grid" aria-label="Configured assets">
+  <h2 class="config-grid__heading">Configured assets ({{ reversal_meta.assets|length }})</h2>
+  <table class="regime-table">
+    <thead>
+      <tr>
+        <th scope="col">Asset</th>
+        <th scope="col">Symbol</th>
+        <th scope="col">Timeframe</th>
+        <th scope="col">LONG</th>
+        <th scope="col">SHORT</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in reversal_meta.assets %}
+      <tr>
+        <td>{{ a.name }}</td>
+        <td>{{ a.symbol }}</td>
+        <td>{{ a.interval }}</td>
+        <td>{% if a.allow_long %}<span class="dir dir--long">ON</span>{% else %}<span class="dir" style="opacity:0.3;">OFF</span>{% endif %}</td>
+        <td>{% if a.allow_short %}<span class="dir dir--short">ON</span>{% else %}<span class="dir" style="opacity:0.3;">OFF</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="kv-grid" aria-label="Reversal performance">
+  <div class="kv-cell">
+    <span class="kv-cell__k">CLOSED TRADES</span>
+    <span class="kv-cell__v">{{ reversal_meta.closed_count }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">WIN RATE</span>
+    <span class="kv-cell__v">{{ reversal_meta.win_rate_display }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">NET PnL</span>
+    <span class="kv-cell__v
+                {% if reversal_meta.net_pnl_display.startswith('+') %}is-up
+                {% elif reversal_meta.net_pnl_display.startswith('−') %}is-down{% endif %}">
+      {{ reversal_meta.net_pnl_display }}
+    </span>
+  </div>
+</section>

@@ -717,8 +717,11 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
                 label="Portfolio 30-day cumulative PnL"),
         },
         "trades": _v2_trade_rows(trades),
-        "whale_meta":   _v2_whale_meta(trades),
-        "funding_meta": _v2_funding_meta(trades),
+        "whale_meta":    _v2_whale_meta(trades),
+        "funding_meta":  _v2_funding_meta(trades),
+        "breakout_meta": _v2_breakout_meta(trades),
+        "pair_meta":     _v2_pair_meta(trades, state),
+        "reversal_meta": _v2_reversal_meta(trades),
         "projection":   _v2_projection(),
         "equity_curve_svg": _v2_equity_curve_svg(
             _v2_equity_series(trades, days=90)),
@@ -875,10 +878,13 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
                           _v2_sparkline_points(trades), width=200, height=32,
                           stroke_class="spark__line",
                           label="Portfolio 30-day cumulative PnL")},
-        "trades":       _v2_trade_rows(trades),
-        "whale_meta":   _v2_whale_meta(trades),
-        "funding_meta": _v2_funding_meta(trades),
-        "projection":   _v2_projection(),
+        "trades":        _v2_trade_rows(trades),
+        "whale_meta":    _v2_whale_meta(trades),
+        "funding_meta":  _v2_funding_meta(trades),
+        "breakout_meta": _v2_breakout_meta(trades),
+        "pair_meta":     _v2_pair_meta(trades),
+        "reversal_meta": _v2_reversal_meta(trades),
+        "projection":    _v2_projection(),
         "equity_curve_svg": _v2_equity_curve_svg(
             _v2_equity_series(trades, days=90)),
         "daily_pnl_svg":    _v2_daily_pnl_svg(
@@ -1621,6 +1627,152 @@ def _v2_funding_meta(trades: List[dict]) -> dict:
         "margin_usd":          float(FUNDING_MARGIN_USD),
         "leverage":            int(FUNDING_LEVERAGE),
         "notional_usd":        float(FUNDING_MARGIN_USD) * int(FUNDING_LEVERAGE),
+        "closed_count":        len(closed),
+        "win_rate_display":    (f"{sum(1 for p in pnl_list if p > 0) / len(pnl_list) * 100:.1f}%"
+                                if pnl_list else "—"),
+        "net_pnl_display":     _v2_pnl_display(sum(pnl_list)),
+    }
+
+
+def _v2_breakout_meta(trades: List[dict]) -> dict:
+    """Breakout-specific metadata for the Breakout tab."""
+    try:
+        from breakout_config import (
+            BREAKOUT_PAUSED, BREAKOUT_ASSETS,
+            BREAKOUT_MARGIN_PER_TRADE, BREAKOUT_LEVERAGE,
+            MAX_BREAKOUT_POSITIONS,
+        )
+    except ImportError:
+        BREAKOUT_PAUSED = True
+        BREAKOUT_ASSETS = {}
+        BREAKOUT_MARGIN_PER_TRADE = 25.0
+        BREAKOUT_LEVERAGE = 10
+        MAX_BREAKOUT_POSITIONS = 2
+
+    first_cfg = next(iter(BREAKOUT_ASSETS.values()), {})
+    asset_rows = [
+        {"name": k, "symbol": v.get("symbol", ""),
+         "interval": v.get("interval", ""),
+         "allow_short": bool(v.get("allow_short", False))}
+        for k, v in BREAKOUT_ASSETS.items()
+    ]
+    bo_trades = [t for t in trades if t.get("bot") == "Breakout"]
+    closed = [t for t in bo_trades
+              if t.get("exit_price") not in (None, 0, "0", "")]
+    pnl_list = [float(t.get("net_pnl") or 0) for t in closed]
+    return {
+        "paused":                bool(BREAKOUT_PAUSED),
+        "donchian_period":       first_cfg.get("donchian_period", 20),
+        "donchian_exit_period":  first_cfg.get("donchian_exit_period", 10),
+        "adx_threshold":         first_cfg.get("adx_threshold", 20),
+        "adx_exit_threshold":    first_cfg.get("adx_exit_threshold", 15),
+        "sl_atr_mult":           first_cfg.get("sl_atr_mult", 1.5),
+        "margin_usd":            float(BREAKOUT_MARGIN_PER_TRADE),
+        "leverage":              int(BREAKOUT_LEVERAGE),
+        "notional_usd":          float(BREAKOUT_MARGIN_PER_TRADE) * int(BREAKOUT_LEVERAGE),
+        "max_positions":         int(MAX_BREAKOUT_POSITIONS),
+        "assets":                asset_rows,
+        "closed_count":          len(closed),
+        "win_rate_display":      (f"{sum(1 for p in pnl_list if p > 0) / len(pnl_list) * 100:.1f}%"
+                                  if pnl_list else "—"),
+        "net_pnl_display":       _v2_pnl_display(sum(pnl_list)),
+    }
+
+
+def _v2_pair_meta(trades: List[dict], state: dict | None = None) -> dict:
+    """Pair-specific metadata for the Pair tab."""
+    try:
+        from pair_config import (
+            PAIR_PAUSED, PAIR_CONFIG, PAIR_INTERVAL,
+            PAIR_LONG_SYMBOL, PAIR_SHORT_SYMBOL,
+            PAIR_LONG_LEG_KEY, PAIR_MARGIN_PER_LEG, PAIR_LEVERAGE,
+        )
+    except ImportError:
+        PAIR_PAUSED = True
+        PAIR_CONFIG = {"z_window": 30, "entry_z": 2.0, "exit_z": 0.5,
+                       "max_hold_bars": 5, "atr_stop_mult": 2.0}
+        PAIR_INTERVAL = "1d"
+        PAIR_LONG_SYMBOL = "ETHUSDT"
+        PAIR_SHORT_SYMBOL = "BTCUSDT"
+        PAIR_LONG_LEG_KEY = "PAIR_ETHBTC_LONG_LEG"
+        PAIR_MARGIN_PER_LEG = 50.0
+        PAIR_LEVERAGE = 10
+
+    open_pos = None
+    if state:
+        long_leg = state.get("positions", {}).get(PAIR_LONG_LEG_KEY)
+        if long_leg:
+            open_pos = {
+                "direction":   long_leg.get("direction", "—"),
+                "entry_ratio": float(long_leg.get("entry_ratio") or 0),
+                "entry_z":     float(long_leg.get("entry_z") or 0),
+                "bars_held":   int(long_leg.get("bars_held") or 0),
+            }
+
+    pair_trades = [t for t in trades if t.get("bot") == "Pair"]
+    closed = [t for t in pair_trades
+              if t.get("exit_price") not in (None, 0, "0", "")]
+    pnl_list = [float(t.get("net_pnl") or 0) for t in closed]
+    return {
+        "paused":            bool(PAIR_PAUSED),
+        "long_symbol":       PAIR_LONG_SYMBOL,
+        "short_symbol":      PAIR_SHORT_SYMBOL,
+        "interval":          PAIR_INTERVAL,
+        "z_window":          int(PAIR_CONFIG.get("z_window", 30)),
+        "entry_z":           float(PAIR_CONFIG.get("entry_z", 2.0)),
+        "exit_z":            float(PAIR_CONFIG.get("exit_z", 0.5)),
+        "max_hold_bars":     int(PAIR_CONFIG.get("max_hold_bars", 5)),
+        "atr_stop_mult":     float(PAIR_CONFIG.get("atr_stop_mult", 2.0)),
+        "margin_usd":        float(PAIR_MARGIN_PER_LEG),
+        "leverage":          int(PAIR_LEVERAGE),
+        "notional_usd":      float(PAIR_MARGIN_PER_LEG) * int(PAIR_LEVERAGE),
+        "open_position":     open_pos,
+        "closed_count":      len(closed) // 2,  # each pair = 2 journal rows
+        "win_rate_display":  (f"{sum(1 for p in pnl_list if p > 0) / len(pnl_list) * 100:.1f}%"
+                              if pnl_list else "—"),
+        "net_pnl_display":   _v2_pnl_display(sum(pnl_list)),
+    }
+
+
+def _v2_reversal_meta(trades: List[dict]) -> dict:
+    """Reversal-specific metadata for the Reversal tab."""
+    try:
+        from reversal_config import (
+            REVERSAL_PAUSED, REVERSAL_ASSETS,
+            REVERSAL_MARGIN_PER_TRADE, REVERSAL_LEVERAGE,
+        )
+    except ImportError:
+        REVERSAL_PAUSED = True
+        REVERSAL_ASSETS = {}
+        REVERSAL_MARGIN_PER_TRADE = 25.0
+        REVERSAL_LEVERAGE = 10
+
+    first_cfg = next(iter(REVERSAL_ASSETS.values()), {})
+    asset_rows = [
+        {"name": k, "symbol": v.get("symbol", ""),
+         "interval": v.get("interval", ""),
+         "allow_long":  bool(v.get("allow_long", True)),
+         "allow_short": bool(v.get("allow_short", True))}
+        for k, v in REVERSAL_ASSETS.items()
+    ]
+    rev_trades = [t for t in trades if t.get("bot") == "Reversal"]
+    closed = [t for t in rev_trades
+              if t.get("exit_price") not in (None, 0, "0", "")]
+    pnl_list = [float(t.get("net_pnl") or 0) for t in closed]
+    return {
+        "paused":              bool(REVERSAL_PAUSED),
+        "rsi_length":          first_cfg.get("rsi_length", 15),
+        "oversold":            first_cfg.get("oversold", 10.0),
+        "overbought":          first_cfg.get("overbought", 90.0),
+        "range_mult":          first_cfg.get("range_mult", 3.0),
+        "range_sma_length":    first_cfg.get("range_sma_length", 14),
+        "close_position_pct":  first_cfg.get("close_position_pct", 0.30),
+        "sl_atr_mult":         first_cfg.get("sl_atr_mult", 1.5),
+        "max_hold_bars":       first_cfg.get("max_hold_bars", 24),
+        "margin_usd":          float(REVERSAL_MARGIN_PER_TRADE),
+        "leverage":            int(REVERSAL_LEVERAGE),
+        "notional_usd":        float(REVERSAL_MARGIN_PER_TRADE) * int(REVERSAL_LEVERAGE),
+        "assets":              asset_rows,
         "closed_count":        len(closed),
         "win_rate_display":    (f"{sum(1 for p in pnl_list if p > 0) / len(pnl_list) * 100:.1f}%"
                                 if pnl_list else "—"),

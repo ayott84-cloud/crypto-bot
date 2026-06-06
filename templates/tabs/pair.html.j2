@@ -1,0 +1,114 @@
+<h1 class="tab-heading">Pair</h1>
+
+{% if pair_meta.paused %}
+<div class="banner banner--paused" role="status">
+  <span class="banner__label">PAUSED</span>
+  <span class="banner__msg">
+    <code>PAIR_PAUSED=true</code> — ETH/BTC z-score mean-reversion
+    awaiting backtest validation. Enable after PF ≥ 1.5 over 5 years.
+  </span>
+</div>
+{% elif pair_meta.closed_count == 0 %}
+<div class="banner banner--info" role="status">
+  <span class="banner__label">AWAITING SIGNAL</span>
+  <span class="banner__msg">
+    Bot is live. ETH/BTC ratio z-score hasn't reached |z| ≥ 2 since
+    launch.
+  </span>
+</div>
+{% endif %}
+
+<section class="config-grid" aria-label="Pair bot configuration">
+  <h2 class="config-grid__heading">Strategy parameters</h2>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Pair</span>
+    <span class="kv-row__v">
+      <code>{{ pair_meta.long_symbol }} / {{ pair_meta.short_symbol }}</code>
+      <span class="kv-row__hint">ratio = ETH close ÷ BTC close</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Z-score window</span>
+    <span class="kv-row__v">
+      <code>{{ pair_meta.z_window }} bars</code>
+      <span class="kv-row__hint">rolling mean/std lookback ({{ pair_meta.interval }})</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Entry threshold</span>
+    <span class="kv-row__v">
+      <code>|z| ≥ {{ pair_meta.entry_z }}</code>
+      <span class="kv-row__hint">extreme spread → buy cheap leg, short rich leg</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Exit threshold</span>
+    <span class="kv-row__v">
+      <code>|z| ≤ {{ pair_meta.exit_z }}</code>
+      <span class="kv-row__hint">reversion done → close both legs</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Max hold</span>
+    <span class="kv-row__v">
+      <code>{{ pair_meta.max_hold_bars }} bars</code>
+      <span class="kv-row__hint">time-stop — mean reversion is fast or doesn't happen</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Adverse-move stop</span>
+    <span class="kv-row__v">
+      <code>|z| past {{ pair_meta.entry_z * pair_meta.atr_stop_mult }}</code>
+      <span class="kv-row__hint">spread is getting worse — cut</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Sizing</span>
+    <span class="kv-row__v">
+      <code>${{ pair_meta.margin_usd|int }} margin × {{ pair_meta.leverage }}x per leg</code>
+      <span class="kv-row__hint">= ${{ pair_meta.notional_usd|int }} notional each side, net $0</span>
+    </span>
+  </div>
+</section>
+
+{% if pair_meta.open_position %}
+<section class="config-grid" aria-label="Open pair">
+  <h2 class="config-grid__heading">Open position</h2>
+  <div class="kv-row">
+    <span class="kv-row__k">Direction</span>
+    <span class="kv-row__v"><code>{{ pair_meta.open_position.direction }}</code></span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Entry ratio</span>
+    <span class="kv-row__v"><code>{{ "%.6f"|format(pair_meta.open_position.entry_ratio) }}</code></span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Entry z</span>
+    <span class="kv-row__v"><code>{{ "%.2f"|format(pair_meta.open_position.entry_z) }}</code></span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Bars held</span>
+    <span class="kv-row__v"><code>{{ pair_meta.open_position.bars_held }} / {{ pair_meta.max_hold_bars }}</code></span>
+  </div>
+</section>
+{% endif %}
+
+<section class="kv-grid" aria-label="Pair performance">
+  <div class="kv-cell">
+    <span class="kv-cell__k">CLOSED PAIRS</span>
+    <span class="kv-cell__v">{{ pair_meta.closed_count }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">WIN RATE</span>
+    <span class="kv-cell__v">{{ pair_meta.win_rate_display }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">NET PnL</span>
+    <span class="kv-cell__v
+                {% if pair_meta.net_pnl_display.startswith('+') %}is-up
+                {% elif pair_meta.net_pnl_display.startswith('−') %}is-down{% endif %}">
+      {{ pair_meta.net_pnl_display }}
+    </span>
+  </div>
+</section>
