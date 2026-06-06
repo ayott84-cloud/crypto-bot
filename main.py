@@ -444,9 +444,19 @@ def run():
                                 if notify_trade_closed:
                                     # Look up config by state_key (asset_name), not symbol
                                     rot_cfg = ASSETS.get(most_prof_key, cfg)
-                                    tp1_p = rot_pos["entry_price"] + rot_cfg["tp1_atr_mult"] * rot_pos["atr_at_entry"]
-                                    tp2_p = rot_pos["entry_price"] + rot_cfg["tp2_atr_mult"] * rot_pos["atr_at_entry"]
-                                    sl_p = rot_pos["entry_price"] - rot_cfg["sl_atr_mult"] * rot_pos["atr_at_entry"]
+                                    # Direction-aware level reconstruction (Phase E.2).
+                                    # The pre-Phase-E version hardcoded LONG math, which
+                                    # would place a SHORT's stop below entry — wrong.
+                                    from signals import reconstruct_position_levels
+                                    levels = reconstruct_position_levels(
+                                        direction=rot_direction,
+                                        entry_price=rot_pos["entry_price"],
+                                        atr_at_entry=rot_pos["atr_at_entry"],
+                                        cfg=rot_cfg,
+                                    )
+                                    tp1_p = levels["tp1_price"]
+                                    tp2_p = levels["tp2_price"]
+                                    sl_p  = levels["sl_price"]
                                     try:
                                         notify_trade_closed(
                                             symbol=rot_symbol, direction=rot_direction,

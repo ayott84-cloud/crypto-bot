@@ -244,6 +244,86 @@ def check_exit_conditions(
     return None, None
 
 
+def check_short_exit_conditions(
+    entry_price: float,
+    atr_at_entry: float,
+    current_price: float,
+    bars_since_entry: int,
+    phase: str,
+    cfg: dict,
+) -> Tuple[Optional[str], Optional[str]]:
+    """SHORT-side mirror of check_exit_conditions.
+
+    SL is ABOVE entry (price moved against the short).
+    TP1/TP2 are BELOW entry (profit on the way down).
+    Stale exit fires when price hasn't moved DOWN enough by stale_bars.
+
+    phase: "full" (no TP taken yet) or "tp1_taken" (50% closed at TP1).
+    exit_type: "partial" for TP1, "full" for everything else.
+
+    Breakeven-after-TP1: if cfg["use_breakeven_after_tp1"] is True and we're
+    in tp1_taken phase, the stop tightens to entry_price (price coming back
+    UP to entry is the stop trigger for a short).
+    """
+    tp1_price = entry_price - cfg["tp1_atr_mult"] * atr_at_entry
+    tp2_price = entry_price - cfg["tp2_atr_mult"] * atr_at_entry
+
+    if phase == "tp1_taken" and cfg.get("use_breakeven_after_tp1", False):
+        sl_price = entry_price
+        sl_reason = "BE Hit"
+    else:
+        sl_price = entry_price + cfg["sl_atr_mult"] * atr_at_entry
+        sl_reason = "SL Hit"
+
+    # 1. Stop Loss / Breakeven — price moved up to stop level
+    if current_price >= sl_price:
+        return sl_reason, "full"
+
+    # 2. TP1 — price dropped to or past tp1
+    if phase == "full" and current_price <= tp1_price:
+        return "TP1 Hit", "partial"
+
+    # 3. TP2 — after TP1, price dropped to or past tp2
+    if phase == "tp1_taken" and current_price <= tp2_price:
+        return "TP2 Hit", "full"
+
+    # 4. Stale exit — should have moved DOWN by now but hasn't
+    stale_bars = cfg["stale_bars"]
+    stale_mult = cfg["stale_threshold_mult"]
+    stale_level = entry_price - atr_at_entry * cfg["tp1_atr_mult"] * stale_mult
+
+    if bars_since_entry >= stale_bars and current_price > stale_level:
+        return "Stale Exit", "full"
+
+    return None, None
+
+
+def reconstruct_position_levels(
+    direction: str,
+    entry_price: float,
+    atr_at_entry: float,
+    cfg: dict,
+) -> dict:
+    """Recompute SL/TP1/TP2 from stored position data, direction-aware.
+
+    Used by main.py's rotation-close path (which only stores entry + ATR
+    and needs to reconstruct levels for the close notification). The
+    pre-Phase-E version was hardcoded to LONG math, which would place
+    SHORT stops below entry (where the position is profitable) — a real
+    bug if/when SHORT trades exist in the rotation pool.
+
+    Unknown direction defaults to LONG math to fail safe (don't silently
+    sign-flip stops on a position the caller misclassified).
+    """
+    is_short = direction.upper() == "SHORT"
+    sign = -1.0 if is_short else 1.0
+    return {
+        "tp1_price": entry_price + sign * cfg["tp1_atr_mult"] * atr_at_entry,
+        "tp2_price": entry_price + sign * cfg["tp2_atr_mult"] * atr_at_entry,
+        "sl_price":  entry_price - sign * cfg["sl_atr_mult"] * atr_at_entry,
+    }
+
+
 def analyze_entry_signal(
     df: pd.DataFrame,
     cfg: dict,
