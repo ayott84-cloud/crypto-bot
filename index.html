@@ -46,6 +46,8 @@
   --b-momentum: #5fa8e5;       /* calm steel blue */
   --b-whale:    #b076e3;       /* muted violet — currently dormant, looks quiet */
   --b-funding:  #d4ad58;       /* amber — slow-burn strategy */
+  --b-breakout: #7ed4a6;       /* sage-green — trend follower */
+  --b-pair:     #e89674;       /* warm peach — mean reversion */
 
   /* ── Spatial — 8px grid ────────────────────────────────────────────── */
   --space-1: 4px;
@@ -450,12 +452,14 @@ a {
 .monogram--momentum { color: var(--b-momentum); }
 .monogram--whale    { color: var(--b-whale); }
 .monogram--funding  { color: var(--b-funding); }
+.monogram--breakout { color: var(--b-breakout); }
+.monogram--pair     { color: var(--b-pair); }
 
-/* ── Hero status board (3 bot cards side-by-side) ────────────────────────── */
+/* ── Hero status board (5 bot cards: auto-fit grid, wraps responsively) ─── */
 
 .hero-status {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--space-4);
   margin-bottom: var(--space-5);
 }
@@ -801,6 +805,8 @@ a {
 .spark__line--momentum { stroke: var(--b-momentum); }
 .spark__line--whale    { stroke: var(--b-whale); }
 .spark__line--funding  { stroke: var(--b-funding); }
+.spark__line--breakout { stroke: var(--b-breakout); }
+.spark__line--pair     { stroke: var(--b-pair); }
 
 .spark__zero {
   stroke: var(--rule-soft);
@@ -1211,7 +1217,7 @@ a {
   <span class="colophon__sep">//</span>
   <span class="colophon__chip">FRESH · 0S</span>
   <span class="colophon__sep">//</span>
-  <span class="colophon__chip">BUILD · A4E5096E</span>
+  <span class="colophon__chip">BUILD · B9758BF0</span>
   <button
     type="button"
     class="theme-toggle"
@@ -1301,7 +1307,7 @@ is-down">
   <span class="status-pill__dot" aria-hidden="true"></span>
   <span class="status-pill__state">LIVE</span>
   <span class="status-pill__sep">·</span>
-  <span class="status-pill__seen">42m ago</span>
+  <span class="status-pill__seen">52m ago</span>
 </span>    <p class="bot-card__pnl
 ">
       $0.00
@@ -1313,6 +1319,50 @@ is-down">
       <span class="why-panel__heading">why no trades?</span>
       <span class="why-panel__label">Awaiting first signal</span>
       <span class="why-panel__detail">Universe mode = OI. No funding extreme has met all filters (percentile, abs floor, OI, low-vol regime, trend, ±30min window) since launch.</span>
+    </div>
+  </article>
+  <article class="bot-card bot-card--breakout">
+    <header class="bot-card__head">
+<span class="monogram monogram--breakout" aria-hidden="true">B</span>      <h2 class="bot-card__name">Breakout</h2>
+    </header>
+<span class="status-pill status-pill--dormant" role="status" aria-live="polite">
+  <span class="status-pill__dot" aria-hidden="true"></span>
+  <span class="status-pill__state">DORMANT</span>
+  <span class="status-pill__sep">·</span>
+  <span class="status-pill__seen">paused</span>
+</span>    <p class="bot-card__pnl
+">
+      $0.00
+    </p>
+    <p class="bot-card__meta">
+      0 closed · WR —
+    </p>
+    <div class="why-panel why-panel--dormant" role="note">
+      <span class="why-panel__heading">why no trades?</span>
+      <span class="why-panel__label">Paused — pending backtest validation</span>
+      <span class="why-panel__detail">BREAKOUT_PAUSED=true. Enable per asset after TradingView backtest passes PF≥1.8 over 5 years.</span>
+    </div>
+  </article>
+  <article class="bot-card bot-card--pair">
+    <header class="bot-card__head">
+<span class="monogram monogram--pair" aria-hidden="true">P</span>      <h2 class="bot-card__name">Pair</h2>
+    </header>
+<span class="status-pill status-pill--dormant" role="status" aria-live="polite">
+  <span class="status-pill__dot" aria-hidden="true"></span>
+  <span class="status-pill__state">DORMANT</span>
+  <span class="status-pill__sep">·</span>
+  <span class="status-pill__seen">paused</span>
+</span>    <p class="bot-card__pnl
+">
+      $0.00
+    </p>
+    <p class="bot-card__meta">
+      0 closed · WR —
+    </p>
+    <div class="why-panel why-panel--dormant" role="note">
+      <span class="why-panel__heading">why no trades?</span>
+      <span class="why-panel__label">Paused — pending backtest validation</span>
+      <span class="why-panel__detail">PAIR_PAUSED=true. Enable after ETH/BTC z-score backtest passes PF≥1.5 over 5 years.</span>
     </div>
   </article>
 </section>
@@ -3219,7 +3269,7 @@ is-down">
   </main>
 
   <footer class="page-foot">
-    <span class="page-foot__build">Build · a4e5096e · 2026-06-06 02:19 UTC</span>
+    <span class="page-foot__build">Build · b9758bf0 · 2026-06-06 02:29 UTC</span>
   </footer>
 
   <script>
