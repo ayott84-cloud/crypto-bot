@@ -241,8 +241,18 @@ def _compute_bot_status() -> Dict[str, dict]:
     whale = _classify(bot_dir / ".whale_heartbeat", 1800)
     # Funding: .funding_heartbeat — fresh if updated in last 2 hours (2x its 1h poll)
     funding = _classify(bot_dir / ".funding_heartbeat", 7200)
+    # Breakout: .breakout_heartbeat — 5-min poll, fresh threshold 10min
+    breakout = _classify(bot_dir / ".breakout_heartbeat", 600)
+    # Pair: .pair_heartbeat — 5-min poll, fresh threshold 10min
+    pair = _classify(bot_dir / ".pair_heartbeat", 600)
 
-    return {"momentum": momentum, "whale": whale, "funding": funding}
+    return {
+        "momentum": momentum,
+        "whale":    whale,
+        "funding":  funding,
+        "breakout": breakout,
+        "pair":     pair,
+    }
 
 
 def _state_positions_as_exchange_shape(state: dict, executor) -> List[dict]:
@@ -632,6 +642,8 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
     spark_momentum = _v2_sparkline_points(trades, "Momentum", days=30)
     spark_whale    = _v2_sparkline_points(trades, "Whale",    days=30)
     spark_funding  = _v2_sparkline_points(trades, "Funding",  days=30)
+    spark_breakout = _v2_sparkline_points(trades, "Breakout", days=30)
+    spark_pair     = _v2_sparkline_points(trades, "Pair",     days=30)
     spark_portfolio = _v2_sparkline_points(trades, None,      days=30)
 
     # Stash trades on the data dict so _v2_why_silent() can read them
@@ -667,6 +679,20 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
                  stroke_class="spark__line spark__line--funding",
                  label="Funding 30-day cumulative PnL"),
              "why":       _v2_why_silent("funding", data)},
+            {**_bot_card("breakout", "B", "Breakout", "Breakout",
+                         bot_status.get("breakout", {})),
+             "spark_svg": _v2_sparkline_svg(
+                 spark_breakout,
+                 stroke_class="spark__line spark__line--breakout",
+                 label="Breakout 30-day cumulative PnL"),
+             "why":       _v2_why_silent("breakout", data)},
+            {**_bot_card("pair",     "P", "Pair",     "Pair",
+                         bot_status.get("pair", {})),
+             "spark_svg": _v2_sparkline_svg(
+                 spark_pair,
+                 stroke_class="spark__line spark__line--pair",
+                 label="Pair 30-day cumulative PnL"),
+             "why":       _v2_why_silent("pair", data)},
         ],
         "portfolio": {
             "net_pnl":          portfolio_net,
@@ -763,6 +789,8 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
     p_m, w_m = _trend_pair("Momentum")
     p_w, w_w = _trend_pair("Whale")
     p_f, w_f = _trend_pair("Funding")
+    p_b, w_b = _trend_pair("Breakout")
+    p_p, w_p = _trend_pair("Pair")
     ctx = {
         "operator": "ayott84", "env": "paper", "freshness": "0s",
         "build_sha": "abc12345", "build_ts": "2026-06-05 00:00 UTC",
@@ -797,6 +825,26 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
                  stroke_class="spark__line spark__line--funding",
                  label="Funding 30-day cumulative PnL"),
              "why": _v2_why_silent("funding", data_stub)},
+            {"class": "breakout", "monogram": "B", "name": "Breakout",
+             "state": "dormant", "seen_label": "paused",
+             "net_pnl": 0, "net_pnl_display": "$0.00",
+             "trade_count": 0, "win_rate_display": "—",
+             "pnl_trend": p_b, "wr_trend": w_b,
+             "spark_svg": _v2_sparkline_svg(
+                 _v2_sparkline_points(trades, "Breakout"),
+                 stroke_class="spark__line spark__line--breakout",
+                 label="Breakout 30-day cumulative PnL"),
+             "why": _v2_why_silent("breakout", data_stub)},
+            {"class": "pair", "monogram": "P", "name": "Pair",
+             "state": "dormant", "seen_label": "paused",
+             "net_pnl": 0, "net_pnl_display": "$0.00",
+             "trade_count": 0, "win_rate_display": "—",
+             "pnl_trend": p_p, "wr_trend": w_p,
+             "spark_svg": _v2_sparkline_svg(
+                 _v2_sparkline_points(trades, "Pair"),
+                 stroke_class="spark__line spark__line--pair",
+                 label="Pair 30-day cumulative PnL"),
+             "why": _v2_why_silent("pair", data_stub)},
         ],
         "portfolio": {"net_pnl": 0, "net_pnl_display": "$0.00",
                       "closed_count": 0, "open_count": 0,
@@ -840,6 +888,52 @@ def _v2_why_silent(bot_class: str, data: Dict[str, Any]) -> dict | None:
                 "detail": "Peer-review consensus: 12/14 trades SL-hit. "
                           "Retire or redesign before re-enabling.",
                 "kind":   "dormant",
+            }
+        return None
+
+    if bot_class == "breakout":
+        try:
+            from breakout_config import BREAKOUT_PAUSED
+        except ImportError:
+            BREAKOUT_PAUSED = True
+        if BREAKOUT_PAUSED:
+            return {
+                "label":  "Paused — pending backtest validation",
+                "detail": "BREAKOUT_PAUSED=true. Enable per asset after "
+                          "TradingView backtest passes PF≥1.8 over 5 years.",
+                "kind":   "dormant",
+            }
+        # Live but no trades — Donchian breaks don't fire often
+        bo_trades = [t for t in data.get("_trades_cache", [])
+                     if t.get("bot") == "Breakout"]
+        if not bo_trades:
+            return {
+                "label":  "Awaiting Donchian break",
+                "detail": "Live. No N-bar high/low has printed with the "
+                          "ADX/ATR regime gates passing since launch.",
+                "kind":   "info",
+            }
+        return None
+
+    if bot_class == "pair":
+        try:
+            from pair_config import PAIR_PAUSED
+        except ImportError:
+            PAIR_PAUSED = True
+        if PAIR_PAUSED:
+            return {
+                "label":  "Paused — pending backtest validation",
+                "detail": "PAIR_PAUSED=true. Enable after ETH/BTC z-score "
+                          "backtest passes PF≥1.5 over 5 years.",
+                "kind":   "dormant",
+            }
+        pair_trades = [t for t in data.get("_trades_cache", [])
+                       if t.get("bot") == "Pair"]
+        if not pair_trades:
+            return {
+                "label":  "Awaiting z-score extreme",
+                "detail": "Live. ETH/BTC ratio hasn't hit |z|≥2 since launch.",
+                "kind":   "info",
             }
         return None
 
@@ -1487,19 +1581,35 @@ def _v2_funding_meta(trades: List[dict]) -> dict:
     }
 
 
+_PAUSE_FLAGS = {
+    "whale":    ("whale_config",    "WHALE_PAUSED"),
+    "breakout": ("breakout_config", "BREAKOUT_PAUSED"),
+    "pair":     ("pair_config",     "PAIR_PAUSED"),
+}
+
+
+def _is_paused(bot_class: str) -> bool:
+    """Read the bot's pause flag from its config module; default False if missing."""
+    spec = _PAUSE_FLAGS.get(bot_class)
+    if not spec:
+        return False
+    mod_name, flag_name = spec
+    try:
+        mod = __import__(mod_name)
+        return bool(getattr(mod, flag_name, False))
+    except ImportError:
+        return False
+
+
 def _v2_state(bot_class: str, status: dict) -> str:
     """Map heartbeat freshness + pause flags to the four V2 state names.
 
-    Whale is treated as "dormant" whenever WHALE_PAUSED is true regardless
-    of heartbeat — the paused state is the operational reality.
+    Whale / breakout / pair are treated as "dormant" whenever their
+    pause flag is set — the paused state is the operational reality
+    regardless of whether the daemon is still writing heartbeats.
     """
-    if bot_class == "whale":
-        try:
-            from whale_config import WHALE_PAUSED
-            if WHALE_PAUSED:
-                return "dormant"
-        except ImportError:
-            pass
+    if _is_paused(bot_class):
+        return "dormant"
     css = (status or {}).get("css", "")
     if css == "live":
         return "live"
@@ -1509,13 +1619,8 @@ def _v2_state(bot_class: str, status: dict) -> str:
 
 
 def _v2_seen_label(bot_class: str, status: dict) -> str:
-    if bot_class == "whale":
-        try:
-            from whale_config import WHALE_PAUSED
-            if WHALE_PAUSED:
-                return "paused"
-        except ImportError:
-            pass
+    if _is_paused(bot_class):
+        return "paused"
     return (status or {}).get("age", "—")
 
 

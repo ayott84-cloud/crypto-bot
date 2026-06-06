@@ -7,6 +7,11 @@ with a public dashboard on Render.
 
 - **crypto-momentum** (systemd) — runs `main.py`, the 4H/1D momentum strategies
 - **crypto-whale** (systemd) — runs `whale_main.py`, the Hyperliquid whale tracker
+- **crypto-funding** (systemd) — runs `funding_main.py`, funding-rate fade
+- **crypto-breakout** (systemd, PAUSED by default) — runs `breakout_main.py`,
+  Donchian channel breakouts. Enable per-asset via `allow_short`/`BREAKOUT_PAUSED`.
+- **crypto-pair** (systemd, PAUSED by default) — runs `pair_main.py`, ETH/BTC
+  z-score mean reversion. Enable via `PAIR_PAUSED=false`.
 - **dashboard-push.timer** (systemd) — every 10 min, pushes `dashboard.html`
   to the `render-dashboard` branch. Render auto-redeploys on push.
 

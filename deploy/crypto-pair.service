@@ -1,0 +1,36 @@
+[Unit]
+Description=Crypto Pair-Trade Bot (pair_main.py — ETH/BTC z-score reversion)
+After=network-online.target crypto-momentum.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bot
+Group=bot
+WorkingDirectory=/home/bot/crypto-bot
+EnvironmentFile=-/home/bot/crypto-bot/.env
+ExecStart=/home/bot/crypto-bot/venv/bin/python /home/bot/crypto-bot/pair_main.py
+
+Restart=always
+RestartSec=30
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=crypto-pair
+
+# Pair bot is light — just two close-price series and a rolling z-score
+MemoryMax=300M
+MemoryHigh=200M
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/bot/crypto-bot
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

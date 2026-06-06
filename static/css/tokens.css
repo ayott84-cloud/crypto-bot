@@ -35,6 +35,8 @@
   --b-momentum: #5fa8e5;       /* calm steel blue */
   --b-whale:    #b076e3;       /* muted violet — currently dormant, looks quiet */
   --b-funding:  #d4ad58;       /* amber — slow-burn strategy */
+  --b-breakout: #7ed4a6;       /* sage-green — trend follower */
+  --b-pair:     #e89674;       /* warm peach — mean reversion */
 
   /* ── Spatial — 8px grid ────────────────────────────────────────────── */
   --space-1: 4px;

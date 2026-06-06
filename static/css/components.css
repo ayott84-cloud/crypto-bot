@@ -119,12 +119,14 @@
 .monogram--momentum { color: var(--b-momentum); }
 .monogram--whale    { color: var(--b-whale); }
 .monogram--funding  { color: var(--b-funding); }
+.monogram--breakout { color: var(--b-breakout); }
+.monogram--pair     { color: var(--b-pair); }
 
-/* ── Hero status board (3 bot cards side-by-side) ────────────────────────── */
+/* ── Hero status board (5 bot cards: auto-fit grid, wraps responsively) ─── */
 
 .hero-status {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: var(--space-4);
   margin-bottom: var(--space-5);
 }
@@ -470,6 +472,8 @@
 .spark__line--momentum { stroke: var(--b-momentum); }
 .spark__line--whale    { stroke: var(--b-whale); }
 .spark__line--funding  { stroke: var(--b-funding); }
+.spark__line--breakout { stroke: var(--b-breakout); }
+.spark__line--pair     { stroke: var(--b-pair); }
 
 .spark__zero {
   stroke: var(--rule-soft);
