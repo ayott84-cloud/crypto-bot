@@ -60,18 +60,32 @@ def compute_vwap(df, window: int | None = None):
     return cum_tp_vol / cum_vol.where(cum_vol > 0)
 
 
-def compute_rsi_vwap(df, length: int = 15, vwap_window: int = 20):
-    """RSI computed against the VWAP series (not close prices).
+def compute_rsi_vwap(df, length: int = 15, vwap_window: int = 20,
+                       source: str = "vwap"):
+    """RSI computed against the VWAP series (or close, per `source`).
 
-    vwap_window=20 by default — rolling VWAP so RSI(VWAP) oscillates
-    across the full 0-100 range. The earlier cumulative-VWAP impl pinned
-    RSI near 100 because cumulative VWAP grows monotonically with trend.
+    source="vwap"           → RSI of rolling-N-bar VWAP (default, vwap_window=20)
+    source="close"          → RSI of raw close — peer-review recommendation
+                              for Daily timeframe, where rolling VWAP just
+                              smooths out the cap candle and RSI never reaches
+                              extremes
+    source="typical_price"  → RSI of (H+L+C)/3 — also reactive, slightly
+                              smoothed by intra-bar range
 
-    Set vwap_window=None to recover the old session-anchored behavior
-    if the caller has already sliced data per-session.
+    vwap_window unused when source != "vwap".
+
+    On Daily data, the source spec's intraday-session-anchored VWAP
+    collapses to "the bar's typical price" (each bar IS a session), so
+    source="close" or "typical_price" is closer to the spec's intent on
+    Daily than rolling-N-bar VWAP.
     """
-    vwap = compute_vwap(df, window=vwap_window).ffill()
-    delta = vwap.diff()
+    if source == "close":
+        price = df["close"].astype(float)
+    elif source == "typical_price":
+        price = ((df["high"] + df["low"] + df["close"]) / 3.0).astype(float)
+    else:  # default "vwap"
+        price = compute_vwap(df, window=vwap_window).ffill()
+    delta = price.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
     # Wilder's smoothing = EMA with alpha = 1/length
@@ -163,7 +177,8 @@ def analyze_reversal_entry(df, cfg: dict, rsi_vwap_series=None) -> dict:
 
     rsi = (rsi_vwap_series
            if rsi_vwap_series is not None
-           else compute_rsi_vwap(df, length=cfg.get("rsi_length", 15)))
+           else compute_rsi_vwap(df, length=cfg.get("rsi_length", 15),
+                                   source=cfg.get("rsi_source", "vwap")))
     if rsi is None or len(rsi) < 2 or pd.isna(rsi.iloc[-1]) or pd.isna(rsi.iloc[-2]):
         result["blocked_by"] = "insufficient_data"
         return result

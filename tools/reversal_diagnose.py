@@ -59,7 +59,10 @@ def diagnose(asset_name: str, bars_requested: int) -> None:
         return
 
     # Compute indicators
-    rsi = compute_rsi_vwap(df, length=cfg.get("rsi_length", 15))
+    rsi = compute_rsi_vwap(df, length=cfg.get("rsi_length", 15),
+                             source=cfg.get("rsi_source", "vwap"))
+    rsi_source_label = cfg.get("rsi_source", "vwap")
+    print(f"  RSI source: {rsi_source_label}")
 
     # Per-bar pass rates
     range_mult = cfg.get("range_mult", 2.5)

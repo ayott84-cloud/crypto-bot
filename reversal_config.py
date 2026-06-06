@@ -48,6 +48,7 @@ REVERSAL_ASSETS = {
         "symbol":             "BTCUSDT",
         "interval":           "1d",   # I.3: Daily — captures Mar 2020 / May 2021 / Nov 2022 / Aug 2024 capitulations
         "rsi_length":         15,
+        "rsi_source":         "close",  # I.4: peer-review fix — RSI(close) on Daily reacts to cap candles
         "oversold":           15.0,   # I.3: Daily — restore tighter band, real capitulations clear it   # relaxed from 10 for paper validation
         "overbought":         85.0,   # I.3: Daily — restore tighter band   # relaxed from 90 for paper validation
         "range_mult":         2.5,    # I.3: Daily — 2.5x is achievable on real cap days    # relaxed from 3.0 for paper validation
@@ -68,6 +69,7 @@ REVERSAL_ASSETS = {
         "symbol":             "ETHUSDT",
         "interval":           "1d",   # I.3: Daily — captures Mar 2020 / May 2021 / Nov 2022 / Aug 2024 capitulations
         "rsi_length":         15,
+        "rsi_source":         "close",  # I.4: peer-review fix — RSI(close) on Daily reacts to cap candles
         "oversold":           15.0,   # I.3: Daily — restore tighter band, real capitulations clear it   # relaxed from 10 for paper validation
         "overbought":         85.0,   # I.3: Daily — restore tighter band   # relaxed from 90 for paper validation
         "range_mult":         2.5,    # I.3: Daily — 2.5x is achievable on real cap days    # relaxed from 3.0 for paper validation
@@ -87,6 +89,7 @@ REVERSAL_ASSETS = {
         "symbol":             "SOLUSDT",
         "interval":           "1d",   # I.3: Daily — captures Mar 2020 / May 2021 / Nov 2022 / Aug 2024 capitulations
         "rsi_length":         15,
+        "rsi_source":         "close",  # I.4: peer-review fix — RSI(close) on Daily reacts to cap candles
         "oversold":           15.0,   # I.3: Daily — restore tighter band, real capitulations clear it   # relaxed from 10 for paper validation
         "overbought":         85.0,   # I.3: Daily — restore tighter band   # relaxed from 90 for paper validation
         "range_mult":         2.5,    # I.3: Daily — 2.5x is achievable on real cap days    # relaxed from 3.0 for paper validation

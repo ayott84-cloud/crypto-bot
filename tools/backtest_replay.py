@@ -197,7 +197,8 @@ def replay_reversal(asset_name: str, cfg: dict, bars: int = 500) -> BacktestRepo
     from reversal_main import _compute_atr
 
     df = _fetch_klines(cfg["symbol"], cfg["interval"], bars)
-    rsi_full = compute_rsi_vwap(df, length=cfg.get("rsi_length", 15))
+    rsi_full = compute_rsi_vwap(df, length=cfg.get("rsi_length", 15),
+                                  source=cfg.get("rsi_source", "vwap"))
     atr_full = _compute_atr(df, length=cfg.get("atr_length", 14))
     report = BacktestReport(bot="reversal", asset=asset_name, bars_seen=len(df))
 
