@@ -48,9 +48,9 @@ REVERSAL_ASSETS = {
         "symbol":             "BTCUSDT",
         "interval":           "1h",
         "rsi_length":         15,
-        "oversold":           10.0,
-        "overbought":         90.0,
-        "range_mult":         3.0,
+        "oversold":           15.0,   # relaxed from 10 for paper validation
+        "overbought":         85.0,   # relaxed from 90 for paper validation
+        "range_mult":         2.5,    # relaxed from 3.0 for paper validation
         "range_sma_length":   14,
         "close_position_pct": 0.30,
         "allow_long":         True,
@@ -67,9 +67,9 @@ REVERSAL_ASSETS = {
         "symbol":             "ETHUSDT",
         "interval":           "1h",
         "rsi_length":         15,
-        "oversold":           10.0,
-        "overbought":         90.0,
-        "range_mult":         3.0,
+        "oversold":           15.0,   # relaxed from 10 for paper validation
+        "overbought":         85.0,   # relaxed from 90 for paper validation
+        "range_mult":         2.5,    # relaxed from 3.0 for paper validation
         "range_sma_length":   14,
         "close_position_pct": 0.30,
         "allow_long":         True,
@@ -85,9 +85,9 @@ REVERSAL_ASSETS = {
         "symbol":             "SOLUSDT",
         "interval":           "1h",
         "rsi_length":         15,
-        "oversold":           10.0,
-        "overbought":         90.0,
-        "range_mult":         3.0,
+        "oversold":           15.0,   # relaxed from 10 for paper validation
+        "overbought":         85.0,   # relaxed from 90 for paper validation
+        "range_mult":         2.5,    # relaxed from 3.0 for paper validation
         "range_sma_length":   14,
         "close_position_pct": 0.30,
         "allow_long":         True,

@@ -58,7 +58,7 @@ BREAKOUT_ASSETS = {
         "adx_period":           14,
         "adx_threshold":        20,    # entry gate
         "adx_exit_threshold":   15,    # exit trigger (trend dying)
-        "sl_atr_mult":          1.5,
+        "sl_atr_mult":          2.5,   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
         "allow_short":          False,  # off until per-asset backtest
         "sl_atr_mult_short":    1.0,    # tighter SL for shorts
         "strategy_name":        "BTC 4H Breakout",
@@ -74,7 +74,7 @@ BREAKOUT_ASSETS = {
         "adx_period":           14,
         "adx_threshold":        20,
         "adx_exit_threshold":   15,
-        "sl_atr_mult":          1.5,
+        "sl_atr_mult":          2.5,   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
         "allow_short":          False,
         "sl_atr_mult_short":    1.0,
         "strategy_name":        "ETH 4H Breakout",
@@ -90,7 +90,7 @@ BREAKOUT_ASSETS = {
         "adx_period":           14,
         "adx_threshold":        20,
         "adx_exit_threshold":   15,
-        "sl_atr_mult":          1.5,
+        "sl_atr_mult":          2.5,   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
         "allow_short":          False,
         "sl_atr_mult_short":    1.0,
         "strategy_name":        "SOL 4H Breakout",
@@ -106,7 +106,7 @@ BREAKOUT_ASSETS = {
         "adx_period":           14,
         "adx_threshold":        20,
         "adx_exit_threshold":   15,
-        "sl_atr_mult":          1.5,
+        "sl_atr_mult":          2.5,   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
         "allow_short":          False,
         "sl_atr_mult_short":    1.0,
         "strategy_name":        "BTC 1D Breakout",
