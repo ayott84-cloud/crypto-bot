@@ -972,12 +972,12 @@ def _v2_why_silent(bot_class: str, data: Dict[str, Any]) -> dict | None:
             REVERSAL_PAUSED = True
         if REVERSAL_PAUSED:
             return {
-                "label":  "Paused — Daily-timeframe retry pending backtest",
-                "detail": "RSI(VWAP)+extreme-reversal (Alex Carter spec). "
-                          "After 4 rounds of 4h backtests returned 0 trades, "
-                          "switched to Daily (I.3) to capture true capitulation "
-                          "events. Enable after Daily backtest produces "
-                          "≥5 signals with PF ≥ 1.3 over a 2-3yr window.",
+                "label":  "Permanently deferred — no edge on Daily",
+                "detail": "RSI(close)+extreme-reversal (Alex Carter spec). "
+                          "After 6 backtest rounds + 2 real bugs fixed "
+                          "(cumulative-VWAP, RSI-source-mismatch), strategy "
+                          "fires signals but PF<1.0 on BTC/ETH 1D. Deferred "
+                          "indefinitely; see plan Phase I.X.",
                 "kind":   "dormant",
             }
         rev_trades = [t for t in data.get("_trades_cache", [])
