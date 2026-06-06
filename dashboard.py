@@ -72,17 +72,26 @@ def _read_journal_trades(max_rows: int = 5000) -> List[dict]:
 
 
 def _compute_metrics(trades: List[dict]) -> dict:
-    """Compute performance metrics from trade history."""
+    """Compute performance metrics from trade history.
+
+    Phase H added Sortino, Calmar (90d), Ulcer Index, time-to-recovery,
+    per-regime expectancy, and replaced the hardcoded 72-trades/year
+    Sharpe constant with an observed-frequency annualization.
+    """
+    import statistics
+    import metrics as _m
+
     if not trades:
         return {
             "win_rate": 0, "profit_factor": 0, "avg_win": 0, "avg_loss": 0,
             "best_trade": 0, "worst_trade": 0, "max_drawdown": 0,
-            "sharpe": 0, "expectancy": 0, "total_trades": 0,
+            "sharpe": 0, "sortino": 0, "calmar": 0, "ulcer_index": 0,
+            "time_to_recovery_bars": 0,
+            "expectancy": 0, "total_trades": 0,
+            "regime_expectancy": {},
         }
 
-    # Win rate denominator must be CLOSED trades only. Including open paper
-    # positions in the total made WR look ~37% when the real value was ~56%
-    # (peer-review feedback, May 2026).
+    # Win rate denominator must be CLOSED trades only.
     closed = [t for t in trades if t.get("result") in ("WIN", "LOSS", "FLAT")
               and t.get("exit_price") not in (None, 0, "0", "")]
     open_count = len(trades) - len(closed)
@@ -105,41 +114,93 @@ def _compute_metrics(trades: List[dict]) -> dict:
     best = max(pnls) if pnls else 0
     worst = min(pnls) if pnls else 0
 
-    # Max drawdown from equity curve (closed trades only)
-    equity = INITIAL_CAPITAL
-    peak = equity
-    max_dd = 0
+    # Equity curve from initial capital (closed trades only)
+    equity_curve = [INITIAL_CAPITAL]
+    running = INITIAL_CAPITAL
     for pnl in pnls:
-        equity += pnl
-        peak = max(peak, equity)
-        dd = (peak - equity) / peak * 100 if peak > 0 else 0
-        max_dd = max(max_dd, dd)
+        running += pnl
+        equity_curve.append(running)
 
-    # Sharpe approximation (annualized, assuming 6 trades/month)
-    import statistics
-    if len(pnls) > 1:
-        mean_pnl = statistics.mean(pnls)
-        std_pnl = statistics.stdev(pnls)
-        sharpe = (mean_pnl / std_pnl * (72 ** 0.5)) if std_pnl > 0 else 0
-    else:
-        sharpe = 0
+    # Observed window for annualization. Falls back to a reasonable default
+    # if no date parsing is possible.
+    days_observed = _observed_window_days(closed) or 30
+
+    sharpe   = _m.annualized_sharpe(pnls, days_observed=days_observed)
+    sortino  = _m.sortino(pnls, trades_per_year=max(1,
+                  int(len(pnls) * 365 / max(days_observed, 1))))
+    calmar90 = _m.calmar(pnls[-_recent_trades_in_window(closed, 90):]
+                         or pnls, initial_equity=INITIAL_CAPITAL, days=90)
+    ulcer    = _m.ulcer_index(equity_curve)
+    ttr_bars = _m.time_to_recovery(equity_curve)
+    regime_exp = _m.per_regime_expectancy(closed)
+    max_dd   = _m.max_drawdown(equity_curve)
 
     expectancy = statistics.mean(pnls) if pnls else 0
 
     return {
-        "win_rate": round(win_rate, 1),
-        "profit_factor": round(profit_factor, 2),
-        "avg_win": round(avg_win, 2),
-        "avg_loss": round(avg_loss, 2),
-        "best_trade": round(best, 2),
-        "worst_trade": round(worst, 2),
-        "max_drawdown": round(max_dd, 1),
-        "sharpe": round(sharpe, 2),
-        "expectancy": round(expectancy, 2),
-        "total_trades": total_closed,        # closed-only count, used in WR display
-        "open_positions": open_count,        # separate exposure metric
-        "all_trades_count": len(trades),     # raw row count for sanity
+        "win_rate":              round(win_rate, 1),
+        "profit_factor":         round(profit_factor, 2),
+        "avg_win":               round(avg_win, 2),
+        "avg_loss":              round(avg_loss, 2),
+        "best_trade":            round(best, 2),
+        "worst_trade":           round(worst, 2),
+        "max_drawdown":          round(max_dd, 1),
+        "sharpe":                sharpe,
+        "sortino":               round(sortino, 2),
+        "calmar":                calmar90,
+        "ulcer_index":           ulcer,
+        "time_to_recovery_bars": ttr_bars,
+        "expectancy":            round(expectancy, 2),
+        "total_trades":          total_closed,
+        "open_positions":        open_count,
+        "all_trades_count":      len(trades),
+        "regime_expectancy":     regime_exp,
+        "days_observed":         days_observed,
     }
+
+
+def _observed_window_days(closed_trades: List[dict]) -> int:
+    """Span in days between the earliest and latest closed-trade timestamp.
+
+    Returns 0 if dates can't be parsed. Powers the annualization factor
+    for Sharpe/Sortino instead of the hardcoded 72-trades/year constant.
+    """
+    if not closed_trades:
+        return 0
+    dts = []
+    for t in closed_trades:
+        s = (t.get("date_closed") or t.get("date_opened") or "").strip()
+        if not s:
+            continue
+        try:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            dts.append(dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc))
+        except ValueError:
+            continue
+    if len(dts) < 2:
+        return 0
+    span = (max(dts) - min(dts)).days
+    return max(1, span)
+
+
+def _recent_trades_in_window(closed_trades: List[dict], days: int) -> int:
+    """Number of closed trades whose date_closed is within the last N days."""
+    if not closed_trades:
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    count = 0
+    for t in closed_trades:
+        s = (t.get("date_closed") or t.get("date_opened") or "").strip()
+        if not s:
+            continue
+        try:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            dt = dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if dt >= cutoff:
+            count += 1
+    return count
 
 
 def _compute_bot_status() -> Dict[str, dict]:
@@ -626,7 +687,57 @@ def _build_v2_context(data: Dict[str, Any]) -> Dict[str, Any]:
             _v2_equity_series(trades, days=90)),
         "daily_pnl_svg":    _v2_daily_pnl_svg(
             _v2_daily_pnl_bars(trades, days=30)),
+        "risk_metrics":      _v2_risk_metrics(metrics),
+        "regime_expectancy": _v2_regime_expectancy(metrics),
     }
+
+
+def _v2_risk_metrics(metrics: dict) -> dict:
+    """Shape the H-phase risk metrics for the Overview panel.
+
+    Pre-formats each value as a display string so the template stays dumb.
+    Cap values render specially (Sortino/Calmar with sentinel 999 = no DD).
+    """
+    def _ratio(v):
+        if v is None or v == 0:
+            return "—"
+        if v >= 999 or v <= -999:
+            return "∞"
+        return f"{v:+.2f}"
+
+    return {
+        "sortino_display":     _ratio(metrics.get("sortino", 0)),
+        "calmar_display":      _ratio(metrics.get("calmar", 0)),
+        "ulcer_display":       (f"{metrics.get('ulcer_index', 0):.2f}"
+                                if metrics.get("ulcer_index") else "—"),
+        "max_dd_display":      (f"{metrics.get('max_drawdown', 0):.1f}%"
+                                if metrics.get("max_drawdown") else "—"),
+        "time_underwater":     metrics.get("time_to_recovery_bars", 0),
+        "time_underwater_display": (
+            "at peak" if metrics.get("time_to_recovery_bars", 0) == 0
+            else f"{metrics.get('time_to_recovery_bars', 0)} bars"),
+        "days_observed":       metrics.get("days_observed", 0),
+    }
+
+
+def _v2_regime_expectancy(metrics: dict) -> dict:
+    """Sort the per-regime expectancy buckets for stable display order.
+
+    Returns a list of rows with pre-formatted PnL + WR strings. Empty when
+    no trades have a regime_at_entry tag (the case until B.3b backfill
+    runs).
+    """
+    raw = metrics.get("regime_expectancy") or {}
+    rows = []
+    for regime, stats in sorted(raw.items()):
+        rows.append({
+            "regime":            regime,
+            "count":             stats.get("count", 0),
+            "expectancy_display": _v2_pnl_display(stats.get("expectancy", 0)),
+            "win_rate_display":  f"{stats.get('win_rate', 0):.0f}%",
+            "total_pnl_display": _v2_pnl_display(stats.get("total_pnl", 0)),
+        })
+    return {"rows": rows, "has_data": bool(rows)}
 
 
 def _v2_test_context(trades: list | None = None, **overrides) -> dict:
@@ -702,6 +813,8 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
             _v2_equity_series(trades, days=90)),
         "daily_pnl_svg":    _v2_daily_pnl_svg(
             _v2_daily_pnl_bars(trades, days=30)),
+        "risk_metrics":      _v2_risk_metrics(_compute_metrics(trades)),
+        "regime_expectancy": _v2_regime_expectancy(_compute_metrics(trades)),
     }
     ctx.update(overrides)
     return ctx

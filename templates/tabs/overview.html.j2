@@ -68,6 +68,65 @@
   </div>
 </section>
 
+<section class="risk-metrics" aria-label="Risk-adjusted performance">
+  <h2 class="risk-metrics__heading">Risk metrics</h2>
+  <div class="risk-metrics__grid">
+    <div class="risk-cell">
+      <span class="risk-cell__label">Sortino</span>
+      <span class="risk-cell__value">{{ risk_metrics.sortino_display }}</span>
+      <span class="risk-cell__note">downside-only</span>
+    </div>
+    <div class="risk-cell">
+      <span class="risk-cell__label">Calmar · 90d</span>
+      <span class="risk-cell__value">{{ risk_metrics.calmar_display }}</span>
+      <span class="risk-cell__note">return / max DD</span>
+    </div>
+    <div class="risk-cell">
+      <span class="risk-cell__label">Ulcer Index</span>
+      <span class="risk-cell__value">{{ risk_metrics.ulcer_display }}</span>
+      <span class="risk-cell__note">drawdown duration</span>
+    </div>
+    <div class="risk-cell">
+      <span class="risk-cell__label">Max DD</span>
+      <span class="risk-cell__value">{{ risk_metrics.max_dd_display }}</span>
+      <span class="risk-cell__note">peak-to-trough</span>
+    </div>
+    <div class="risk-cell">
+      <span class="risk-cell__label">Time underwater</span>
+      <span class="risk-cell__value">{{ risk_metrics.time_underwater_display }}</span>
+      <span class="risk-cell__note">since last peak</span>
+    </div>
+  </div>
+</section>
+
+{% if regime_expectancy.has_data %}
+<section class="regime-expectancy" aria-label="Per-regime expectancy">
+  <h2 class="regime-expectancy__heading">Per-regime expectancy</h2>
+  <table class="regime-table">
+    <thead>
+      <tr>
+        <th scope="col">Regime</th>
+        <th scope="col">Trades</th>
+        <th scope="col">Expectancy</th>
+        <th scope="col">Win rate</th>
+        <th scope="col">Total PnL</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in regime_expectancy.rows %}
+      <tr>
+        <td>{{ row.regime }}</td>
+        <td class="num">{{ row.count }}</td>
+        <td class="num">{{ row.expectancy_display }}</td>
+        <td class="num">{{ row.win_rate_display }}</td>
+        <td class="num">{{ row.total_pnl_display }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
 <div class="chart-row">
   <section class="chart-panel equity-curve" aria-label="Cumulative PnL over 90 days">
     <header class="chart-panel__head">

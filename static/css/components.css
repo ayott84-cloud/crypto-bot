@@ -295,6 +295,95 @@
 .chart-axis--y { dominant-baseline: middle; }
 .chart-axis--x { dominant-baseline: hanging; }
 
+/* ── Risk metrics + per-regime panels (Phase H) ────────────────────────── */
+
+.risk-metrics,
+.regime-expectancy {
+  margin-top: var(--space-5);
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-1);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-md);
+}
+
+.risk-metrics__heading,
+.regime-expectancy__heading {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-display);
+  font-size: var(--fs-10);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.risk-metrics__grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+@media (max-width: 1024px) {
+  .risk-metrics__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .risk-metrics__grid { grid-template-columns: 1fr; }
+}
+
+.risk-cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.risk-cell__label {
+  font-family: var(--font-display);
+  font-size: var(--fs-9);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.risk-cell__value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-24);
+  font-feature-settings: "tnum" 1, "zero" 1;
+  color: var(--ink-1);
+}
+
+.risk-cell__note {
+  font-size: var(--fs-12);
+  color: var(--ink-3);
+}
+
+/* Per-regime expectancy table */
+.regime-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.regime-table thead th {
+  text-align: left;
+  font-family: var(--font-display);
+  font-size: var(--fs-9);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--rule-hard);
+}
+
+.regime-table tbody td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--rule-soft);
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum" 1, "zero" 1;
+  color: var(--ink-1);
+}
+
+.regime-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
 /* ── Trend chip (▲ ▼ —) ─────────────────────────────────────────────────── */
 /* Small directional indicator that lives next to a metric. Inherits font-size
  * from the surrounding line, so it scales with whichever block uses it. */

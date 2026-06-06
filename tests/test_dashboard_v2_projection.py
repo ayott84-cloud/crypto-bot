@@ -73,6 +73,8 @@ def _ctx():
         "whale_meta":   dashboard._v2_whale_meta([]),
         "funding_meta": dashboard._v2_funding_meta([]),
         "projection":   dashboard._v2_projection(),
+        "risk_metrics":      dashboard._v2_risk_metrics({}),
+        "regime_expectancy": dashboard._v2_regime_expectancy({}),
     }
 
 

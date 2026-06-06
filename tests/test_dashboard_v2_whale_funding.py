@@ -135,6 +135,8 @@ def _ctx(trades=None, **overrides):
         "whale_meta":   dashboard._v2_whale_meta(trades),
         "funding_meta": dashboard._v2_funding_meta(trades),
         "projection":   dashboard._v2_projection(),
+        "risk_metrics":      dashboard._v2_risk_metrics({}),
+        "regime_expectancy": dashboard._v2_regime_expectancy({}),
     }
     ctx.update(overrides)
     return ctx
