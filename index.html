@@ -558,11 +558,11 @@ a {
 .monogram--pair     { color: var(--b-pair); }
 .monogram--reversal { color: var(--b-reversal); }
 
-/* ── Hero status board (5 bot cards: auto-fit grid, wraps responsively) ─── */
+/* ── Hero status board (6 bot cards: 3×2 grid at desktop) ──────────────── */
 
 .hero-status {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-4);
   margin-bottom: var(--space-5);
 }
@@ -690,6 +690,159 @@ a {
 
 /* TWLC canvas inherits the parent's surface; suppress its default white bg */
 .asset-chart canvas { background: transparent; }
+
+/* J.5a — wrapper around the dropdown + per-asset chart blocks */
+.asset-chart-section {
+  margin: var(--space-4) 0;
+}
+.asset-chart-section__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+  flex-wrap: wrap;
+}
+.asset-chart-section__heading {
+  font-family: var(--font-display, ui-monospace);
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+  margin: 0;
+}
+.asset-chart-section__picker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.asset-chart-section__select {
+  font-family: var(--font-mono, ui-monospace);
+  font-size: 0.8125rem;
+  background: var(--surface-2);
+  color: var(--ink-1);
+  border: 1px solid var(--rule-soft);
+  padding: 0.35rem 0.6rem;
+  border-radius: var(--radius-sm);
+}
+.asset-chart-section__select:focus {
+  outline: 2px solid var(--info);
+  outline-offset: 1px;
+}
+.asset-chart-wrap { width: 100%; }
+
+/* J.6 — Projection table: bot tag chips + confidence pills + muting */
+
+.projection-row.is-low-confidence td,
+.projection-row.is-low-confidence td.num {
+  color: var(--ink-3);
+  font-style: italic;
+}
+.projection-row.is-awaiting td,
+.projection-row.is-awaiting td.num {
+  color: var(--ink-3);
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.bot-tag {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono, ui-monospace);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+  background: transparent;
+}
+.bot-tag--momentum { color: var(--b-momentum, #5fa8e5); }
+.bot-tag--whale    { color: var(--b-whale,    #b076e3); }
+.bot-tag--funding  { color: var(--b-funding,  #d4ad58); }
+.bot-tag--breakout { color: var(--b-breakout, #57cb95); }
+.bot-tag--pair     { color: var(--b-pair,     #e85a4c); }
+.bot-tag--reversal { color: var(--ink-2); }
+
+.confidence-pill {
+  display: inline-block;
+  padding: 0.08rem 0.4rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono, ui-monospace);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+  background: transparent;
+}
+.confidence-pill--high { color: var(--up, #57cb95); }
+.confidence-pill--med  { color: var(--info, #5fa8e5); }
+.confidence-pill--low  { color: var(--warn, #d4ad58); }
+.confidence-pill--none { color: var(--ink-3); }
+
+/* J.10 — Per-bot activity log */
+.bot-activity {
+  margin: var(--space-4) 0;
+  background: var(--surface-1);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+.bot-activity__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+  flex-wrap: wrap;
+}
+.bot-activity__heading {
+  font-family: var(--font-display, ui-monospace);
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+  margin: 0;
+}
+.bot-activity__hint {
+  font-family: var(--font-mono, ui-monospace);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.bot-activity__list {
+  list-style: none;
+  margin: 0; padding: 0;
+  font-family: var(--font-mono, ui-monospace);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  max-height: 18rem;
+  overflow-y: auto;
+}
+.bot-activity__row {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr;
+  gap: var(--space-2);
+  padding: 0.25rem 0;
+  border-bottom: 1px dashed var(--rule-soft);
+}
+.bot-activity__row:last-child { border-bottom: 0; }
+.bot-activity__ts {
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.bot-activity__msg {
+  color: var(--ink-1);
+  word-break: break-word;
+}
+.bot-activity__row--signal .bot-activity__msg { color: var(--info, #5fa8e5); }
+.bot-activity__row--error  .bot-activity__msg { color: var(--down, #e85a4c); }
+.bot-activity__empty {
+  font-family: var(--font-mono, ui-monospace);
+  font-size: 0.78rem;
+  color: var(--ink-3);
+  margin: var(--space-2) 0 0;
+}
 
 /* ── Chart panels (Phase D.7e: equity curve + daily PnL) ───────────────── */
 
@@ -1373,7 +1526,6 @@ a {
 
 @media (max-width: 1024px) {
   .hero-status { grid-template-columns: 1fr 1fr; }
-  .hero-status > :last-child { grid-column: 1 / -1; }
   .portfolio-strip { grid-template-columns: 1fr 1fr; }
   .trades-table { font-size: var(--fs-12); }
   .trades-table__strategy { max-width: 180px; }
@@ -1381,7 +1533,6 @@ a {
 
 @media (max-width: 640px) {
   .hero-status { grid-template-columns: 1fr; }
-  .hero-status > :last-child { grid-column: auto; }
   .portfolio-strip { grid-template-columns: 1fr; }
   .bot-card__pnl, .portfolio-strip__value { font-size: var(--fs-24); }
   .colophon { padding: var(--space-2) var(--space-3); }
@@ -1457,7 +1608,7 @@ a {
   <span class="colophon__sep">//</span>
   <span class="colophon__chip">FRESH · 0S</span>
   <span class="colophon__sep">//</span>
-  <span class="colophon__chip">BUILD · EBCADBE0</span>
+  <span class="colophon__chip">BUILD · AD672C94</span>
   <button
     type="button"
     class="theme-toggle"
@@ -1510,7 +1661,7 @@ is-up">
   <span class="status-pill__dot" aria-hidden="true"></span>
   <span class="status-pill__state">LIVE</span>
   <span class="status-pill__sep">·</span>
-  <span class="status-pill__seen">35s ago</span>
+  <span class="status-pill__seen">10m ago</span>
 </span>    <p class="bot-card__pnl
 is-down">
       −$225.67
@@ -1534,7 +1685,7 @@ is-down">
   <span class="status-pill__dot" aria-hidden="true"></span>
   <span class="status-pill__state">LIVE</span>
   <span class="status-pill__sep">·</span>
-  <span class="status-pill__seen">45m ago</span>
+  <span class="status-pill__seen">55m ago</span>
 </span>    <p class="bot-card__pnl
 ">
       $0.00
@@ -1556,7 +1707,7 @@ is-down">
   <span class="status-pill__dot" aria-hidden="true"></span>
   <span class="status-pill__state">LIVE</span>
   <span class="status-pill__sep">·</span>
-  <span class="status-pill__seen">34s ago</span>
+  <span class="status-pill__seen">45s ago</span>
 </span>    <p class="bot-card__pnl
 ">
       $0.00
@@ -1578,7 +1729,7 @@ is-down">
   <span class="status-pill__dot" aria-hidden="true"></span>
   <span class="status-pill__state">LIVE</span>
   <span class="status-pill__sep">·</span>
-  <span class="status-pill__seen">34s ago</span>
+  <span class="status-pill__seen">45s ago</span>
 </span>    <p class="bot-card__pnl
 ">
       $0.00
@@ -3344,6 +3495,7 @@ is-up
     <span class="bot-kpis__value">+4.89</span>
   </div>
 </section>
+
 <section class="bot-positions" aria-label="Open positions for this bot">
   <h2 class="bot-positions__heading">Open positions</h2>
   <p class="bot-positions__empty">No open positions for this bot.</p>
@@ -3538,7 +3690,20 @@ is-up
     </tbody>
   </table>
 </section>
-      </section>
+
+<section class="bot-activity" aria-label="Recent bot activity">
+  <header class="bot-activity__head">
+    <h2 class="bot-activity__heading">Recent activity</h2>
+    <span class="bot-activity__hint">
+      newest first · journalctl tail · refresh ≤ 5m
+    </span>
+  </header>
+
+  <p class="bot-activity__empty">
+    No recent entries. (Journal tail unavailable, or no entries/exits/
+    blocks logged since launch.)
+  </p>
+</section>      </section>
       <section role="tabpanel" id="tab-whale"      tabindex="0" hidden>
 <h1 class="tab-heading">Whale</h1>
 
@@ -3882,7 +4047,20 @@ is-down">
     </tbody>
   </table>
 </section>
-      </section>
+
+<section class="bot-activity" aria-label="Recent bot activity">
+  <header class="bot-activity__head">
+    <h2 class="bot-activity__heading">Recent activity</h2>
+    <span class="bot-activity__hint">
+      newest first · journalctl tail · refresh ≤ 5m
+    </span>
+  </header>
+
+  <p class="bot-activity__empty">
+    No recent entries. (Journal tail unavailable, or no entries/exits/
+    blocks logged since launch.)
+  </p>
+</section>      </section>
       <section role="tabpanel" id="tab-funding"    tabindex="0" hidden>
 <h1 class="tab-heading">Funding</h1>
 
@@ -4019,7 +4197,20 @@ is-down">
   <h2 class="bot-trades__heading">Recent closed trades</h2>
   <p class="bot-trades__empty">No closed trades for this bot yet.</p>
 </section>
-      </section>
+
+<section class="bot-activity" aria-label="Recent bot activity">
+  <header class="bot-activity__head">
+    <h2 class="bot-activity__heading">Recent activity</h2>
+    <span class="bot-activity__hint">
+      newest first · journalctl tail · refresh ≤ 5m
+    </span>
+  </header>
+
+  <p class="bot-activity__empty">
+    No recent entries. (Journal tail unavailable, or no entries/exits/
+    blocks logged since launch.)
+  </p>
+</section>      </section>
       <section role="tabpanel" id="tab-breakout"   tabindex="0" hidden>
 <h1 class="tab-heading">Breakout</h1>
 
@@ -4124,6 +4315,7 @@ is-down">
   </table>
 </section>
 
+
 <section class="kv-grid" aria-label="Breakout performance">
   <div class="kv-cell">
     <span class="kv-cell__k">CLOSED TRADES</span>
@@ -4164,6 +4356,7 @@ is-down">
     <span class="bot-kpis__value">—</span>
   </div>
 </section>
+
 <section class="bot-positions" aria-label="Open positions for this bot">
   <h2 class="bot-positions__heading">Open positions</h2>
   <p class="bot-positions__empty">No open positions for this bot.</p>
@@ -4173,7 +4366,20 @@ is-down">
   <h2 class="bot-trades__heading">Recent closed trades</h2>
   <p class="bot-trades__empty">No closed trades for this bot yet.</p>
 </section>
-      </section>
+
+<section class="bot-activity" aria-label="Recent bot activity">
+  <header class="bot-activity__head">
+    <h2 class="bot-activity__heading">Recent activity</h2>
+    <span class="bot-activity__hint">
+      newest first · journalctl tail · refresh ≤ 5m
+    </span>
+  </header>
+
+  <p class="bot-activity__empty">
+    No recent entries. (Journal tail unavailable, or no entries/exits/
+    blocks logged since launch.)
+  </p>
+</section>      </section>
       <section role="tabpanel" id="tab-pair"       tabindex="0" hidden>
 <h1 class="tab-heading">Pair</h1>
 
@@ -4280,6 +4486,7 @@ is-down">
     <span class="bot-kpis__value">—</span>
   </div>
 </section>
+
 <section class="bot-positions" aria-label="Open positions for this bot">
   <h2 class="bot-positions__heading">Open positions</h2>
   <p class="bot-positions__empty">No open positions for this bot.</p>
@@ -4289,7 +4496,20 @@ is-down">
   <h2 class="bot-trades__heading">Recent closed trades</h2>
   <p class="bot-trades__empty">No closed trades for this bot yet.</p>
 </section>
-      </section>
+
+<section class="bot-activity" aria-label="Recent bot activity">
+  <header class="bot-activity__head">
+    <h2 class="bot-activity__heading">Recent activity</h2>
+    <span class="bot-activity__hint">
+      newest first · journalctl tail · refresh ≤ 5m
+    </span>
+  </header>
+
+  <p class="bot-activity__empty">
+    No recent entries. (Journal tail unavailable, or no entries/exits/
+    blocks logged since launch.)
+  </p>
+</section>      </section>
       <section role="tabpanel" id="tab-reversal"   tabindex="0" hidden>
 <h1 class="tab-heading">Reversal</h1>
 
@@ -4433,6 +4653,7 @@ is-down">
     <span class="bot-kpis__value">—</span>
   </div>
 </section>
+
 <section class="bot-positions" aria-label="Open positions for this bot">
   <h2 class="bot-positions__heading">Open positions</h2>
   <p class="bot-positions__empty">No open positions for this bot.</p>
@@ -4442,7 +4663,20 @@ is-down">
   <h2 class="bot-trades__heading">Recent closed trades</h2>
   <p class="bot-trades__empty">No closed trades for this bot yet.</p>
 </section>
-      </section>
+
+<section class="bot-activity" aria-label="Recent bot activity">
+  <header class="bot-activity__head">
+    <h2 class="bot-activity__heading">Recent activity</h2>
+    <span class="bot-activity__hint">
+      newest first · journalctl tail · refresh ≤ 5m
+    </span>
+  </header>
+
+  <p class="bot-activity__empty">
+    No recent entries. (Journal tail unavailable, or no entries/exits/
+    blocks logged since launch.)
+  </p>
+</section>      </section>
       <section role="tabpanel" id="tab-projection" tabindex="0" hidden>
 <h1 class="tab-heading">Yearly Projection</h1>
 
@@ -4478,12 +4712,14 @@ is-up
 </section>
 
 <div class="trades-table-wrap">
-  <table class="trades-table" aria-label="Per-strategy projection">
+  <table class="trades-table projection-table" aria-label="Per-strategy projection">
     <caption class="sr-only">
       Per-strategy yearly projection scaled from backtest results to live sizing.
+      Each row's confidence tag reflects sample size; small-n rows are visually muted.
     </caption>
     <thead>
       <tr>
+        <th scope="col">Bot</th>
         <th scope="col">Strategy</th>
         <th scope="col">Symbol</th>
         <th scope="col">TF</th>
@@ -4491,11 +4727,16 @@ is-up
         <th scope="col" data-sort-type="num">Trades/yr</th>
         <th scope="col" data-sort-type="num">Annual %</th>
         <th scope="col" data-sort-type="num">Max DD</th>
+        <th scope="col" data-sort-type="num">Window</th>
+        <th scope="col">Confidence</th>
         <th scope="col" data-sort-type="num">Annual PnL</th>
       </tr>
     </thead>
     <tbody>
-      <tr>
+      <tr class="projection-row ">
+        <td>
+          <span class="bot-tag bot-tag--"></span>
+        </td>
         <td class="trades-table__strategy">Whale Tracker (Hyperliquid Smart Money)</td>
         <td class="trades-table__symbol">Multi-asset</td>
         <td class="trades-table__date">15m poll</td>
@@ -4503,13 +4744,23 @@ is-up
         <td class="num">162.0</td>
         <td class="num">+3.9%</td>
         <td class="num">2.3%</td>
+        <td class="num"></td>
+        <td>
+          <span class="confidence-pill confidence-pill--"
+                title="synthetic proxy — funding-extreme fade">
+            
+          </span>
+        </td>
         <td class="num
 is-up
 ">
           +$195.25
         </td>
       </tr>
-      <tr>
+      <tr class="projection-row ">
+        <td>
+          <span class="bot-tag bot-tag--"></span>
+        </td>
         <td class="trades-table__strategy">DOGE Daily Momentum v2</td>
         <td class="trades-table__symbol">DOGEUSDT</td>
         <td class="trades-table__date">1d</td>
@@ -4517,13 +4768,23 @@ is-up
         <td class="num">2.3</td>
         <td class="num">+0.8%</td>
         <td class="num">1.0%</td>
+        <td class="num"></td>
+        <td>
+          <span class="confidence-pill confidence-pill--"
+                title="">
+            
+          </span>
+        </td>
         <td class="num
 is-up
 ">
           +$42.45
         </td>
       </tr>
-      <tr>
+      <tr class="projection-row ">
+        <td>
+          <span class="bot-tag bot-tag--"></span>
+        </td>
         <td class="trades-table__strategy">SHIB Daily Momentum v2</td>
         <td class="trades-table__symbol">SHIBUSDT</td>
         <td class="trades-table__date">1d</td>
@@ -4531,13 +4792,23 @@ is-up
         <td class="num">1.9</td>
         <td class="num">+0.7%</td>
         <td class="num">0.8%</td>
+        <td class="num"></td>
+        <td>
+          <span class="confidence-pill confidence-pill--"
+                title="">
+            
+          </span>
+        </td>
         <td class="num
 is-up
 ">
           +$34.25
         </td>
       </tr>
-      <tr>
+      <tr class="projection-row ">
+        <td>
+          <span class="bot-tag bot-tag--"></span>
+        </td>
         <td class="trades-table__strategy">DOT 4H Momentum v2</td>
         <td class="trades-table__symbol">DOTUSDT</td>
         <td class="trades-table__date">4h</td>
@@ -4545,13 +4816,23 @@ is-up
         <td class="num">6.0</td>
         <td class="num">+0.7%</td>
         <td class="num">1.0%</td>
+        <td class="num"></td>
+        <td>
+          <span class="confidence-pill confidence-pill--"
+                title="">
+            
+          </span>
+        </td>
         <td class="num
 is-up
 ">
           +$32.74
         </td>
       </tr>
-      <tr>
+      <tr class="projection-row ">
+        <td>
+          <span class="bot-tag bot-tag--"></span>
+        </td>
         <td class="trades-table__strategy">HBAR 4H Momentum v2</td>
         <td class="trades-table__symbol">HBARUSDT</td>
         <td class="trades-table__date">4h</td>
@@ -4559,13 +4840,23 @@ is-up
         <td class="num">6.6</td>
         <td class="num">+0.6%</td>
         <td class="num">1.1%</td>
+        <td class="num"></td>
+        <td>
+          <span class="confidence-pill confidence-pill--"
+                title="">
+            
+          </span>
+        </td>
         <td class="num
 is-up
 ">
           +$30.19
         </td>
       </tr>
-      <tr>
+      <tr class="projection-row ">
+        <td>
+          <span class="bot-tag bot-tag--"></span>
+        </td>
         <td class="trades-table__strategy">DOGE 4H Momentum v2</td>
         <td class="trades-table__symbol">DOGEUSDT</td>
         <td class="trades-table__date">4h</td>
@@ -4573,13 +4864,23 @@ is-up
         <td class="num">7.2</td>
         <td class="num">+0.6%</td>
         <td class="num">1.3%</td>
+        <td class="num"></td>
+        <td>
+          <span class="confidence-pill confidence-pill--"
+                title="">
+            
+          </span>
+        </td>
         <td class="num
 is-up
 ">
           +$28.30
         </td>
       </tr>
-      <tr>
+      <tr class="projection-row ">
+        <td>
+          <span class="bot-tag bot-tag--"></span>
+        </td>
         <td class="trades-table__strategy">SHIB 4H Momentum v2</td>
         <td class="trades-table__symbol">SHIBUSDT</td>
         <td class="trades-table__date">4h</td>
@@ -4587,13 +4888,23 @@ is-up
         <td class="num">6.8</td>
         <td class="num">+0.6%</td>
         <td class="num">1.3%</td>
+        <td class="num"></td>
+        <td>
+          <span class="confidence-pill confidence-pill--"
+                title="">
+            
+          </span>
+        </td>
         <td class="num
 is-up
 ">
           +$28.30
         </td>
       </tr>
-      <tr>
+      <tr class="projection-row ">
+        <td>
+          <span class="bot-tag bot-tag--"></span>
+        </td>
         <td class="trades-table__strategy">ADA Daily Momentum v2</td>
         <td class="trades-table__symbol">ADAUSDT</td>
         <td class="trades-table__date">1d</td>
@@ -4601,13 +4912,23 @@ is-up
         <td class="num">2.5</td>
         <td class="num">+0.5%</td>
         <td class="num">1.0%</td>
+        <td class="num"></td>
+        <td>
+          <span class="confidence-pill confidence-pill--"
+                title="">
+            
+          </span>
+        </td>
         <td class="num
 is-up
 ">
           +$26.42
         </td>
       </tr>
-      <tr>
+      <tr class="projection-row ">
+        <td>
+          <span class="bot-tag bot-tag--"></span>
+        </td>
         <td class="trades-table__strategy">ADA 4H Momentum v2</td>
         <td class="trades-table__symbol">ADAUSDT</td>
         <td class="trades-table__date">4h</td>
@@ -4615,13 +4936,23 @@ is-up
         <td class="num">6.0</td>
         <td class="num">+0.5%</td>
         <td class="num">0.6%</td>
+        <td class="num"></td>
+        <td>
+          <span class="confidence-pill confidence-pill--"
+                title="">
+            
+          </span>
+        </td>
         <td class="num
 is-up
 ">
           +$25.85
         </td>
       </tr>
-      <tr>
+      <tr class="projection-row ">
+        <td>
+          <span class="bot-tag bot-tag--"></span>
+        </td>
         <td class="trades-table__strategy">DOT Daily Momentum v2</td>
         <td class="trades-table__symbol">DOTUSDT</td>
         <td class="trades-table__date">1d</td>
@@ -4629,13 +4960,23 @@ is-up
         <td class="num">2.5</td>
         <td class="num">+0.5%</td>
         <td class="num">0.9%</td>
+        <td class="num"></td>
+        <td>
+          <span class="confidence-pill confidence-pill--"
+                title="">
+            
+          </span>
+        </td>
         <td class="num
 is-up
 ">
           +$24.53
         </td>
       </tr>
-      <tr>
+      <tr class="projection-row ">
+        <td>
+          <span class="bot-tag bot-tag--"></span>
+        </td>
         <td class="trades-table__strategy">HBAR Daily Momentum v2</td>
         <td class="trades-table__symbol">HBARUSDT</td>
         <td class="trades-table__date">1d</td>
@@ -4643,6 +4984,13 @@ is-up
         <td class="num">2.6</td>
         <td class="num">+0.5%</td>
         <td class="num">1.2%</td>
+        <td class="num"></td>
+        <td>
+          <span class="confidence-pill confidence-pill--"
+                title="">
+            
+          </span>
+        </td>
         <td class="num
 is-up
 ">
@@ -4654,16 +5002,20 @@ is-up
 </div>
 
 <p class="tab-note">
-  Projection scales backtest $ PnL to your live sizing
-  ($500 notional per trade) and divides
-  by the backtest window. Treat as <em>rough</em> — past performance
-  doesn't predict future regime, and the funding bot has zero backtest
-  history so it's not reflected here.
+  Projection scales each row's backtest $ PnL to its live sizing and
+  divides by that row's backtest window <em>(per-bot — not a single
+  global window)</em>. Confidence tag reflects trade count:
+  <span class="confidence-pill confidence-pill--high">n ≥ 50</span> high,
+  <span class="confidence-pill confidence-pill--med">n ≥ 20</span> medium,
+  <span class="confidence-pill confidence-pill--low">small n</span> directional only,
+  <span class="confidence-pill confidence-pill--none">no data</span> awaiting first signal.
+  Low-confidence rows are muted to avoid over-weighting outliers (e.g. a
+  PF=91 row with n=2). Past performance doesn't predict future regime.
 </p>      </section>
     </main>
 
     <footer class="page-foot">
-      <span class="page-foot__build">Build · ebcadbe0 · 2026-06-07 22:19 UTC</span>
+      <span class="page-foot__build">Build · ad672c94 · 2026-06-07 22:29 UTC</span>
     </footer>
   </div>
 
@@ -4719,9 +5071,10 @@ window.initAssetChart = function (chartId, data) {
     crosshair: { mode: 1 }  // magnet
   });
 
-  // Candles
+  // Candles (primary series for momentum/breakout; absent for pair/funding)
+  var primarySeries = null;
   if (Array.isArray(data.candles) && data.candles.length > 0) {
-    var candleSeries = chart.addCandlestickSeries({
+    primarySeries = chart.addCandlestickSeries({
       upColor:       '#57cb95',
       downColor:     '#e85a4c',
       borderUpColor: '#57cb95',
@@ -4729,10 +5082,7 @@ window.initAssetChart = function (chartId, data) {
       wickUpColor:   '#57cb95',
       wickDownColor: '#e85a4c'
     });
-    candleSeries.setData(data.candles);
-    if (Array.isArray(data.markers) && data.markers.length > 0) {
-      candleSeries.setMarkers(data.markers);
-    }
+    primarySeries.setData(data.candles);
   }
 
   // Overlay line series (EMA20, EMA50, Donchian bands, ratio, etc.)
@@ -4746,7 +5096,15 @@ window.initAssetChart = function (chartId, data) {
         lastValueVisible: false
       });
       line.setData(overlay.data);
+      // For line-only charts (pair), markers attach to first overlay
+      if (!primarySeries) primarySeries = line;
     });
+  }
+
+  // Markers go on the primary series (candles for momentum/breakout,
+  // first overlay for pair/funding).
+  if (primarySeries && Array.isArray(data.markers) && data.markers.length > 0) {
+    primarySeries.setMarkers(data.markers);
   }
 
   // Auto-fit data on initial render
@@ -4761,6 +5119,42 @@ window.initAssetChart = function (chartId, data) {
   }
 
   return chart;
+};
+
+// J.5a: Asset-dropdown handler. When a bot tab's <select> changes, hide
+// every sibling .asset-chart-wrap and show the one whose data-chart-id
+// matches the selected option. The chart is initialized lazily — first
+// reveal triggers initAssetChart; subsequent reveals are no-ops because
+// TWLC reuses the existing container.
+window.initAssetDropdowns = function () {
+  var initialized = new Set();
+  function ensureChart(chartId) {
+    if (initialized.has(chartId)) return;
+    var el = document.getElementById('chartdata-' + chartId);
+    if (!el || !window.initAssetChart) return;
+    try {
+      window.initAssetChart(chartId, JSON.parse(el.textContent));
+      initialized.add(chartId);
+    } catch (e) {
+      console.error('chart-' + chartId + ' init failed', e);
+    }
+  }
+  var selects = document.querySelectorAll('.asset-chart-section__select');
+  selects.forEach(function (sel) {
+    var section = sel.closest('.asset-chart-section');
+    if (!section) return;
+    var wraps = section.querySelectorAll('.asset-chart-wrap');
+    // Initialize the default-visible chart
+    var defaultId = sel.value;
+    ensureChart(defaultId);
+    sel.addEventListener('change', function () {
+      var chartId = sel.value;
+      wraps.forEach(function (w) {
+        w.style.display = (w.dataset.chartId === chartId) ? '' : 'none';
+      });
+      ensureChart(chartId);
+    });
+  });
 };
 
 (function () {
@@ -4939,6 +5333,11 @@ window.initAssetChart = function (chartId, data) {
         URL.revokeObjectURL(url);
       });
     }
+  }
+
+  // J.5a: Wire asset-chart dropdowns after DOM ready.
+  if (typeof window.initAssetDropdowns === 'function') {
+    window.initAssetDropdowns();
   }
 })();
 
