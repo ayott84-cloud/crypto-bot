@@ -202,6 +202,61 @@ def test_context_includes_chart_panels_root():
     assert "breakout" in ctx["chart_panels_root"]
 
 
+# ─── J.5b — Pair ratio chart ─────────────────────────────────────────────
+
+def _mock_executor_pair(eth_klines, btc_klines):
+    """Returns klines based on the symbol argument (ETHUSDT vs BTCUSDT)."""
+    ex = MagicMock()
+
+    def _get(symbol, interval, count):
+        if symbol == "ETHUSDT":
+            return eth_klines
+        if symbol == "BTCUSDT":
+            return btc_klines
+        return []
+
+    ex.get_klines.side_effect = _get
+    return ex
+
+
+def test_pair_chart_data_has_ratio_and_bands_no_candles():
+    """Pair chart returns empty candles + ratio/mean/±2σ overlays."""
+    dashboard._kline_cache_clear()
+    eth = _weex_klines(80, base_price=3000)
+    btc = _weex_klines(80, base_price=80000)
+    ex  = _mock_executor_pair(eth, btc)
+    cfg = {"long_symbol": "ETHUSDT", "short_symbol": "BTCUSDT",
+           "interval": "1d", "z_window": 30, "entry_z": 2.0}
+    data = dashboard._v2_asset_chart_data(
+        ex, bot_class="pair", asset_name="ETHBTC", cfg=cfg, trades=[])
+    assert data["candles"] == []
+    overlay_names = {o["name"] for o in data["overlays"]}
+    assert "Ratio" in overlay_names
+    assert any("Mean" in n for n in overlay_names)
+    assert any("σ" in n for n in overlay_names)
+
+
+def test_pair_chart_data_empty_when_one_leg_missing():
+    dashboard._kline_cache_clear()
+    ex = _mock_executor_pair(_weex_klines(50), [])  # btc missing
+    cfg = {"long_symbol": "ETHUSDT", "short_symbol": "BTCUSDT",
+           "interval": "1d", "z_window": 30, "entry_z": 2.0}
+    data = dashboard._v2_asset_chart_data(
+        ex, bot_class="pair", asset_name="ETHBTC", cfg=cfg, trades=[])
+    assert data == {"candles": [], "overlays": [], "markers": []}
+
+
+def test_pair_chart_panels_built_from_config():
+    """pair bot exposes its ETHBTC pair via _v2_assets_for_bot."""
+    assets = dashboard._v2_assets_for_bot("pair")
+    # Should have at least one entry (graceful empty if pair_config absent)
+    if assets:
+        first = next(iter(assets.values()))
+        assert "long_symbol" in first
+        assert "short_symbol" in first
+        assert "interval" in first
+
+
 # ─── Render-level integration ────────────────────────────────────────────
 
 def test_momentum_tab_renders_asset_chart_section_when_panels_present():

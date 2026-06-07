@@ -123,11 +123,11 @@
 .monogram--pair     { color: var(--b-pair); }
 .monogram--reversal { color: var(--b-reversal); }
 
-/* ── Hero status board (5 bot cards: auto-fit grid, wraps responsively) ─── */
+/* ── Hero status board (6 bot cards: 3×2 grid at desktop) ──────────────── */
 
 .hero-status {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-4);
   margin-bottom: var(--space-5);
 }
@@ -978,7 +978,6 @@
 
 @media (max-width: 1024px) {
   .hero-status { grid-template-columns: 1fr 1fr; }
-  .hero-status > :last-child { grid-column: 1 / -1; }
   .portfolio-strip { grid-template-columns: 1fr 1fr; }
   .trades-table { font-size: var(--fs-12); }
   .trades-table__strategy { max-width: 180px; }
@@ -986,7 +985,6 @@
 
 @media (max-width: 640px) {
   .hero-status { grid-template-columns: 1fr; }
-  .hero-status > :last-child { grid-column: auto; }
   .portfolio-strip { grid-template-columns: 1fr; }
   .bot-card__pnl, .portfolio-strip__value { font-size: var(--fs-24); }
   .colophon { padding: var(--space-2) var(--space-3); }

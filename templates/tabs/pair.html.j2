@@ -116,6 +116,9 @@
 {% set bot_kpis = bot_panels.pair.kpis %}
 {% include "components/bot_kpis_strip.html.j2" %}
 
+{% set chart_panels = chart_panels_root.pair if chart_panels_root is defined else [] %}
+{% include "components/bot_chart_panel.html.j2" %}
+
 {% set positions = bot_panels.pair.positions %}
 {% include "components/bot_positions_panel.html.j2" %}
 

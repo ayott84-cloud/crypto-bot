@@ -37,9 +37,10 @@ window.initAssetChart = function (chartId, data) {
     crosshair: { mode: 1 }  // magnet
   });
 
-  // Candles
+  // Candles (primary series for momentum/breakout; absent for pair/funding)
+  var primarySeries = null;
   if (Array.isArray(data.candles) && data.candles.length > 0) {
-    var candleSeries = chart.addCandlestickSeries({
+    primarySeries = chart.addCandlestickSeries({
       upColor:       '#57cb95',
       downColor:     '#e85a4c',
       borderUpColor: '#57cb95',
@@ -47,10 +48,7 @@ window.initAssetChart = function (chartId, data) {
       wickUpColor:   '#57cb95',
       wickDownColor: '#e85a4c'
     });
-    candleSeries.setData(data.candles);
-    if (Array.isArray(data.markers) && data.markers.length > 0) {
-      candleSeries.setMarkers(data.markers);
-    }
+    primarySeries.setData(data.candles);
   }
 
   // Overlay line series (EMA20, EMA50, Donchian bands, ratio, etc.)
@@ -64,7 +62,15 @@ window.initAssetChart = function (chartId, data) {
         lastValueVisible: false
       });
       line.setData(overlay.data);
+      // For line-only charts (pair), markers attach to first overlay
+      if (!primarySeries) primarySeries = line;
     });
+  }
+
+  // Markers go on the primary series (candles for momentum/breakout,
+  // first overlay for pair/funding).
+  if (primarySeries && Array.isArray(data.markers) && data.markers.length > 0) {
+    primarySeries.setMarkers(data.markers);
   }
 
   // Auto-fit data on initial render

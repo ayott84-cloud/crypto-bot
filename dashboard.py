@@ -1990,6 +1990,20 @@ def _v2_overlays_for_bot(bot_class: str, df, cfg: dict) -> list[dict]:
                 for t, v in zip(times, series) if v == v]  # NaN-safe
         return {"name": name, "color": color, "data": data}
 
+    if bot_class == "pair":
+        # Pair chart shows the ratio + 30d rolling mean + ±2σ bands,
+        # not OHLC. The ratio Series is already in df["close"] (set up
+        # by _v2_asset_chart_data's pair branch).
+        z_window = int(cfg.get("z_window", 30))
+        mean = close.rolling(z_window, min_periods=max(2, z_window // 2)).mean()
+        std  = close.rolling(z_window, min_periods=max(2, z_window // 2)).std()
+        entry_z = float(cfg.get("entry_z", 2.0))
+        overlays.append(_line("Ratio", "#5fa8e5", close))
+        overlays.append(_line(f"Mean ({z_window}d)", "#d4ad58", mean))
+        overlays.append(_line(f"+{entry_z}σ", "#e85a4c", mean + entry_z * std))
+        overlays.append(_line(f"−{entry_z}σ", "#57cb95", mean - entry_z * std))
+        return overlays
+
     if bot_class == "momentum":
         ema_fast = int(cfg.get("ema_fast", 20))
         ema_slow = int(cfg.get("ema_slow", 50))
@@ -2016,6 +2030,40 @@ def _v2_overlays_for_bot(bot_class: str, df, cfg: dict) -> list[dict]:
     return overlays
 
 
+def _v2_pair_ratio_df(executor, long_symbol: str, short_symbol: str,
+                       interval: str, count: int = 200):
+    """Build a DataFrame with time + ratio (long_close / short_close).
+
+    Returns None when either leg's klines are missing or pandas is absent.
+    The result is shaped like a candle df (open=high=low=close=ratio) so
+    the same overlay logic + marker pipeline works.
+    """
+    try:
+        import pandas as pd  # noqa: F401
+    except ImportError:
+        return None
+    import pandas as pd  # local
+    long_rows  = _v2_fetch_klines_cached(executor, long_symbol,  interval, count)
+    short_rows = _v2_fetch_klines_cached(executor, short_symbol, interval, count)
+    long_df  = _v2_kline_rows_to_df(long_rows)
+    short_df = _v2_kline_rows_to_df(short_rows)
+    if (long_df is None or short_df is None
+            or len(long_df) == 0 or len(short_df) == 0):
+        return None
+    merged = long_df[["time", "close"]].merge(
+        short_df[["time", "close"]], on="time", suffixes=("_l", "_s"))
+    if len(merged) == 0:
+        return None
+    merged["ratio"] = merged["close_l"] / merged["close_s"]
+    df = pd.DataFrame({
+        "time":  merged["time"],
+        "open":  merged["ratio"], "high": merged["ratio"],
+        "low":   merged["ratio"], "close": merged["ratio"],
+        "volume": 0.0,
+    })
+    return df
+
+
 def _v2_asset_chart_data(executor, bot_class: str, asset_name: str,
                           cfg: dict, trades: list) -> dict:
     """Build the TWLC chart-data dict for one (bot, asset) tab panel.
@@ -2026,9 +2074,26 @@ def _v2_asset_chart_data(executor, bot_class: str, asset_name: str,
         "overlays": [{name, color, data: [{time, value}, ...]}, ...],
         "markers":  [{time, position, color, shape, text}, ...],
       }
+    Pair charts return empty `candles` (ratio is a line, not OHLC); the
+    first overlay is the ratio itself and JS attaches markers to it.
+
     Empty kline data returns all-empty arrays so the JS can render an
     empty-state chart without crashing.
     """
+    if bot_class == "pair":
+        long_symbol  = cfg.get("long_symbol",  "ETHUSDT")
+        short_symbol = cfg.get("short_symbol", "BTCUSDT")
+        interval     = cfg.get("interval", "1d")
+        df = _v2_pair_ratio_df(executor, long_symbol, short_symbol, interval)
+        if df is None or len(df) == 0:
+            return {"candles": [], "overlays": [], "markers": []}
+        overlays = _v2_overlays_for_bot("pair", df, cfg)
+        window = (int(df["time"].iloc[0]), int(df["time"].iloc[-1]))
+        # Pair trades store the long-leg symbol; filter on that.
+        markers = _v2_trade_markers_for_asset(
+            trades or [], "pair", long_symbol, window)
+        return {"candles": [], "overlays": overlays, "markers": markers}
+
     symbol   = cfg.get("symbol", "")
     interval = cfg.get("interval", "4h")
     rows = _v2_fetch_klines_cached(executor, symbol, interval, 200)
@@ -2065,9 +2130,24 @@ def _v2_assets_for_bot(bot_class: str) -> dict[str, dict]:
         if bot_class == "reversal":
             from reversal_config import REVERSAL_ASSETS
             return dict(REVERSAL_ASSETS)
+        if bot_class == "pair":
+            from pair_config import (
+                PAIR_LONG_SYMBOL, PAIR_SHORT_SYMBOL,
+                PAIR_INTERVAL, PAIR_CONFIG,
+            )
+            return {
+                "ETHBTC": {
+                    "symbol":       PAIR_LONG_SYMBOL,  # display only
+                    "long_symbol":  PAIR_LONG_SYMBOL,
+                    "short_symbol": PAIR_SHORT_SYMBOL,
+                    "interval":     PAIR_INTERVAL,
+                    "z_window":     PAIR_CONFIG.get("z_window", 30),
+                    "entry_z":      PAIR_CONFIG.get("entry_z",  2.0),
+                },
+            }
     except ImportError:
         return {}
-    # whale (dynamic universe), funding (dynamic), pair (single hardcoded)
+    # whale (dynamic universe), funding (dynamic — no log data yet)
     return {}
 
 
@@ -2143,7 +2223,8 @@ def _v2_build_all_chart_panels(executor, trades: list) -> dict:
                                                      "breakout"),
         "whale":    [],
         "funding":  [],
-        "pair":     [],
+        "pair":     _v2_build_chart_panels_for_bot(executor, trades,
+                                                     "pair", max_assets=1),
         "reversal": _v2_build_chart_panels_for_bot(executor, trades,
                                                      "reversal"),
     }
