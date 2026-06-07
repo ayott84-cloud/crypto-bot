@@ -241,10 +241,24 @@ a {
   <style>
 /* Page grid + tab nav. Three breakpoints (640 / 1024 / 1440). */
 
+/* J.1: app shell — sidebar + main column. Body becomes a 2-col grid. */
+.app-shell {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 100vh;
+}
+
+.app-shell__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;  /* prevents flex-child overflow */
+}
+
 .page {
   max-width: 1440px;
   margin: 0 auto;
   padding: var(--space-5) var(--space-5) var(--space-7);
+  width: 100%;
 }
 
 .page-foot {
@@ -260,37 +274,107 @@ a {
   gap: var(--space-4);
 }
 
-/* ── Tab nav ─────────────────────────────────────────────────────────────── */
+/* ── Sidebar nav (J.1) ──────────────────────────────────────────────────── */
 
-.tab-nav {
-  display: flex;
-  gap: var(--space-3);
-  align-items: stretch;
-  border-bottom: var(--border-thin);
-  padding: 0 var(--space-5);
-  background: var(--surface-0);
+.sidebar {
+  background: var(--surface-1);
+  border-right: 1px solid var(--rule-soft);
+  padding: var(--space-5) 0 var(--space-4);
   position: sticky;
   top: 0;
-  z-index: 10;
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
 }
 
-.tab-nav button {
+.sidebar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-5) var(--space-5);
+  border-bottom: 1px solid var(--rule-soft);
+  margin-bottom: var(--space-3);
+}
+
+.sidebar__monogram {
+  font-family: var(--font-mono);
+  font-size: var(--fs-24);
+  color: var(--info);
+  font-weight: 600;
+}
+
+.sidebar__brandname {
+  font-family: var(--font-display);
+  font-size: var(--fs-12);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+.sidebar__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar__group-label {
+  font-family: var(--font-display);
+  font-size: var(--fs-9);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: 0 var(--space-5) var(--space-2);
+}
+
+.sidebar__item {
   background: none;
   border: 0;
-  border-bottom: 2px solid transparent;
+  border-left: 2px solid transparent;
   color: var(--ink-2);
+  text-align: left;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   font: 500 var(--fs-13)/1 var(--font-ui);
-  letter-spacing: 0.02em;
-  padding: var(--space-4) var(--space-3);
+  padding: var(--space-3) var(--space-5);
   cursor: pointer;
   transition: color var(--motion-fast) var(--ease),
+              background var(--motion-fast) var(--ease),
               border-color var(--motion-fast) var(--ease);
 }
 
-.tab-nav button:hover  { color: var(--ink-1); }
-.tab-nav button.active {
+.sidebar__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  font-weight: 700;
+  color: var(--ink-3);
+  flex-shrink: 0;
+}
+
+.sidebar__label {
+  flex: 1;
+}
+
+.sidebar__item:hover {
   color: var(--ink-1);
-  border-bottom-color: var(--ink-1);
+  background: var(--surface-2);
+}
+
+.sidebar__item.active {
+  color: var(--ink-1);
+  background: var(--surface-2);
+  border-left-color: var(--info);
+}
+
+.sidebar__item.active .sidebar__icon {
+  color: var(--ink-1);
 }
 
 /* ── Tab heading ─────────────────────────────────────────────────────────── */
@@ -317,16 +401,33 @@ a {
 /* ── Breakpoints ─────────────────────────────────────────────────────────── */
 
 @media (max-width: 1024px) {
+  .app-shell { grid-template-columns: 56px 1fr; }
+  .sidebar__brandname,
+  .sidebar__label,
+  .sidebar__group-label { display: none; }
+  .sidebar__item { padding: var(--space-3) var(--space-2); justify-content: center; }
+  .sidebar__brand { padding: 0 0 var(--space-4); justify-content: center; }
   .page { padding: var(--space-4) var(--space-4) var(--space-6); }
-  .tab-nav { padding: 0 var(--space-4); overflow-x: auto; }
   .tab-heading { font-size: var(--fs-24); }
   .chart-row { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 640px) {
+  .app-shell { grid-template-columns: 1fr; }
+  .sidebar {
+    height: auto;
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--rule-soft);
+    padding: var(--space-3);
+    gap: var(--space-3);
+  }
+  .sidebar__brand,
+  .sidebar__group-label { display: none; }
+  .sidebar__group { flex-direction: row; }
   .page { padding: var(--space-3); }
-  .tab-nav { padding: 0 var(--space-3); }
-  .tab-nav button { padding: var(--space-3) var(--space-2); font-size: var(--fs-12); }
   .page-foot { flex-direction: column; padding: var(--space-3); gap: var(--space-2); }
 }
 
@@ -655,10 +756,14 @@ a {
 
 .risk-metrics__grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  /* J.7: 7 cells — Sortino · Calmar · Ulcer · Max DD · Time underwater · Streak · Recovery */
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: var(--space-4);
 }
 
+@media (max-width: 1280px) {
+  .risk-metrics__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 @media (max-width: 1024px) {
   .risk-metrics__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -1210,9 +1315,63 @@ a {
 
 </style>
 </head>
-<body>
+<body class="app-shell">
   <a href="#main-content" class="skip-link">Skip to main content</a>
 
+  <!-- J.1: Left vertical sidebar nav. Replaces the horizontal top tabs. -->
+  <nav class="sidebar" role="tablist" aria-label="Dashboard sections" aria-orientation="vertical">
+    <div class="sidebar__brand">
+      <span class="sidebar__monogram">⌖</span>
+      <span class="sidebar__brandname">crypto-bot</span>
+    </div>
+    <div class="sidebar__group">
+      <span class="sidebar__group-label">SYSTEM</span>
+      <button role="tab" aria-selected="true"  aria-current="page"
+              aria-controls="tab-overview"   data-tab="overview"   class="sidebar__item active">
+        <span class="sidebar__icon">⌖</span><span class="sidebar__label">Overview</span>
+      </button>
+      <button role="tab" aria-selected="false"
+              aria-controls="tab-trades"     data-tab="trades"     class="sidebar__item">
+        <span class="sidebar__icon">≡</span><span class="sidebar__label">Trade Log</span>
+      </button>
+    </div>
+    <div class="sidebar__group">
+      <span class="sidebar__group-label">BOTS</span>
+      <button role="tab" aria-selected="false"
+              aria-controls="tab-momentum"   data-tab="momentum"   class="sidebar__item">
+        <span class="sidebar__icon monogram--momentum">M</span><span class="sidebar__label">Momentum</span>
+      </button>
+      <button role="tab" aria-selected="false"
+              aria-controls="tab-whale"      data-tab="whale"      class="sidebar__item">
+        <span class="sidebar__icon monogram--whale">W</span><span class="sidebar__label">Whale</span>
+      </button>
+      <button role="tab" aria-selected="false"
+              aria-controls="tab-funding"    data-tab="funding"    class="sidebar__item">
+        <span class="sidebar__icon monogram--funding">F</span><span class="sidebar__label">Funding</span>
+      </button>
+      <button role="tab" aria-selected="false"
+              aria-controls="tab-breakout"   data-tab="breakout"   class="sidebar__item">
+        <span class="sidebar__icon monogram--breakout">B</span><span class="sidebar__label">Breakout</span>
+      </button>
+      <button role="tab" aria-selected="false"
+              aria-controls="tab-pair"       data-tab="pair"       class="sidebar__item">
+        <span class="sidebar__icon monogram--pair">P</span><span class="sidebar__label">Pair</span>
+      </button>
+      <button role="tab" aria-selected="false"
+              aria-controls="tab-reversal"   data-tab="reversal"   class="sidebar__item">
+        <span class="sidebar__icon monogram--reversal">R</span><span class="sidebar__label">Reversal</span>
+      </button>
+    </div>
+    <div class="sidebar__group">
+      <span class="sidebar__group-label">ANALYSIS</span>
+      <button role="tab" aria-selected="false"
+              aria-controls="tab-projection" data-tab="projection" class="sidebar__item">
+        <span class="sidebar__icon">Σ</span><span class="sidebar__label">Projection</span>
+      </button>
+    </div>
+  </nav>
+
+  <div class="app-shell__main">
 <div class="colophon" role="contentinfo" aria-label="Operator metadata">
   <span class="colophon__chip">OPERATOR · AYOTT84</span>
   <span class="colophon__sep">//</span>
@@ -1220,7 +1379,7 @@ a {
   <span class="colophon__sep">//</span>
   <span class="colophon__chip">FRESH · 0S</span>
   <span class="colophon__sep">//</span>
-  <span class="colophon__chip">BUILD · 5E15B42D</span>
+  <span class="colophon__chip">BUILD · 629BDBBF</span>
   <button
     type="button"
     class="theme-toggle"
@@ -1231,19 +1390,8 @@ a {
     <span class="theme-toggle__icon theme-toggle__icon--light" aria-hidden="true">LIGHT</span>
   </button>
 </div>
-  <nav class="tab-nav" role="tablist" aria-label="Dashboard sections">
-    <button role="tab" aria-selected="true"  aria-current="page" aria-controls="tab-overview"   data-tab="overview"   class="active">Overview</button>
-    <button role="tab" aria-selected="false" aria-controls="tab-trades"     data-tab="trades">Trade Log</button>
-    <button role="tab" aria-selected="false" aria-controls="tab-projection" data-tab="projection">Projection</button>
-    <button role="tab" aria-selected="false" aria-controls="tab-whale"      data-tab="whale">Whale</button>
-    <button role="tab" aria-selected="false" aria-controls="tab-funding"    data-tab="funding">Funding</button>
-    <button role="tab" aria-selected="false" aria-controls="tab-breakout"   data-tab="breakout">Breakout</button>
-    <button role="tab" aria-selected="false" aria-controls="tab-pair"       data-tab="pair">Pair</button>
-    <button role="tab" aria-selected="false" aria-controls="tab-reversal"   data-tab="reversal">Reversal</button>
-  </nav>
-
-  <main class="page" id="main-content">
-    <section role="tabpanel" id="tab-overview"   tabindex="0">
+    <main class="page" id="main-content">
+      <section role="tabpanel" id="tab-overview"   tabindex="0">
 <h1 class="tab-heading">Overview</h1>
 
 <section class="hero-status" aria-label="Bot status">
@@ -1284,7 +1432,7 @@ is-up">
   <span class="status-pill__dot" aria-hidden="true"></span>
   <span class="status-pill__state">LIVE</span>
   <span class="status-pill__sep">·</span>
-  <span class="status-pill__seen">10m ago</span>
+  <span class="status-pill__seen">5m ago</span>
 </span>    <p class="bot-card__pnl
 is-down">
       −$225.67
@@ -1308,7 +1456,7 @@ is-down">
   <span class="status-pill__dot" aria-hidden="true"></span>
   <span class="status-pill__state">LIVE</span>
   <span class="status-pill__sep">·</span>
-  <span class="status-pill__seen">25m ago</span>
+  <span class="status-pill__seen">5m ago</span>
 </span>    <p class="bot-card__pnl
 ">
       $0.00
@@ -1330,7 +1478,7 @@ is-down">
   <span class="status-pill__dot" aria-hidden="true"></span>
   <span class="status-pill__state">LIVE</span>
   <span class="status-pill__sep">·</span>
-  <span class="status-pill__seen">12s ago</span>
+  <span class="status-pill__seen">24s ago</span>
 </span>    <p class="bot-card__pnl
 ">
       $0.00
@@ -1352,7 +1500,7 @@ is-down">
   <span class="status-pill__dot" aria-hidden="true"></span>
   <span class="status-pill__state">LIVE</span>
   <span class="status-pill__sep">·</span>
-  <span class="status-pill__seen">12s ago</span>
+  <span class="status-pill__seen">24s ago</span>
 </span>    <p class="bot-card__pnl
 ">
       $0.00
@@ -1441,6 +1589,16 @@ is-down">
       <span class="risk-cell__value">35 bars</span>
       <span class="risk-cell__note">since last peak</span>
     </div>
+    <div class="risk-cell">
+      <span class="risk-cell__label">Streak</span>
+      <span class="risk-cell__value is-down">1 LOSS</span>
+      <span class="risk-cell__note">most recent run</span>
+    </div>
+    <div class="risk-cell">
+      <span class="risk-cell__label">Recovery factor</span>
+      <span class="risk-cell__value">-0.63</span>
+      <span class="risk-cell__note">profit / max DD $</span>
+    </div>
   </div>
 </section>
 
@@ -1465,8 +1623,8 @@ is-down">
     </header>
     <div class="chart-panel__svg"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 140" preserveAspectRatio="none" width="100%" height="100%" role="img" aria-label="Daily PnL last 30 days"><line class="daily-pnl__zero" x1="52" y1="63.0" x2="708" y2="63.0" stroke-width="1"/><rect class="daily-bar daily-bar--down" x="55.3" y="63.0" width="15.3" height="46.0"/><rect class="daily-bar daily-bar--up" x="77.1" y="8.0" width="15.3" height="55.0"/><rect class="daily-bar daily-bar--up" x="120.9" y="55.1" width="15.3" height="7.9"/><rect class="daily-bar daily-bar--up" x="164.6" y="44.0" width="15.3" height="19.0"/><rect class="daily-bar daily-bar--down" x="186.5" y="63.0" width="15.3" height="1.4"/><text class="chart-axis chart-axis--y" x="46" y="12" text-anchor="end">$22</text><text class="chart-axis chart-axis--y" x="46" y="67.0" text-anchor="end">$0</text><text class="chart-axis chart-axis--y" x="46" y="118" text-anchor="end">-$22</text><text class="chart-axis chart-axis--x" x="55.3" y="134" text-anchor="start">05-09</text><text class="chart-axis chart-axis--x" x="704.7" y="134" text-anchor="end">06-07</text></svg></div>
   </section>
-</div>    </section>
-    <section role="tabpanel" id="tab-trades"     tabindex="0" hidden>
+</div>      </section>
+      <section role="tabpanel" id="tab-trades"     tabindex="0" hidden>
 <h1 class="tab-heading">Trade Log</h1>
 
 <div class="trades-toolbar" role="search">
@@ -2951,8 +3109,617 @@ is-down">
       </tr>
     </tbody>
   </table>
-</div>    </section>
-    <section role="tabpanel" id="tab-projection" tabindex="0" hidden>
+</div>      </section>
+      <section role="tabpanel" id="tab-momentum"   tabindex="0" hidden>
+<h1 class="tab-heading">Momentum</h1>
+
+<div class="banner banner--info" role="status">
+  <span class="banner__label">LIVE</span>
+  <span class="banner__msg">
+    Multi-asset trend-following — EMA crossover + RSI cross + ATR regime + MACD.
+    Full per-asset detail (open positions, closed trades, chart with EMA overlays + entry/exit markers) lands in Phase J.3.
+  </span>
+</div>
+
+<section class="kv-grid" aria-label="Momentum performance">
+  <div class="kv-cell">
+    <span class="kv-cell__k">CLOSED TRADES</span>
+    <span class="kv-cell__v">17</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">WIN RATE</span>
+    <span class="kv-cell__v">64.7%</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">NET PnL</span>
+    <span class="kv-cell__v
+is-up
+">
+      +$78.21
+    </span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">ASSETS CONFIGURED</span>
+    <span class="kv-cell__v">17</span>
+  </div>
+</section>
+
+<section class="config-grid" aria-label="Configured assets">
+  <h2 class="config-grid__heading">Configured strategies (17)</h2>
+  <table class="regime-table">
+    <thead>
+      <tr>
+        <th scope="col">Strategy</th>
+        <th scope="col">Symbol</th>
+        <th scope="col">Timeframe</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>BTC_1D</td>
+        <td>BTCUSDT</td>
+        <td>1d</td>
+      </tr>
+      <tr>
+        <td>ETH_1D</td>
+        <td>ETHUSDT</td>
+        <td>1d</td>
+      </tr>
+      <tr>
+        <td>BTC</td>
+        <td>BTCUSDT</td>
+        <td>4h</td>
+      </tr>
+      <tr>
+        <td>ETH</td>
+        <td>ETHUSDT</td>
+        <td>4h</td>
+      </tr>
+      <tr>
+        <td>XRP</td>
+        <td>XRPUSDT</td>
+        <td>1d</td>
+      </tr>
+      <tr>
+        <td>XRP_4H</td>
+        <td>XRPUSDT</td>
+        <td>4h</td>
+      </tr>
+      <tr>
+        <td>SOL</td>
+        <td>SOLUSDT</td>
+        <td>1d</td>
+      </tr>
+      <tr>
+        <td>HBAR_4H</td>
+        <td>HBARUSDT</td>
+        <td>4h</td>
+      </tr>
+      <tr>
+        <td>HBAR_1D</td>
+        <td>HBARUSDT</td>
+        <td>1d</td>
+      </tr>
+      <tr>
+        <td>ADA_4H</td>
+        <td>ADAUSDT</td>
+        <td>4h</td>
+      </tr>
+      <tr>
+        <td>ADA_1D</td>
+        <td>ADAUSDT</td>
+        <td>1d</td>
+      </tr>
+      <tr>
+        <td>DOT_4H</td>
+        <td>DOTUSDT</td>
+        <td>4h</td>
+      </tr>
+      <tr>
+        <td>DOT_1D</td>
+        <td>DOTUSDT</td>
+        <td>1d</td>
+      </tr>
+      <tr>
+        <td>DOGE_4H</td>
+        <td>DOGEUSDT</td>
+        <td>4h</td>
+      </tr>
+      <tr>
+        <td>DOGE_1D</td>
+        <td>DOGEUSDT</td>
+        <td>1d</td>
+      </tr>
+      <tr>
+        <td>SHIB_4H</td>
+        <td>SHIBUSDT</td>
+        <td>4h</td>
+      </tr>
+      <tr>
+        <td>SHIB_1D</td>
+        <td>SHIBUSDT</td>
+        <td>1d</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+      </section>
+      <section role="tabpanel" id="tab-whale"      tabindex="0" hidden>
+<h1 class="tab-heading">Whale</h1>
+
+
+<section class="kv-grid" aria-label="Whale post-mortem stats">
+  <div class="kv-cell">
+    <span class="kv-cell__k">NET PnL</span>
+    <span class="kv-cell__v
+is-down">
+      −$225.67
+    </span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">CLOSED</span>
+    <span class="kv-cell__v">23</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">W / L / F</span>
+    <span class="kv-cell__v">
+      2 <span class="kv-cell__sep">·</span>
+      12 <span class="kv-cell__sep">·</span>
+      9
+    </span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">WIN RATE</span>
+    <span class="kv-cell__v">8.7%</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">BEST TRADE</span>
+    <span class="kv-cell__v is-up">+$23.57</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">WORST TRADE</span>
+    <span class="kv-cell__v is-down">−$37.08</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">AVG LOSS</span>
+    <span class="kv-cell__v is-down">−$22.37</span>
+  </div>
+</section>
+
+<p class="tab-note">
+  Whale is post-mortem only. To re-enable, set
+  <code>WHALE_PAUSED=false</code> in <code>.env</code> and restart the
+  whale service; the dashboard pill flips back to LIVE on next cycle.
+</p>      </section>
+      <section role="tabpanel" id="tab-funding"    tabindex="0" hidden>
+<h1 class="tab-heading">Funding</h1>
+
+<div class="banner banner--info" role="status">
+  <span class="banner__label">AWAITING SIGNAL</span>
+  <span class="banner__msg">
+    Bot is live. Zero closed trades yet — funding extremes meeting all
+    filters haven't fired in the execution window since last reset.
+  </span>
+</div>
+
+<section class="config-grid" aria-label="Funding bot configuration">
+  <h2 class="config-grid__heading">Configuration</h2>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Universe mode</span>
+    <span class="kv-row__v">
+      <code>OI</code>
+      <span class="kv-row__hint">
+          OI ≥ $20M from HL metaAndAssetCtxs
+      </span>
+    </span>
+  </div>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Percentile threshold</span>
+    <span class="kv-row__v">
+      <code>97.0th</code>
+      <span class="kv-row__hint">of 30-day rolling distribution</span>
+    </span>
+  </div>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Absolute floor</span>
+    <span class="kv-row__v">
+      <code>0.050%</code>
+      <span class="kv-row__hint">per 8h funding period (fees gate)</span>
+    </span>
+  </div>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Min OI (per signal)</span>
+    <span class="kv-row__v">
+      <code>$20M</code>
+      <span class="kv-row__hint">post-universe safety net</span>
+    </span>
+  </div>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Execution window</span>
+    <span class="kv-row__v">
+      <code>±30min</code>
+      <span class="kv-row__hint">
+        around 00:00 · 08:00 · 16:00 UTC
+      </span>
+    </span>
+  </div>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Vol regime gate</span>
+    <span class="kv-row__v">
+      <code>LOW only</code>
+      <span class="kv-row__hint">ATR vs 20-period SMA</span>
+    </span>
+  </div>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Direction toggles</span>
+    <span class="kv-row__v">
+      <span class="dir dir--long" style="opacity: 1;">
+        LONG ON
+      </span>
+      <span class="dir dir--short" style="opacity: 1;">
+        SHORT ON
+      </span>
+    </span>
+  </div>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Sizing</span>
+    <span class="kv-row__v">
+      <code>$25 margin × 10x = $250 notional</code>
+      <span class="kv-row__hint">half-size validation</span>
+    </span>
+  </div>
+</section>
+
+<section class="kv-grid" aria-label="Funding bot performance">
+  <div class="kv-cell">
+    <span class="kv-cell__k">CLOSED TRADES</span>
+    <span class="kv-cell__v">0</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">WIN RATE</span>
+    <span class="kv-cell__v">—</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">NET PnL</span>
+    <span class="kv-cell__v
+">
+      $0.00
+    </span>
+  </div>
+</section>      </section>
+      <section role="tabpanel" id="tab-breakout"   tabindex="0" hidden>
+<h1 class="tab-heading">Breakout</h1>
+
+<div class="banner banner--info" role="status">
+  <span class="banner__label">AWAITING SIGNAL</span>
+  <span class="banner__msg">
+    Bot is live. No N-bar high/low has printed with ATR &gt; ATR_SMA and
+    ADX &gt; threshold since launch.
+  </span>
+</div>
+
+<section class="config-grid" aria-label="Breakout bot configuration">
+  <h2 class="config-grid__heading">Strategy parameters</h2>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Donchian entry period</span>
+    <span class="kv-row__v">
+      <code>55 bars</code>
+      <span class="kv-row__hint">N-bar high/low channel</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Donchian exit period</span>
+    <span class="kv-row__v">
+      <code>20 bars</code>
+      <span class="kv-row__hint">opposite-side cross triggers exit</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">ADX threshold</span>
+    <span class="kv-row__v">
+      <code>&gt; 20</code>
+      <span class="kv-row__hint">trend-strength gate at entry</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">ADX exit threshold</span>
+    <span class="kv-row__v">
+      <code>&lt; 15</code>
+      <span class="kv-row__hint">trend dying → exit even if price ok</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">SL distance</span>
+    <span class="kv-row__v">
+      <code>2.5 × ATR</code>
+      <span class="kv-row__hint">adverse-move stop</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Sizing</span>
+    <span class="kv-row__v">
+      <code>$25 margin × 10x</code>
+      <span class="kv-row__hint">= $250 notional per signal</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Slot cap</span>
+    <span class="kv-row__v">
+      <code>2 concurrent</code>
+    </span>
+  </div>
+</section>
+
+<section class="config-grid" aria-label="Configured assets">
+  <h2 class="config-grid__heading">Configured assets (3)</h2>
+  <table class="regime-table">
+    <thead>
+      <tr>
+        <th scope="col">Asset</th>
+        <th scope="col">Symbol</th>
+        <th scope="col">Timeframe</th>
+        <th scope="col">SHORT enabled</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>BTC_4H</td>
+        <td>BTCUSDT</td>
+        <td>4h</td>
+        <td>
+            <span class="dir dir--short">ON</span>
+        </td>
+      </tr>
+      <tr>
+        <td>ETH_4H</td>
+        <td>ETHUSDT</td>
+        <td>4h</td>
+        <td>
+            <span class="dir dir--short">ON</span>
+        </td>
+      </tr>
+      <tr>
+        <td>SOL_4H</td>
+        <td>SOLUSDT</td>
+        <td>4h</td>
+        <td>
+            <span class="dir dir--short">ON</span>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="kv-grid" aria-label="Breakout performance">
+  <div class="kv-cell">
+    <span class="kv-cell__k">CLOSED TRADES</span>
+    <span class="kv-cell__v">0</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">WIN RATE</span>
+    <span class="kv-cell__v">—</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">NET PnL</span>
+    <span class="kv-cell__v
+">
+      $0.00
+    </span>
+  </div>
+</section>      </section>
+      <section role="tabpanel" id="tab-pair"       tabindex="0" hidden>
+<h1 class="tab-heading">Pair</h1>
+
+<div class="banner banner--info" role="status">
+  <span class="banner__label">AWAITING SIGNAL</span>
+  <span class="banner__msg">
+    Bot is live. ETH/BTC ratio z-score hasn't reached |z| ≥ 2 since
+    launch.
+  </span>
+</div>
+
+<section class="config-grid" aria-label="Pair bot configuration">
+  <h2 class="config-grid__heading">Strategy parameters</h2>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Pair</span>
+    <span class="kv-row__v">
+      <code>ETHUSDT / BTCUSDT</code>
+      <span class="kv-row__hint">ratio = ETH close ÷ BTC close</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Z-score window</span>
+    <span class="kv-row__v">
+      <code>30 bars</code>
+      <span class="kv-row__hint">rolling mean/std lookback (1d)</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Entry threshold</span>
+    <span class="kv-row__v">
+      <code>|z| ≥ 2.0</code>
+      <span class="kv-row__hint">extreme spread → buy cheap leg, short rich leg</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Exit threshold</span>
+    <span class="kv-row__v">
+      <code>|z| ≤ 0.5</code>
+      <span class="kv-row__hint">reversion done → close both legs</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Max hold</span>
+    <span class="kv-row__v">
+      <code>5 bars</code>
+      <span class="kv-row__hint">time-stop — mean reversion is fast or doesn't happen</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Adverse-move stop</span>
+    <span class="kv-row__v">
+      <code>|z| past 4.0</code>
+      <span class="kv-row__hint">spread is getting worse — cut</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Sizing</span>
+    <span class="kv-row__v">
+      <code>$50 margin × 10x per leg</code>
+      <span class="kv-row__hint">= $500 notional each side, net $0</span>
+    </span>
+  </div>
+</section>
+
+
+<section class="kv-grid" aria-label="Pair performance">
+  <div class="kv-cell">
+    <span class="kv-cell__k">CLOSED PAIRS</span>
+    <span class="kv-cell__v">0</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">WIN RATE</span>
+    <span class="kv-cell__v">—</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">NET PnL</span>
+    <span class="kv-cell__v
+">
+      $0.00
+    </span>
+  </div>
+</section>      </section>
+      <section role="tabpanel" id="tab-reversal"   tabindex="0" hidden>
+<h1 class="tab-heading">Reversal</h1>
+
+<div class="banner banner--paused" role="status">
+  <span class="banner__label">PAUSED</span>
+  <span class="banner__msg">
+    <code>REVERSAL_PAUSED=true</code> — RSI(VWAP) + extreme-reversal
+    strategy (Alex Carter spec) awaiting backtest validation.
+  </span>
+</div>
+
+<section class="config-grid" aria-label="Reversal bot configuration">
+  <h2 class="config-grid__heading">Strategy parameters</h2>
+
+  <div class="kv-row">
+    <span class="kv-row__k">RSI length</span>
+    <span class="kv-row__v">
+      <code>5</code>
+      <span class="kv-row__hint">computed on session VWAP, not close</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Oversold / overbought</span>
+    <span class="kv-row__v">
+      <code>&lt; 15.0  /  &gt; 85.0</code>
+      <span class="kv-row__hint">extreme bands (tighter than standard 30/70)</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Range multiplier</span>
+    <span class="kv-row__v">
+      <code>≥ 2.5×</code>
+      <span class="kv-row__hint">vs 14-bar SMA(range) — capitulation candle</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Dot polarity threshold</span>
+    <span class="kv-row__v">
+      <code>30%</code>
+      <span class="kv-row__hint">close in bottom/top X% of bar range</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">SL distance</span>
+    <span class="kv-row__v">
+      <code>1.5 × ATR</code>
+      <span class="kv-row__hint">adverse-move stop</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Time stop</span>
+    <span class="kv-row__v">
+      <code>7 bars</code>
+      <span class="kv-row__hint">mean-reversion that hasn't reverted by then probably won't</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Sizing</span>
+    <span class="kv-row__v">
+      <code>$25 margin × 10x</code>
+      <span class="kv-row__hint">= $250 notional</span>
+    </span>
+  </div>
+</section>
+
+<section class="config-grid" aria-label="Configured assets">
+  <h2 class="config-grid__heading">Configured assets (3)</h2>
+  <table class="regime-table">
+    <thead>
+      <tr>
+        <th scope="col">Asset</th>
+        <th scope="col">Symbol</th>
+        <th scope="col">Timeframe</th>
+        <th scope="col">LONG</th>
+        <th scope="col">SHORT</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>BTC_1D</td>
+        <td>BTCUSDT</td>
+        <td>1d</td>
+        <td><span class="dir dir--long">ON</span></td>
+        <td><span class="dir dir--short">ON</span></td>
+      </tr>
+      <tr>
+        <td>ETH_1D</td>
+        <td>ETHUSDT</td>
+        <td>1d</td>
+        <td><span class="dir dir--long">ON</span></td>
+        <td><span class="dir dir--short">ON</span></td>
+      </tr>
+      <tr>
+        <td>SOL_1D</td>
+        <td>SOLUSDT</td>
+        <td>1d</td>
+        <td><span class="dir dir--long">ON</span></td>
+        <td><span class="dir dir--short">ON</span></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="kv-grid" aria-label="Reversal performance">
+  <div class="kv-cell">
+    <span class="kv-cell__k">CLOSED TRADES</span>
+    <span class="kv-cell__v">0</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">WIN RATE</span>
+    <span class="kv-cell__v">—</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">NET PnL</span>
+    <span class="kv-cell__v
+">
+      $0.00
+    </span>
+  </div>
+</section>      </section>
+      <section role="tabpanel" id="tab-projection" tabindex="0" hidden>
 <h1 class="tab-heading">Yearly Projection</h1>
 
 <section class="kv-grid" aria-label="Headline projection">
@@ -3168,487 +3935,13 @@ is-up
   by the backtest window. Treat as <em>rough</em> — past performance
   doesn't predict future regime, and the funding bot has zero backtest
   history so it's not reflected here.
-</p>    </section>
-    <section role="tabpanel" id="tab-whale"      tabindex="0" hidden>
-<h1 class="tab-heading">Whale</h1>
+</p>      </section>
+    </main>
 
-
-<section class="kv-grid" aria-label="Whale post-mortem stats">
-  <div class="kv-cell">
-    <span class="kv-cell__k">NET PnL</span>
-    <span class="kv-cell__v
-is-down">
-      −$225.67
-    </span>
+    <footer class="page-foot">
+      <span class="page-foot__build">Build · 629bdbbf · 2026-06-07 16:41 UTC</span>
+    </footer>
   </div>
-  <div class="kv-cell">
-    <span class="kv-cell__k">CLOSED</span>
-    <span class="kv-cell__v">23</span>
-  </div>
-  <div class="kv-cell">
-    <span class="kv-cell__k">W / L / F</span>
-    <span class="kv-cell__v">
-      2 <span class="kv-cell__sep">·</span>
-      12 <span class="kv-cell__sep">·</span>
-      9
-    </span>
-  </div>
-  <div class="kv-cell">
-    <span class="kv-cell__k">WIN RATE</span>
-    <span class="kv-cell__v">8.7%</span>
-  </div>
-  <div class="kv-cell">
-    <span class="kv-cell__k">BEST TRADE</span>
-    <span class="kv-cell__v is-up">+$23.57</span>
-  </div>
-  <div class="kv-cell">
-    <span class="kv-cell__k">WORST TRADE</span>
-    <span class="kv-cell__v is-down">−$37.08</span>
-  </div>
-  <div class="kv-cell">
-    <span class="kv-cell__k">AVG LOSS</span>
-    <span class="kv-cell__v is-down">−$22.37</span>
-  </div>
-</section>
-
-<p class="tab-note">
-  Whale is post-mortem only. To re-enable, set
-  <code>WHALE_PAUSED=false</code> in <code>.env</code> and restart the
-  whale service; the dashboard pill flips back to LIVE on next cycle.
-</p>    </section>
-    <section role="tabpanel" id="tab-funding"    tabindex="0" hidden>
-<h1 class="tab-heading">Funding</h1>
-
-<div class="banner banner--info" role="status">
-  <span class="banner__label">AWAITING SIGNAL</span>
-  <span class="banner__msg">
-    Bot is live. Zero closed trades yet — funding extremes meeting all
-    filters haven't fired in the execution window since last reset.
-  </span>
-</div>
-
-<section class="config-grid" aria-label="Funding bot configuration">
-  <h2 class="config-grid__heading">Configuration</h2>
-
-  <div class="kv-row">
-    <span class="kv-row__k">Universe mode</span>
-    <span class="kv-row__v">
-      <code>OI</code>
-      <span class="kv-row__hint">
-          OI ≥ $20M from HL metaAndAssetCtxs
-      </span>
-    </span>
-  </div>
-
-  <div class="kv-row">
-    <span class="kv-row__k">Percentile threshold</span>
-    <span class="kv-row__v">
-      <code>97.0th</code>
-      <span class="kv-row__hint">of 30-day rolling distribution</span>
-    </span>
-  </div>
-
-  <div class="kv-row">
-    <span class="kv-row__k">Absolute floor</span>
-    <span class="kv-row__v">
-      <code>0.050%</code>
-      <span class="kv-row__hint">per 8h funding period (fees gate)</span>
-    </span>
-  </div>
-
-  <div class="kv-row">
-    <span class="kv-row__k">Min OI (per signal)</span>
-    <span class="kv-row__v">
-      <code>$20M</code>
-      <span class="kv-row__hint">post-universe safety net</span>
-    </span>
-  </div>
-
-  <div class="kv-row">
-    <span class="kv-row__k">Execution window</span>
-    <span class="kv-row__v">
-      <code>±30min</code>
-      <span class="kv-row__hint">
-        around 00:00 · 08:00 · 16:00 UTC
-      </span>
-    </span>
-  </div>
-
-  <div class="kv-row">
-    <span class="kv-row__k">Vol regime gate</span>
-    <span class="kv-row__v">
-      <code>LOW only</code>
-      <span class="kv-row__hint">ATR vs 20-period SMA</span>
-    </span>
-  </div>
-
-  <div class="kv-row">
-    <span class="kv-row__k">Direction toggles</span>
-    <span class="kv-row__v">
-      <span class="dir dir--long" style="opacity: 1;">
-        LONG ON
-      </span>
-      <span class="dir dir--short" style="opacity: 1;">
-        SHORT ON
-      </span>
-    </span>
-  </div>
-
-  <div class="kv-row">
-    <span class="kv-row__k">Sizing</span>
-    <span class="kv-row__v">
-      <code>$25 margin × 10x = $250 notional</code>
-      <span class="kv-row__hint">half-size validation</span>
-    </span>
-  </div>
-</section>
-
-<section class="kv-grid" aria-label="Funding bot performance">
-  <div class="kv-cell">
-    <span class="kv-cell__k">CLOSED TRADES</span>
-    <span class="kv-cell__v">0</span>
-  </div>
-  <div class="kv-cell">
-    <span class="kv-cell__k">WIN RATE</span>
-    <span class="kv-cell__v">—</span>
-  </div>
-  <div class="kv-cell">
-    <span class="kv-cell__k">NET PnL</span>
-    <span class="kv-cell__v
-">
-      $0.00
-    </span>
-  </div>
-</section>    </section>
-    <section role="tabpanel" id="tab-breakout"   tabindex="0" hidden>
-<h1 class="tab-heading">Breakout</h1>
-
-<div class="banner banner--info" role="status">
-  <span class="banner__label">AWAITING SIGNAL</span>
-  <span class="banner__msg">
-    Bot is live. No N-bar high/low has printed with ATR &gt; ATR_SMA and
-    ADX &gt; threshold since launch.
-  </span>
-</div>
-
-<section class="config-grid" aria-label="Breakout bot configuration">
-  <h2 class="config-grid__heading">Strategy parameters</h2>
-
-  <div class="kv-row">
-    <span class="kv-row__k">Donchian entry period</span>
-    <span class="kv-row__v">
-      <code>55 bars</code>
-      <span class="kv-row__hint">N-bar high/low channel</span>
-    </span>
-  </div>
-  <div class="kv-row">
-    <span class="kv-row__k">Donchian exit period</span>
-    <span class="kv-row__v">
-      <code>20 bars</code>
-      <span class="kv-row__hint">opposite-side cross triggers exit</span>
-    </span>
-  </div>
-  <div class="kv-row">
-    <span class="kv-row__k">ADX threshold</span>
-    <span class="kv-row__v">
-      <code>&gt; 20</code>
-      <span class="kv-row__hint">trend-strength gate at entry</span>
-    </span>
-  </div>
-  <div class="kv-row">
-    <span class="kv-row__k">ADX exit threshold</span>
-    <span class="kv-row__v">
-      <code>&lt; 15</code>
-      <span class="kv-row__hint">trend dying → exit even if price ok</span>
-    </span>
-  </div>
-  <div class="kv-row">
-    <span class="kv-row__k">SL distance</span>
-    <span class="kv-row__v">
-      <code>2.5 × ATR</code>
-      <span class="kv-row__hint">adverse-move stop</span>
-    </span>
-  </div>
-  <div class="kv-row">
-    <span class="kv-row__k">Sizing</span>
-    <span class="kv-row__v">
-      <code>$25 margin × 10x</code>
-      <span class="kv-row__hint">= $250 notional per signal</span>
-    </span>
-  </div>
-  <div class="kv-row">
-    <span class="kv-row__k">Slot cap</span>
-    <span class="kv-row__v">
-      <code>2 concurrent</code>
-    </span>
-  </div>
-</section>
-
-<section class="config-grid" aria-label="Configured assets">
-  <h2 class="config-grid__heading">Configured assets (3)</h2>
-  <table class="regime-table">
-    <thead>
-      <tr>
-        <th scope="col">Asset</th>
-        <th scope="col">Symbol</th>
-        <th scope="col">Timeframe</th>
-        <th scope="col">SHORT enabled</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>BTC_4H</td>
-        <td>BTCUSDT</td>
-        <td>4h</td>
-        <td>
-            <span class="dir dir--short">ON</span>
-        </td>
-      </tr>
-      <tr>
-        <td>ETH_4H</td>
-        <td>ETHUSDT</td>
-        <td>4h</td>
-        <td>
-            <span class="dir dir--short">ON</span>
-        </td>
-      </tr>
-      <tr>
-        <td>SOL_4H</td>
-        <td>SOLUSDT</td>
-        <td>4h</td>
-        <td>
-            <span class="dir dir--short">ON</span>
-        </td>
-      </tr>
-    </tbody>
-  </table>
-</section>
-
-<section class="kv-grid" aria-label="Breakout performance">
-  <div class="kv-cell">
-    <span class="kv-cell__k">CLOSED TRADES</span>
-    <span class="kv-cell__v">0</span>
-  </div>
-  <div class="kv-cell">
-    <span class="kv-cell__k">WIN RATE</span>
-    <span class="kv-cell__v">—</span>
-  </div>
-  <div class="kv-cell">
-    <span class="kv-cell__k">NET PnL</span>
-    <span class="kv-cell__v
-">
-      $0.00
-    </span>
-  </div>
-</section>    </section>
-    <section role="tabpanel" id="tab-pair"       tabindex="0" hidden>
-<h1 class="tab-heading">Pair</h1>
-
-<div class="banner banner--info" role="status">
-  <span class="banner__label">AWAITING SIGNAL</span>
-  <span class="banner__msg">
-    Bot is live. ETH/BTC ratio z-score hasn't reached |z| ≥ 2 since
-    launch.
-  </span>
-</div>
-
-<section class="config-grid" aria-label="Pair bot configuration">
-  <h2 class="config-grid__heading">Strategy parameters</h2>
-
-  <div class="kv-row">
-    <span class="kv-row__k">Pair</span>
-    <span class="kv-row__v">
-      <code>ETHUSDT / BTCUSDT</code>
-      <span class="kv-row__hint">ratio = ETH close ÷ BTC close</span>
-    </span>
-  </div>
-  <div class="kv-row">
-    <span class="kv-row__k">Z-score window</span>
-    <span class="kv-row__v">
-      <code>30 bars</code>
-      <span class="kv-row__hint">rolling mean/std lookback (1d)</span>
-    </span>
-  </div>
-  <div class="kv-row">
-    <span class="kv-row__k">Entry threshold</span>
-    <span class="kv-row__v">
-      <code>|z| ≥ 2.0</code>
-      <span class="kv-row__hint">extreme spread → buy cheap leg, short rich leg</span>
-    </span>
-  </div>
-  <div class="kv-row">
-    <span class="kv-row__k">Exit threshold</span>
-    <span class="kv-row__v">
-      <code>|z| ≤ 0.5</code>
-      <span class="kv-row__hint">reversion done → close both legs</span>
-    </span>
-  </div>
-  <div class="kv-row">
-    <span class="kv-row__k">Max hold</span>
-    <span class="kv-row__v">
-      <code>5 bars</code>
-      <span class="kv-row__hint">time-stop — mean reversion is fast or doesn't happen</span>
-    </span>
-  </div>
-  <div class="kv-row">
-    <span class="kv-row__k">Adverse-move stop</span>
-    <span class="kv-row__v">
-      <code>|z| past 4.0</code>
-      <span class="kv-row__hint">spread is getting worse — cut</span>
-    </span>
-  </div>
-  <div class="kv-row">
-    <span class="kv-row__k">Sizing</span>
-    <span class="kv-row__v">
-      <code>$50 margin × 10x per leg</code>
-      <span class="kv-row__hint">= $500 notional each side, net $0</span>
-    </span>
-  </div>
-</section>
-
-
-<section class="kv-grid" aria-label="Pair performance">
-  <div class="kv-cell">
-    <span class="kv-cell__k">CLOSED PAIRS</span>
-    <span class="kv-cell__v">0</span>
-  </div>
-  <div class="kv-cell">
-    <span class="kv-cell__k">WIN RATE</span>
-    <span class="kv-cell__v">—</span>
-  </div>
-  <div class="kv-cell">
-    <span class="kv-cell__k">NET PnL</span>
-    <span class="kv-cell__v
-">
-      $0.00
-    </span>
-  </div>
-</section>    </section>
-    <section role="tabpanel" id="tab-reversal"   tabindex="0" hidden>
-<h1 class="tab-heading">Reversal</h1>
-
-<div class="banner banner--paused" role="status">
-  <span class="banner__label">PAUSED</span>
-  <span class="banner__msg">
-    <code>REVERSAL_PAUSED=true</code> — RSI(VWAP) + extreme-reversal
-    strategy (Alex Carter spec) awaiting backtest validation.
-  </span>
-</div>
-
-<section class="config-grid" aria-label="Reversal bot configuration">
-  <h2 class="config-grid__heading">Strategy parameters</h2>
-
-  <div class="kv-row">
-    <span class="kv-row__k">RSI length</span>
-    <span class="kv-row__v">
-      <code>5</code>
-      <span class="kv-row__hint">computed on session VWAP, not close</span>
-    </span>
-  </div>
-  <div class="kv-row">
-    <span class="kv-row__k">Oversold / overbought</span>
-    <span class="kv-row__v">
-      <code>&lt; 15.0  /  &gt; 85.0</code>
-      <span class="kv-row__hint">extreme bands (tighter than standard 30/70)</span>
-    </span>
-  </div>
-  <div class="kv-row">
-    <span class="kv-row__k">Range multiplier</span>
-    <span class="kv-row__v">
-      <code>≥ 2.5×</code>
-      <span class="kv-row__hint">vs 14-bar SMA(range) — capitulation candle</span>
-    </span>
-  </div>
-  <div class="kv-row">
-    <span class="kv-row__k">Dot polarity threshold</span>
-    <span class="kv-row__v">
-      <code>30%</code>
-      <span class="kv-row__hint">close in bottom/top X% of bar range</span>
-    </span>
-  </div>
-  <div class="kv-row">
-    <span class="kv-row__k">SL distance</span>
-    <span class="kv-row__v">
-      <code>1.5 × ATR</code>
-      <span class="kv-row__hint">adverse-move stop</span>
-    </span>
-  </div>
-  <div class="kv-row">
-    <span class="kv-row__k">Time stop</span>
-    <span class="kv-row__v">
-      <code>7 bars</code>
-      <span class="kv-row__hint">mean-reversion that hasn't reverted by then probably won't</span>
-    </span>
-  </div>
-  <div class="kv-row">
-    <span class="kv-row__k">Sizing</span>
-    <span class="kv-row__v">
-      <code>$25 margin × 10x</code>
-      <span class="kv-row__hint">= $250 notional</span>
-    </span>
-  </div>
-</section>
-
-<section class="config-grid" aria-label="Configured assets">
-  <h2 class="config-grid__heading">Configured assets (3)</h2>
-  <table class="regime-table">
-    <thead>
-      <tr>
-        <th scope="col">Asset</th>
-        <th scope="col">Symbol</th>
-        <th scope="col">Timeframe</th>
-        <th scope="col">LONG</th>
-        <th scope="col">SHORT</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>BTC_1D</td>
-        <td>BTCUSDT</td>
-        <td>1d</td>
-        <td><span class="dir dir--long">ON</span></td>
-        <td><span class="dir dir--short">ON</span></td>
-      </tr>
-      <tr>
-        <td>ETH_1D</td>
-        <td>ETHUSDT</td>
-        <td>1d</td>
-        <td><span class="dir dir--long">ON</span></td>
-        <td><span class="dir dir--short">ON</span></td>
-      </tr>
-      <tr>
-        <td>SOL_1D</td>
-        <td>SOLUSDT</td>
-        <td>1d</td>
-        <td><span class="dir dir--long">ON</span></td>
-        <td><span class="dir dir--short">ON</span></td>
-      </tr>
-    </tbody>
-  </table>
-</section>
-
-<section class="kv-grid" aria-label="Reversal performance">
-  <div class="kv-cell">
-    <span class="kv-cell__k">CLOSED TRADES</span>
-    <span class="kv-cell__v">0</span>
-  </div>
-  <div class="kv-cell">
-    <span class="kv-cell__k">WIN RATE</span>
-    <span class="kv-cell__v">—</span>
-  </div>
-  <div class="kv-cell">
-    <span class="kv-cell__k">NET PnL</span>
-    <span class="kv-cell__v
-">
-      $0.00
-    </span>
-  </div>
-</section>    </section>
-  </main>
-
-  <footer class="page-foot">
-    <span class="page-foot__build">Build · 5e15b42d · 2026-06-07 16:33 UTC</span>
-  </footer>
 
   <script>
 // Phase D dashboard — tab switcher, trade-log sort + search.
@@ -3685,7 +3978,10 @@ is-down">
     });
   }
 
-  const tabs   = Array.from(document.querySelectorAll('.tab-nav [role="tab"]'));
+  // J.1: tab buttons now live in the sidebar (was .tab-nav).
+  // Selector covers both so a partial deploy doesn't break navigation.
+  const tabs   = Array.from(document.querySelectorAll(
+    '.sidebar [role="tab"], .tab-nav [role="tab"]'));
   const panels = Array.from(document.querySelectorAll('[role="tabpanel"]'));
 
   function activate(tabId) {
@@ -3705,16 +4001,21 @@ is-down">
     tab.addEventListener('click', () => activate(tab.dataset.tab));
   });
 
-  // Keyboard arrow nav (tablist convention)
-  document.querySelector('.tab-nav')?.addEventListener('keydown', (e) => {
+  // Keyboard arrow nav (tablist convention).
+  // J.1: sidebar is vertical → up/down. Left/right still works for the
+  // horizontal sidebar mode on narrow viewports.
+  const navRoot = document.querySelector('.sidebar') || document.querySelector('.tab-nav');
+  navRoot?.addEventListener('keydown', (e) => {
     const idx = tabs.indexOf(document.activeElement);
     if (idx === -1) return;
-    if (e.key === 'ArrowRight') {
+    const advance = (e.key === 'ArrowDown' || e.key === 'ArrowRight');
+    const retreat = (e.key === 'ArrowUp'   || e.key === 'ArrowLeft');
+    if (advance) {
       e.preventDefault();
       const next = tabs[(idx + 1) % tabs.length];
       next.focus();
       activate(next.dataset.tab);
-    } else if (e.key === 'ArrowLeft') {
+    } else if (retreat) {
       e.preventDefault();
       const prev = tabs[(idx - 1 + tabs.length) % tabs.length];
       prev.focus();
