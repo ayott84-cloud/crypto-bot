@@ -120,3 +120,12 @@
     </span>
   </div>
 </section>
+
+{% set bot_kpis = bot_panels.breakout.kpis %}
+{% include "components/bot_kpis_strip.html.j2" %}
+
+{% set positions = bot_panels.breakout.positions %}
+{% include "components/bot_positions_panel.html.j2" %}
+
+{% set bot_trades = bot_panels.breakout.trades %}
+{% include "components/bot_trades_panel.html.j2" %}

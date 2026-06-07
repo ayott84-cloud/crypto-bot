@@ -728,6 +728,15 @@ def _build_v2_context(data: Dict[str, Any], state: dict | None = None) -> Dict[s
         "funding_meta":  _v2_funding_meta(trades),
         "breakout_meta": _v2_breakout_meta(trades),
         "pair_meta":     _v2_pair_meta(trades, state),
+        # J.4: per-bot positions / trades / scoped KPIs
+        "bot_panels": {
+            "momentum": _v2_build_bot_panels(trades, state, "momentum"),
+            "whale":    _v2_build_bot_panels(trades, state, "whale"),
+            "funding":  _v2_build_bot_panels(trades, state, "funding"),
+            "breakout": _v2_build_bot_panels(trades, state, "breakout"),
+            "pair":     _v2_build_bot_panels(trades, state, "pair"),
+            "reversal": _v2_build_bot_panels(trades, state, "reversal"),
+        },
         "reversal_meta": _v2_reversal_meta(trades),
         "projection":   _v2_projection(),
         "equity_curve_svg": _v2_equity_curve_svg(
@@ -903,6 +912,14 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
         "whale_meta":    _v2_whale_meta(trades),
         "funding_meta":  _v2_funding_meta(trades),
         "breakout_meta": _v2_breakout_meta(trades),
+        "bot_panels": {
+            "momentum": _v2_build_bot_panels(trades, None, "momentum"),
+            "whale":    _v2_build_bot_panels(trades, None, "whale"),
+            "funding":  _v2_build_bot_panels(trades, None, "funding"),
+            "breakout": _v2_build_bot_panels(trades, None, "breakout"),
+            "pair":     _v2_build_bot_panels(trades, None, "pair"),
+            "reversal": _v2_build_bot_panels(trades, None, "reversal"),
+        },
         "pair_meta":     _v2_pair_meta(trades),
         "reversal_meta": _v2_reversal_meta(trades),
         "projection":    _v2_projection(),
@@ -1654,6 +1671,157 @@ def _v2_funding_meta(trades: List[dict]) -> dict:
         "win_rate_display":    (f"{sum(1 for p in pnl_list if p > 0) / len(pnl_list) * 100:.1f}%"
                                 if pnl_list else "—"),
         "net_pnl_display":     _v2_pnl_display(sum(pnl_list)),
+    }
+
+
+_BOT_CLASS_TO_LABEL = {
+    "momentum": "Momentum",
+    "whale":    "Whale",
+    "funding":  "Funding",
+    "breakout": "Breakout",
+    "pair":     "Pair",
+    "reversal": "Reversal",
+}
+
+
+def _v2_open_positions_for_bot(state: dict, bot_class: str) -> List[dict]:
+    """Filter state['positions'] to entries owned by bot_class.
+
+    Returns a list of dicts with display-formatted fields the
+    bot_positions_panel template consumes.
+    """
+    from position_manager import _bot_of_key
+    positions = (state or {}).get("positions", {}) or {}
+    out = []
+    for state_key, pos in positions.items():
+        if _bot_of_key(state_key) != bot_class:
+            continue
+        direction = pos.get("direction", "LONG")
+        entry = float(pos.get("entry_price") or 0)
+        qty = float(pos.get("quantity") or 0)
+        out.append({
+            "state_key":      state_key,
+            "symbol":         pos.get("symbol", state_key),
+            "direction":      direction,
+            "direction_class": "is-up" if direction == "LONG" else "is-down",
+            "entry_display":  f"{entry:,.4f}" if entry < 1 else f"{entry:,.2f}",
+            "qty_display":    f"{qty:,.6f}".rstrip("0").rstrip(".") or "0",
+            "strategy":       pos.get("strategy", ""),
+            "entry_reason":   pos.get("entry_reason", ""),
+        })
+    return out
+
+
+def _v2_closed_trades_for_bot(trades: List[dict], bot_class: str,
+                                limit: int = 50) -> List[dict]:
+    """Filter trades to closed entries owned by bot_class, newest first.
+
+    Each row gets display-formatted fields matching the trade-log table.
+    """
+    label = _BOT_CLASS_TO_LABEL.get(bot_class, bot_class.capitalize())
+    matching = [
+        t for t in (trades or [])
+        if t.get("bot") == label
+        and t.get("exit_price") not in (None, 0, "0", "")
+    ]
+    # Sort newest first by id (fallback to date_closed)
+    def _sort_key(t):
+        return (t.get("id") or 0, t.get("date_closed") or "")
+    matching.sort(key=_sort_key, reverse=True)
+    matching = matching[: max(1, int(limit))]
+
+    out = []
+    for t in matching:
+        net_pnl = float(t.get("net_pnl") or 0)
+        out.append({
+            "id":              t.get("id"),
+            "date_closed":     (t.get("date_closed") or "")[:16].replace("T", " "),
+            "symbol":          t.get("symbol", ""),
+            "direction":       t.get("direction", ""),
+            "strategy":        t.get("strategy", ""),
+            "entry_price":     t.get("entry_price"),
+            "exit_price":      t.get("exit_price"),
+            "net_pnl":         net_pnl,
+            "net_pnl_display": _v2_pnl_display(net_pnl),
+            "result":          t.get("result", ""),
+            "result_class":    ("is-up" if net_pnl > 0
+                                 else ("is-down" if net_pnl < 0 else "is-flat")),
+            "exit_reason":     t.get("exit_reason", ""),
+        })
+    return out
+
+
+def _v2_kpis_for_bot(trades: List[dict], bot_class: str) -> dict:
+    """Scoped Sortino / Calmar / Streak / Recovery / Max DD for one bot's
+    trades. Uses metrics.py functions on the bot's filtered pnls."""
+    import metrics as _m
+    label = _BOT_CLASS_TO_LABEL.get(bot_class, bot_class.capitalize())
+    closed = [
+        t for t in (trades or [])
+        if t.get("bot") == label
+        and t.get("exit_price") not in (None, 0, "0", "")
+    ]
+    pnls = [float(t.get("net_pnl") or 0) for t in closed]
+
+    if not pnls:
+        return {
+            "closed_count":     0,
+            "sortino_display":  "—",
+            "calmar_display":   "—",
+            "max_dd_display":   "—",
+            "streak_display":   "—",
+            "streak_class":     "is-flat",
+            "recovery_display": "—",
+        }
+
+    # Reuse the existing display formatter from _v2_risk_metrics
+    def _ratio(v):
+        if v is None or v == 0:
+            return "—"
+        if v >= 999 or v <= -999:
+            return "∞"
+        return f"{v:+.2f}"
+
+    equity = [INITIAL_CAPITAL]
+    running = INITIAL_CAPITAL
+    for p in pnls:
+        running += p
+        equity.append(running)
+
+    sortino = _m.sortino(pnls, trades_per_year=max(1, len(pnls) * 12))
+    calmar  = _m.calmar(pnls, initial_equity=INITIAL_CAPITAL, days=90)
+    max_dd  = _m.max_drawdown(equity)
+    streak_count, streak_type = _m.consecutive_streak(pnls)
+    recovery = _m.recovery_factor(pnls, initial_equity=INITIAL_CAPITAL)
+
+    streak_class = (
+        "is-up" if streak_type == "WIN"
+        else "is-down" if streak_type == "LOSS"
+        else "is-flat"
+    )
+    streak_display = "—" if streak_count == 0 else f"{streak_count} {streak_type}"
+
+    return {
+        "closed_count":     len(closed),
+        "sortino_display":  _ratio(round(sortino, 2)),
+        "calmar_display":   _ratio(calmar),
+        "max_dd_display":   f"{max_dd:.1f}%" if max_dd else "—",
+        "streak_display":   streak_display,
+        "streak_class":     streak_class,
+        "recovery_display": _ratio(recovery),
+    }
+
+
+def _v2_build_bot_panels(trades: List[dict], state: dict | None,
+                          bot_class: str) -> dict:
+    """Bundle positions + recent closed trades + scoped KPIs for one bot.
+
+    Templates consume this as `bot_panels.{positions,trades,kpis}`.
+    """
+    return {
+        "positions": _v2_open_positions_for_bot(state or {}, bot_class),
+        "trades":    _v2_closed_trades_for_bot(trades or [], bot_class, limit=25),
+        "kpis":      _v2_kpis_for_bot(trades or [], bot_class),
     }
 
 

@@ -178,6 +178,68 @@
   color: var(--ink-3);
 }
 
+/* ── Per-bot panels (J.4: positions / trades / scoped KPIs) ──────────── */
+
+.bot-kpis {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-1);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-md);
+}
+.bot-kpis__cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.bot-kpis__label {
+  font-family: var(--font-display);
+  font-size: var(--fs-9);
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.bot-kpis__value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-18);
+  font-feature-settings: "tnum" 1, "zero" 1;
+  color: var(--ink-1);
+}
+
+.bot-positions,
+.bot-trades {
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  background: var(--surface-1);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-md);
+}
+.bot-positions__heading,
+.bot-trades__heading {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-display);
+  font-size: var(--fs-10);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.bot-positions__empty,
+.bot-trades__empty {
+  color: var(--ink-3);
+  font-size: var(--fs-13);
+  margin: 0;
+}
+
+@media (max-width: 1024px) {
+  .bot-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .bot-kpis { grid-template-columns: 1fr; }
+}
+
 /* ── Asset chart panel (J.2: TradingView Lightweight Charts) ──────────── */
 
 .asset-chart {

@@ -116,3 +116,12 @@
     </span>
   </div>
 </section>
+
+{% set bot_kpis = bot_panels.funding.kpis %}
+{% include "components/bot_kpis_strip.html.j2" %}
+
+{% set positions = bot_panels.funding.positions %}
+{% include "components/bot_positions_panel.html.j2" %}
+
+{% set bot_trades = bot_panels.funding.trades %}
+{% include "components/bot_trades_panel.html.j2" %}

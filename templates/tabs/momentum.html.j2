@@ -54,3 +54,12 @@
   </table>
 </section>
 {% endif %}
+
+{% set bot_kpis = bot_panels.momentum.kpis %}
+{% include "components/bot_kpis_strip.html.j2" %}
+
+{% set positions = bot_panels.momentum.positions %}
+{% include "components/bot_positions_panel.html.j2" %}
+
+{% set bot_trades = bot_panels.momentum.trades %}
+{% include "components/bot_trades_panel.html.j2" %}

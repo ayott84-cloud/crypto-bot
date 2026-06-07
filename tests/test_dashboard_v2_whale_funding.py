@@ -139,6 +139,14 @@ def _ctx(trades=None, **overrides):
         "pair_meta":     dashboard._v2_pair_meta(trades),
         "reversal_meta": dashboard._v2_reversal_meta(trades),
         "projection":   dashboard._v2_projection(),
+        "bot_panels": {
+            "momentum": dashboard._v2_build_bot_panels([], None, "momentum"),
+            "whale":    dashboard._v2_build_bot_panels([], None, "whale"),
+            "funding":  dashboard._v2_build_bot_panels([], None, "funding"),
+            "breakout": dashboard._v2_build_bot_panels([], None, "breakout"),
+            "pair":     dashboard._v2_build_bot_panels([], None, "pair"),
+            "reversal": dashboard._v2_build_bot_panels([], None, "reversal"),
+        },
         "risk_metrics":      dashboard._v2_risk_metrics({}),
         "regime_expectancy": dashboard._v2_regime_expectancy({}),
     }

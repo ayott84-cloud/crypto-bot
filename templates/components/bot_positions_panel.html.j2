@@ -1,0 +1,33 @@
+{# J.4: Shared per-bot open-positions panel. Caller passes `positions` list. #}
+{% if positions %}
+<section class="bot-positions" aria-label="Open positions for this bot">
+  <h2 class="bot-positions__heading">Open positions ({{ positions|length }})</h2>
+  <table class="regime-table">
+    <thead>
+      <tr>
+        <th scope="col">Symbol</th>
+        <th scope="col">Dir</th>
+        <th scope="col">Entry</th>
+        <th scope="col">Qty</th>
+        <th scope="col">Strategy</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in positions %}
+      <tr>
+        <td>{{ p.symbol }}</td>
+        <td class="{{ p.direction_class }}">{{ p.direction }}</td>
+        <td class="num">{{ p.entry_display }}</td>
+        <td class="num">{{ p.qty_display }}</td>
+        <td>{{ p.strategy }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% else %}
+<section class="bot-positions" aria-label="Open positions for this bot">
+  <h2 class="bot-positions__heading">Open positions</h2>
+  <p class="bot-positions__empty">No open positions for this bot.</p>
+</section>
+{% endif %}

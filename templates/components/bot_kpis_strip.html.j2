@@ -1,0 +1,23 @@
+{# J.4: Shared per-bot scoped KPI strip. Caller passes `bot_kpis` dict. #}
+<section class="bot-kpis" aria-label="Per-bot KPIs">
+  <div class="bot-kpis__cell">
+    <span class="bot-kpis__label">Sortino</span>
+    <span class="bot-kpis__value">{{ bot_kpis.sortino_display }}</span>
+  </div>
+  <div class="bot-kpis__cell">
+    <span class="bot-kpis__label">Calmar · 90d</span>
+    <span class="bot-kpis__value">{{ bot_kpis.calmar_display }}</span>
+  </div>
+  <div class="bot-kpis__cell">
+    <span class="bot-kpis__label">Max DD</span>
+    <span class="bot-kpis__value">{{ bot_kpis.max_dd_display }}</span>
+  </div>
+  <div class="bot-kpis__cell">
+    <span class="bot-kpis__label">Streak</span>
+    <span class="bot-kpis__value {{ bot_kpis.streak_class }}">{{ bot_kpis.streak_display }}</span>
+  </div>
+  <div class="bot-kpis__cell">
+    <span class="bot-kpis__label">Recovery</span>
+    <span class="bot-kpis__value">{{ bot_kpis.recovery_display }}</span>
+  </div>
+</section>
