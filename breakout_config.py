@@ -193,45 +193,47 @@ def _breakout_default(symbol: str, interval: str, name: str) -> dict:
 
 
 # Top-30 universe per whale_universe._FALLBACK_TOP_SYMBOLS (Apr 2026).
-# Already-promoted (BTC, ETH, SOL) and BNB/AVAX/LINK (kept from earlier
-# Phase K round) are excluded from the auto-expansion. BTC_1W dropped:
-# WEEX kline history depth caps below the 55-bar Donchian's requirement
-# on 1W timeframe — 0 trades aren't a strategy problem, they're a data
-# problem. Re-add if/when WEEX widens 1W history.
+# Already-promoted (BTC, ETH, SOL) excluded from the auto-expansion.
+# WEEX-unsupported symbols dropped from the Jun 2026 run:
+#   - MATIC: WEEX trades POLUSDT (Polygon rebranded)
+#   - SHIB:  symbol format differs (1000SHIB or kSHIB depending on venue)
+#   - PEPE:  same — 1000PEPE on most CEX
+# BTC_1W also dropped: WEEX 1W history depth too shallow for 55-bar Donchian.
 _TOP30_NEW_ALTS = [
     ("XRP",    "XRPUSDT"),    ("DOGE",   "DOGEUSDT"),
     ("ADA",    "ADAUSDT"),    ("TRX",    "TRXUSDT"),
     ("DOT",    "DOTUSDT"),    ("LTC",    "LTCUSDT"),
-    ("MATIC",  "MATICUSDT"),  ("NEAR",   "NEARUSDT"),
-    ("UNI",    "UNIUSDT"),    ("FIL",    "FILUSDT"),
-    ("ETC",    "ETCUSDT"),    ("APT",    "APTUSDT"),
-    ("ARB",    "ARBUSDT"),    ("ATOM",   "ATOMUSDT"),
-    ("SUI",    "SUIUSDT"),    ("HBAR",   "HBARUSDT"),
-    ("AAVE",   "AAVEUSDT"),   ("OP",     "OPUSDT"),
-    ("INJ",    "INJUSDT"),    ("RENDER", "RENDERUSDT"),
-    ("SHIB",   "SHIBUSDT"),   ("PEPE",   "PEPEUSDT"),
-    ("TON",    "TONUSDT"),    ("ICP",    "ICPUSDT"),
+    ("NEAR",   "NEARUSDT"),   ("UNI",    "UNIUSDT"),
+    ("FIL",    "FILUSDT"),    ("ETC",    "ETCUSDT"),
+    ("APT",    "APTUSDT"),    ("ARB",    "ARBUSDT"),
+    ("ATOM",   "ATOMUSDT"),   ("SUI",    "SUIUSDT"),
+    ("HBAR",   "HBARUSDT"),   ("AAVE",   "AAVEUSDT"),
+    ("OP",     "OPUSDT"),     ("INJ",    "INJUSDT"),
+    ("RENDER", "RENDERUSDT"), ("TON",    "TONUSDT"),
+    ("ICP",    "ICPUSDT"),
 ]
 
 
-def _expand_top30_4h() -> dict:
-    """Build {NAME_4H: cfg} for every top-30 alt not already promoted.
-    Symbols WEEX doesn't trade will simply return 0 klines on validation
-    and fail the gates — no in-code whitelist needed."""
+def _expand_top30(tf: str) -> dict:
+    """Build {NAME_TF: cfg} for every top-30 alt + the retained BNB/AVAX/LINK
+    at the given timeframe ("4h" or "1h"). 1H gives 4× more bars on the
+    same 1000-cap window so low-frequency assets get more potential
+    trades."""
+    extras = [("BNB", "BNBUSDT"), ("AVAX", "AVAXUSDT"), ("LINK", "LINKUSDT")]
+    suffix = tf.upper()
     return {
-        f"{name}_4H": _breakout_default(symbol, "4h", f"{name} 4H Breakout")
-        for name, symbol in _TOP30_NEW_ALTS
+        f"{name}_{suffix}": _breakout_default(
+            symbol, tf, f"{name} {suffix} Breakout")
+        for name, symbol in (extras + _TOP30_NEW_ALTS)
     }
 
 
 BREAKOUT_CANDIDATE_ASSETS = {
-    # Earlier candidates that failed n<5 on 1000 bars — re-evaluating
-    # with 1500 bars (~33% more window) may push them over the gate.
-    "BNB_4H":  _breakout_default("BNBUSDT",  "4h", "BNB 4H Breakout"),
-    "AVAX_4H": _breakout_default("AVAXUSDT", "4h", "AVAX 4H Breakout"),
-    "LINK_4H": _breakout_default("LINKUSDT", "4h", "LINK 4H Breakout"),
-    # Top-30 alts not yet covered (added Jun 2026)
-    **_expand_top30_4h(),
+    # 4H variants — slow steady trend signal
+    **_expand_top30("4h"),
+    # 1H variants — 4× more bars on same WEEX limit; gives low-frequency
+    # alts more potential trades. BTC_1H + ETH_1H already passed at 1H.
+    **_expand_top30("1h"),
 }
 # BTC_1H + ETH_1H promoted to BREAKOUT_ASSETS in commit 998af1c.
 
