@@ -270,14 +270,74 @@ def _expand_top30(tf: str) -> dict:
 
 _PROMOTED_KEYS = {"DOGE_1H", "ADA_1H", "NEAR_1H", "AAVE_1H", "INJ_1H"}
 
+
+# Recovery variant: Donchian-20 / exit-10 (Turtle System 2). The 55/20
+# baseline generates ~1 signal per 4 months at 4H — too sparse for the
+# n>=5 gate over a 1000-bar window. Donchian-20 with the same
+# volume + 1D-trend + ADX gates produces ~3× signal density while
+# maintaining selectivity.
+#
+# Targeting Category A: assets that showed strong PF (>2.5) but failed
+# n<5 on the 55/20 round. If Donchian-20 lifts them above n>=5, they
+# promote. Naming suffix `_D20` distinguishes from the baseline.
+_DONCHIAN20_RECOVERY_TARGETS_4H = [
+    ("BNB",  "BNBUSDT"),   # 55/20 was PF=13.89 n=3
+    ("AVAX", "AVAXUSDT"),  #         PF=inf   n=1
+    ("LINK", "LINKUSDT"),  #         PF=inf   n=1
+    ("DOGE", "DOGEUSDT"),  #         PF=4.41  n=3
+    ("ADA",  "ADAUSDT"),   #         PF=inf   n=1
+    ("TRX",  "TRXUSDT"),   #         PF=4.77  n=4 — one trade short
+    ("DOT",  "DOTUSDT"),   #         PF=inf   n=2
+    ("LTC",  "LTCUSDT"),   #         PF=inf   n=2
+    ("UNI",  "UNIUSDT"),   #         PF=7.22  n=2
+    ("FIL",  "FILUSDT"),   #         PF=3.71  n=2
+    ("APT",  "APTUSDT"),   #         PF=inf   n=3
+    ("ARB",  "ARBUSDT"),   #         PF=3.73  n=2
+    ("ATOM", "ATOMUSDT"),  #         PF=inf   n=1
+    ("SUI",  "SUIUSDT"),   #         PF=inf   n=1
+    ("HBAR", "HBARUSDT"),  #         PF=inf   n=1
+    ("OP",   "OPUSDT"),    #         PF=inf   n=2
+    ("TON",  "TONUSDT"),   #         PF=4.51  n=3
+    ("ICP",  "ICPUSDT"),   #         PF=inf   n=1
+]
+
+_DONCHIAN20_RECOVERY_TARGETS_1H = [
+    ("BNB",  "BNBUSDT"),   # 55/20 was PF=4.03 n=4 — one trade short
+]
+
+
+def _breakout_donchian20(symbol: str, interval: str, name: str) -> dict:
+    """Turtle System 2 variant: 20-bar entry / 10-bar exit. Same gates
+    (volume + 1D-trend + ADX) so the signal density rises without
+    losing selectivity entirely."""
+    cfg = _breakout_default(symbol, interval, name)
+    cfg["donchian_period"]      = 20
+    cfg["donchian_exit_period"] = 10
+    return cfg
+
+
+def _expand_recovery_d20() -> dict:
+    out = {}
+    for name, symbol in _DONCHIAN20_RECOVERY_TARGETS_4H:
+        out[f"{name}_4H_D20"] = _breakout_donchian20(
+            symbol, "4h", f"{name} 4H Breakout (D20)")
+    for name, symbol in _DONCHIAN20_RECOVERY_TARGETS_1H:
+        out[f"{name}_1H_D20"] = _breakout_donchian20(
+            symbol, "1h", f"{name} 1H Breakout (D20)")
+    return out
+
+
 BREAKOUT_CANDIDATE_ASSETS = {
-    # 4H variants — slow steady trend signal
+    # 4H variants — slow steady trend signal (Donchian 55/20, Turtle Sys 1)
     **_expand_top30("4h"),
-    # 1H variants — 4× more bars on same WEEX limit; gives low-frequency
-    # alts more potential trades. BTC_1H + ETH_1H already promoted earlier;
-    # DOGE/ADA/NEAR/AAVE/INJ 1H promoted in the second round (see above).
+    # 1H variants — 4× more bars on same WEEX limit. BTC_1H + ETH_1H
+    # already promoted earlier; DOGE/ADA/NEAR/AAVE/INJ 1H promoted in
+    # round 2.
     **{k: v for k, v in _expand_top30("1h").items()
         if k not in _PROMOTED_KEYS},
+    # Recovery: Donchian-20 (Turtle Sys 2) for assets that showed strong
+    # PF on 55/20 but failed n<5. ~3× signal density at same gate level.
+    **_expand_recovery_d20(),
 }
 # Promotion history (BREAKOUT_ASSETS, in order):
 #   BTC_4H, ETH_4H, SOL_4H — original G.2 baseline
