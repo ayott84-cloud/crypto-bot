@@ -2560,6 +2560,18 @@ def _v2_breakout_meta(trades: List[dict]) -> dict:
         BREAKOUT_LEVERAGE = 10
         MAX_BREAKOUT_POSITIONS = 2
 
+    # Phase K: surface candidate assets so the operator sees what's
+    # queued for promotion after validate_breakout_candidates.py runs.
+    try:
+        from breakout_config import BREAKOUT_CANDIDATE_ASSETS
+        candidate_rows = [
+            {"name": k, "symbol": v.get("symbol", ""),
+              "interval": v.get("interval", "")}
+            for k, v in BREAKOUT_CANDIDATE_ASSETS.items()
+        ]
+    except ImportError:
+        candidate_rows = []
+
     first_cfg = next(iter(BREAKOUT_ASSETS.values()), {})
     asset_rows = [
         {"name": k, "symbol": v.get("symbol", ""),
@@ -2583,6 +2595,7 @@ def _v2_breakout_meta(trades: List[dict]) -> dict:
         "notional_usd":          float(BREAKOUT_MARGIN_PER_TRADE) * int(BREAKOUT_LEVERAGE),
         "max_positions":         int(MAX_BREAKOUT_POSITIONS),
         "assets":                asset_rows,
+        "candidate_assets":      candidate_rows,
         "closed_count":          len(closed),
         "win_rate_display":      (f"{sum(1 for p in pnl_list if p > 0) / len(pnl_list) * 100:.1f}%"
                                   if pnl_list else "—"),

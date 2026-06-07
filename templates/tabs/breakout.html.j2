@@ -102,6 +102,43 @@
   </table>
 </section>
 
+{% if breakout_meta.candidate_assets and breakout_meta.candidate_assets|length > 0 %}
+<section class="config-grid" aria-label="Candidate assets awaiting validation">
+  <h2 class="config-grid__heading">
+    Candidate assets ({{ breakout_meta.candidate_assets|length }})
+    <span class="config-grid__hint">
+      — staged in <code>BREAKOUT_CANDIDATE_ASSETS</code>; not live until
+      <code>tools/validate_breakout_candidates.py</code> passes them
+      (gates: PF ≥ 1.5, n ≥ 5, max DD ≤ 15%)
+    </span>
+  </h2>
+  <table class="regime-table">
+    <thead>
+      <tr>
+        <th scope="col">Asset</th>
+        <th scope="col">Symbol</th>
+        <th scope="col">Timeframe</th>
+        <th scope="col">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in breakout_meta.candidate_assets %}
+      <tr>
+        <td>{{ a.name }}</td>
+        <td>{{ a.symbol }}</td>
+        <td>{{ a.interval }}</td>
+        <td>
+          <span class="confidence-pill confidence-pill--none">
+            awaiting backtest
+          </span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
 <section class="kv-grid" aria-label="Breakout performance">
   <div class="kv-cell">
     <span class="kv-cell__k">CLOSED TRADES</span>

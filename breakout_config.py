@@ -111,6 +111,54 @@ BREAKOUT_ASSETS = {
 }
 
 
+# ─── Phase K — candidate assets (NOT live until promoted) ────────────────
+# Per the activation gate flow: stage candidates here, run
+# tools/validate_breakout_candidates.py on the droplet (needs WEEX
+# kline access), promote passing rows by moving them into BREAKOUT_ASSETS
+# above. BREAKOUT_CANDIDATE_ASSETS is never iterated by breakout_main —
+# only by the validator.
+#
+# Each candidate inherits the same shape as BREAKOUT_ASSETS rows.
+# Defaults match the proven BTC_4H baseline (Donchian 55/20, ATR 14/20,
+# ADX 20/15, sl_atr_mult 2.5, volume + 1D-trend filters ON,
+# allow_short ON).
+def _breakout_default(symbol: str, interval: str, name: str) -> dict:
+    """Build a candidate config row using the validated 4H baseline."""
+    return {
+        "symbol":                symbol,
+        "interval":              interval,
+        "donchian_period":       55,
+        "donchian_exit_period":  20,
+        "atr_period":            14,
+        "atr_sma_period":        20,
+        "adx_period":            14,
+        "adx_threshold":         20,
+        "adx_exit_threshold":    15,
+        "sl_atr_mult":           2.5,
+        "use_volume_filter":      True,
+        "volume_threshold_mult":  1.5,
+        "volume_sma_period":      20,
+        "use_trend_filter":       True,
+        "allow_short":           True,
+        "sl_atr_mult_short":     1.0,
+        "strategy_name":         name,
+        "use_btc_filter":        False,
+    }
+
+
+BREAKOUT_CANDIDATE_ASSETS = {
+    # Large-cap 4H alts — similar vol profile to ETH
+    "BNB_4H":  _breakout_default("BNBUSDT",  "4h", "BNB 4H Breakout"),
+    "AVAX_4H": _breakout_default("AVAXUSDT", "4h", "AVAX 4H Breakout"),
+    "LINK_4H": _breakout_default("LINKUSDT", "4h", "LINK 4H Breakout"),
+    # 1H variants — 55-bar window ≈ 2.3 days, catches faster moves
+    "BTC_1H":  _breakout_default("BTCUSDT",  "1h", "BTC 1H Breakout"),
+    "ETH_1H":  _breakout_default("ETHUSDT",  "1h", "ETH 1H Breakout"),
+    # Weekly — swing-conviction trades
+    "BTC_1W":  _breakout_default("BTCUSDT",  "1w", "BTC 1W Breakout"),
+}
+
+
 # ─── Phase J.6 — backtest stats for projection table ──────────────────────
 # Source: tools/backtest_replay.py 1000-bar 4h replay (Jun 2026). Each
 # row's `trades` count is genuinely small; the projection table renders
