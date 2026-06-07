@@ -1657,6 +1657,40 @@ def _v2_funding_meta(trades: List[dict]) -> dict:
     }
 
 
+def _v2_render_asset_chart_panel(chart_id: str, chart_data: dict,
+                                   height_px: int = 400) -> str:
+    """Render a TradingView Lightweight Charts container + inlined data + init.
+
+    Emits three elements:
+      1. <div id="chart-{id}" class="asset-chart" style="height:{H}px">
+      2. <script type="application/json" id="chartdata-{id}">…JSON…</script>
+      3. <script>initAssetChart("{id}", JSON.parse(...))</script>
+
+    The JS-side `initAssetChart` function lives in dashboard.js (Phase J.2)
+    and is responsible for constructing a chart, adding the candle series,
+    looping over overlays as line series, and applying markers.
+
+    chart_id is sanitized to [a-zA-Z0-9_] only — injection-safe.
+    """
+    import json
+    import re
+    safe_id = re.sub(r"[^a-zA-Z0-9_]", "", chart_id) or "anon"
+    data_json = json.dumps(chart_data, separators=(", ", ": "))
+    return (
+        f'<div id="chart-{safe_id}" class="asset-chart" '
+        f'style="height:{int(height_px)}px"></div>\n'
+        f'<script type="application/json" id="chartdata-{safe_id}">'
+        f'{data_json}</script>\n'
+        f'<script>(function(){{'
+        f'if (window.initAssetChart) {{'
+        f'  var el = document.getElementById("chartdata-{safe_id}");'
+        f'  try {{ window.initAssetChart("{safe_id}", JSON.parse(el.textContent)); }}'
+        f'  catch (e) {{ console.error("chart-{safe_id} init failed", e); }}'
+        f'}}'
+        f'}})();</script>'
+    )
+
+
 def _v2_momentum_meta(trades: List[dict]) -> dict:
     """Momentum bot metadata for the Momentum tab (J.1 minimal; J.3 expands)."""
     try:

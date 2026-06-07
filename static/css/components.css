@@ -178,6 +178,22 @@
   color: var(--ink-3);
 }
 
+/* ── Asset chart panel (J.2: TradingView Lightweight Charts) ──────────── */
+
+.asset-chart {
+  width: 100%;
+  background: var(--surface-1);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  margin: var(--space-4) 0;
+  /* Reserves stable height so layout doesn't jump while the chart hydrates */
+  min-height: 240px;
+}
+
+/* TWLC canvas inherits the parent's surface; suppress its default white bg */
+.asset-chart canvas { background: transparent; }
+
 /* ── Chart panels (Phase D.7e: equity curve + daily PnL) ───────────────── */
 
 /* Side-by-side chart row (D.7i). Collapses to a single column under 1024px. */

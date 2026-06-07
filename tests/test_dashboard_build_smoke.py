@@ -77,6 +77,19 @@ def test_build_dashboard_runs_without_crash_with_open_pair_position(tmp_path, mo
     assert "Open position" in html or "open_position" in html or "PAIR" in html
 
 
+def test_dashboard_inlines_lightweight_charts_library(tmp_path, monkeypatch):
+    """J.2: TWLC must be inlined into dashboard.html at build time."""
+    import dashboard
+    monkeypatch.setattr(dashboard, "DASHBOARD_FILE", tmp_path / "dashboard.html")
+    with patch.object(dashboard, "_read_journal_trades", return_value=[]):
+        dashboard.build_dashboard(_mock_executor(), {"positions": {}})
+    html = (tmp_path / "dashboard.html").read_text(encoding="utf-8")
+    # License header from the vendored TWLC bundle confirms inlining
+    assert "TradingView Lightweight Charts" in html
+    # The init helper from dashboard.js must be present too
+    assert "window.initAssetChart" in html
+
+
 def test_build_v2_context_state_argument_optional():
     """The state argument is optional — callers without state still work."""
     import dashboard

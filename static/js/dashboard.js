@@ -1,6 +1,86 @@
 // Phase D dashboard — tab switcher, trade-log sort + search.
 // Theme toggle and modal logic land in subsequent D commits.
 
+// ── J.2: TradingView Lightweight Charts init helper ───────────────────────
+// Exposed at window.initAssetChart so _v2_render_asset_chart_panel can
+// call it from its inlined <script> block. Accepts a sanitized chart_id
+// and a parsed chart-data object of the documented shape.
+window.initAssetChart = function (chartId, data) {
+  if (!window.LightweightCharts) {
+    console.warn('LightweightCharts missing; chart-' + chartId + ' skipped');
+    return null;
+  }
+  var container = document.getElementById('chart-' + chartId);
+  if (!container) return null;
+
+  var theme = (document.documentElement.dataset.theme === 'light') ? 'light' : 'dark';
+  var isDark = theme === 'dark';
+  var chart = LightweightCharts.createChart(container, {
+    layout: {
+      background: { color: 'transparent' },
+      textColor:  isDark ? '#a8a9ad' : '#3a3b42',
+      fontFamily: 'JetBrains Mono, Berkeley Mono, ui-monospace, monospace',
+      fontSize:   11
+    },
+    grid: {
+      vertLines: { color: isDark ? '#25262b' : '#dfe1e6' },
+      horzLines: { color: isDark ? '#25262b' : '#dfe1e6' }
+    },
+    rightPriceScale: {
+      borderColor: isDark ? '#3a3b42' : '#c5c8cf'
+    },
+    timeScale: {
+      borderColor: isDark ? '#3a3b42' : '#c5c8cf',
+      timeVisible: true,
+      secondsVisible: false
+    },
+    crosshair: { mode: 1 }  // magnet
+  });
+
+  // Candles
+  if (Array.isArray(data.candles) && data.candles.length > 0) {
+    var candleSeries = chart.addCandlestickSeries({
+      upColor:       '#57cb95',
+      downColor:     '#e85a4c',
+      borderUpColor: '#57cb95',
+      borderDownColor: '#e85a4c',
+      wickUpColor:   '#57cb95',
+      wickDownColor: '#e85a4c'
+    });
+    candleSeries.setData(data.candles);
+    if (Array.isArray(data.markers) && data.markers.length > 0) {
+      candleSeries.setMarkers(data.markers);
+    }
+  }
+
+  // Overlay line series (EMA20, EMA50, Donchian bands, ratio, etc.)
+  if (Array.isArray(data.overlays)) {
+    data.overlays.forEach(function (overlay) {
+      if (!overlay || !Array.isArray(overlay.data) || overlay.data.length === 0) return;
+      var line = chart.addLineSeries({
+        color:     overlay.color || '#5fa8e5',
+        lineWidth: overlay.line_width || 1.5,
+        priceLineVisible: false,
+        lastValueVisible: false
+      });
+      line.setData(overlay.data);
+    });
+  }
+
+  // Auto-fit data on initial render
+  chart.timeScale().fitContent();
+
+  // Resize observer keeps the chart responsive
+  if (window.ResizeObserver) {
+    var ro = new ResizeObserver(function () {
+      chart.applyOptions({ width: container.clientWidth });
+    });
+    ro.observe(container);
+  }
+
+  return chart;
+};
+
 (function () {
   'use strict';
 

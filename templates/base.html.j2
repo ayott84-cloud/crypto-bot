@@ -107,6 +107,9 @@
     </footer>
   </div>
 
+  <!-- J.2: TradingView Lightweight Charts (BSD, vendored). Loads before
+       dashboard.js so chart-init code can reference `LightweightCharts`. -->
+  <script src="/static/js/lightweight-charts.standalone.production.js"></script>
   <script src="/static/js/dashboard.js"></script>
 </body>
 </html>
