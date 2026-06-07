@@ -1,0 +1,37 @@
+{# J.5a — asset dropdown + TWLC chart panel.
+
+    Consumers set `chart_panels = chart_panels.<bot_class>` before include.
+    Each panel dict has {asset_name, symbol, interval, chart_id, chart_data}.
+    When the list is empty (whale/funding dynamic universe), this whole
+    block hides itself.
+#}
+{% if chart_panels and chart_panels|length > 0 %}
+<section class="asset-chart-section" aria-label="Asset chart with strategy overlays">
+  <header class="asset-chart-section__head">
+    <h2 class="asset-chart-section__heading">Asset chart</h2>
+    <label class="asset-chart-section__picker">
+      <span class="sr-only">Select asset</span>
+      <select class="asset-chart-section__select"
+              data-chart-target="{{ chart_panels[0].chart_id }}">
+        {% for p in chart_panels %}
+        <option value="{{ p.chart_id }}"
+                {% if loop.first %}selected{% endif %}>
+          {{ p.asset_name }} · {{ p.symbol }} · {{ p.interval }}
+        </option>
+        {% endfor %}
+      </select>
+    </label>
+  </header>
+
+  {# Pre-render every asset's chart data block. JS shows only the selected
+     one and re-inits when the dropdown changes. #}
+  {% for p in chart_panels %}
+  <div class="asset-chart-wrap" data-chart-id="{{ p.chart_id }}"
+       {% if not loop.first %}style="display:none"{% endif %}>
+    <div id="chart-{{ p.chart_id }}"
+         class="asset-chart" style="height:380px"></div>
+    <script type="application/json" id="chartdata-{{ p.chart_id }}">{{ p.chart_data|tojson }}</script>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}

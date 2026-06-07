@@ -81,6 +81,42 @@ window.initAssetChart = function (chartId, data) {
   return chart;
 };
 
+// J.5a: Asset-dropdown handler. When a bot tab's <select> changes, hide
+// every sibling .asset-chart-wrap and show the one whose data-chart-id
+// matches the selected option. The chart is initialized lazily — first
+// reveal triggers initAssetChart; subsequent reveals are no-ops because
+// TWLC reuses the existing container.
+window.initAssetDropdowns = function () {
+  var initialized = new Set();
+  function ensureChart(chartId) {
+    if (initialized.has(chartId)) return;
+    var el = document.getElementById('chartdata-' + chartId);
+    if (!el || !window.initAssetChart) return;
+    try {
+      window.initAssetChart(chartId, JSON.parse(el.textContent));
+      initialized.add(chartId);
+    } catch (e) {
+      console.error('chart-' + chartId + ' init failed', e);
+    }
+  }
+  var selects = document.querySelectorAll('.asset-chart-section__select');
+  selects.forEach(function (sel) {
+    var section = sel.closest('.asset-chart-section');
+    if (!section) return;
+    var wraps = section.querySelectorAll('.asset-chart-wrap');
+    // Initialize the default-visible chart
+    var defaultId = sel.value;
+    ensureChart(defaultId);
+    sel.addEventListener('change', function () {
+      var chartId = sel.value;
+      wraps.forEach(function (w) {
+        w.style.display = (w.dataset.chartId === chartId) ? '' : 'none';
+      });
+      ensureChart(chartId);
+    });
+  });
+};
+
 (function () {
   'use strict';
 
@@ -257,5 +293,10 @@ window.initAssetChart = function (chartId, data) {
         URL.revokeObjectURL(url);
       });
     }
+  }
+
+  // J.5a: Wire asset-chart dropdowns after DOM ready.
+  if (typeof window.initAssetDropdowns === 'function') {
+    window.initAssetDropdowns();
   }
 })();

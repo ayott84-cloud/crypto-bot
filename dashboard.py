@@ -609,7 +609,8 @@ def _resolve_build_sha() -> str:
     return "local"
 
 
-def _build_v2_context(data: Dict[str, Any], state: dict | None = None) -> Dict[str, Any]:
+def _build_v2_context(data: Dict[str, Any], state: dict | None = None,
+                        executor=None) -> Dict[str, Any]:
     """Shape gather_dashboard_data output for the Jinja2 templates.
 
     Per-bot stats are recomputed by filtering trades on the `bot` column —
@@ -738,6 +739,8 @@ def _build_v2_context(data: Dict[str, Any], state: dict | None = None) -> Dict[s
             "reversal": _v2_build_bot_panels(trades, state, "reversal"),
         },
         "reversal_meta": _v2_reversal_meta(trades),
+        # J.5a: per-bot chart panels (asset dropdown + chart data per asset)
+        "chart_panels_root": _v2_build_all_chart_panels(executor, trades),
         "projection":   _v2_projection(),
         "equity_curve_svg": _v2_equity_curve_svg(
             _v2_equity_series(trades, days=90)),
@@ -922,6 +925,8 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
         },
         "pair_meta":     _v2_pair_meta(trades),
         "reversal_meta": _v2_reversal_meta(trades),
+        # J.5a: chart panels (empty when no executor available in test context)
+        "chart_panels_root": _v2_build_all_chart_panels(None, trades),
         "projection":    _v2_projection(),
         "equity_curve_svg": _v2_equity_curve_svg(
             _v2_equity_series(trades, days=90)),
@@ -1825,6 +1830,325 @@ def _v2_build_bot_panels(trades: List[dict], state: dict | None,
     }
 
 
+# ─── J.5a — kline cache + per-asset chart-data builder ────────────────────
+
+_kline_cache: dict[tuple[str, str, int], tuple[float, list]] = {}
+_KLINE_CACHE_TTL_S = 300.0  # 5 minutes
+
+
+def _kline_cache_clear() -> None:
+    """Clear the per-process kline cache (tests + manual recompute)."""
+    _kline_cache.clear()
+
+
+def _v2_fetch_klines_cached(executor, symbol: str, interval: str,
+                              count: int = 200):
+    """TTL-cached wrapper around executor.get_klines.
+
+    Returns the raw WEEX positional kline rows (list of lists). Cache key is
+    (symbol, interval, count); TTL is 5 min so a dashboard rebuild burst
+    only hits WEEX once per asset/timeframe.
+    """
+    import time as _time
+    key = (symbol, interval, int(count))
+    now = _time.time()
+    hit = _kline_cache.get(key)
+    if hit is not None and (now - hit[0]) < _KLINE_CACHE_TTL_S:
+        return hit[1]
+    try:
+        rows = executor.get_klines(symbol, interval, count) or []
+    except Exception as e:  # noqa: BLE001
+        logger.warning("kline fetch failed for %s %s: %s", symbol, interval, e)
+        rows = []
+    _kline_cache[key] = (now, rows)
+    return rows
+
+
+def _v2_kline_rows_to_df(rows: list):
+    """Convert WEEX positional kline rows → pandas DataFrame with OHLCV.
+
+    Row schema: [open_time_ms, open, high, low, close, volume, close_time_ms,
+                 ...]. Returns empty DF if rows is empty or pandas missing.
+    """
+    try:
+        import pandas as pd  # noqa: F401
+    except ImportError:
+        return None
+    import pandas as pd  # local import
+    if not rows:
+        return pd.DataFrame(columns=["time", "open", "high", "low", "close",
+                                       "volume"])
+    df = pd.DataFrame(rows, columns=[
+        "open_time", "open", "high", "low", "close", "volume",
+        "close_time", "qav", "trades", "tbb", "tbq",
+    ][: len(rows[0])])
+    # TWLC expects seconds, WEEX returns ms
+    df["time"] = (df["open_time"].astype("int64") // 1000)
+    for col in ("open", "high", "low", "close", "volume"):
+        df[col] = df[col].astype(float)
+    return df[["time", "open", "high", "low", "close", "volume"]]
+
+
+def _v2_ema(series, length: int):
+    """Pandas-only EMA so the chart helper has no pandas-ta dependency."""
+    return series.ewm(span=length, adjust=False).mean()
+
+
+def _v2_parse_ts_to_unix(ts) -> int | None:
+    """Parse a trade's date_opened / date_closed value to a unix seconds int.
+
+    Accepts ISO strings (full or date-only) and ints/floats already in seconds
+    or milliseconds. Returns None when unparseable.
+    """
+    if ts is None:
+        return None
+    if isinstance(ts, (int, float)):
+        v = float(ts)
+        # heuristic: > 10^11 → milliseconds
+        return int(v / 1000) if v > 1e11 else int(v)
+    s = str(ts).strip()
+    if not s:
+        return None
+    # Try ISO 8601 (full datetime)
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp())
+    except (ValueError, TypeError):
+        pass
+    # Try date-only
+    try:
+        dt = datetime.strptime(s[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        return int(dt.timestamp())
+    except (ValueError, TypeError):
+        return None
+
+
+def _v2_trade_markers_for_asset(trades: list, bot_class: str,
+                                  symbol: str,
+                                  candle_window: tuple[int, int]) -> list:
+    """Build TWLC marker objects for closed trades on (bot_class, symbol).
+
+    candle_window is (first_unix_s, last_unix_s) inclusive. Markers outside
+    that window are skipped so we don't push markers into the chart's left
+    margin. Returns a flat list of {time, position, color, shape, text}.
+    """
+    label = _BOT_CLASS_TO_LABEL.get(bot_class, bot_class.capitalize())
+    first_ts, last_ts = candle_window
+    out: list[dict] = []
+    for t in trades or []:
+        if (t.get("bot") or "") != label:
+            continue
+        if (t.get("symbol") or "") != symbol:
+            continue
+        direction = (t.get("direction") or "").upper()
+        entry_ts = _v2_parse_ts_to_unix(t.get("date_opened"))
+        exit_ts  = _v2_parse_ts_to_unix(t.get("date_closed"))
+        net_pnl  = float(t.get("net_pnl") or 0)
+        entry_px = t.get("entry_price")
+        exit_px  = t.get("exit_price")
+
+        if entry_ts is not None and first_ts <= entry_ts <= last_ts:
+            is_long = direction == "LONG"
+            out.append({
+                "time":     entry_ts,
+                "position": "belowBar" if is_long else "aboveBar",
+                "color":    "#57cb95" if is_long else "#e85a4c",
+                "shape":    "arrowUp" if is_long else "arrowDown",
+                "text":     f"{direction} @ {entry_px}",
+            })
+        if (exit_ts is not None and exit_px not in (None, "", 0, "0")
+                and first_ts <= exit_ts <= last_ts):
+            won = net_pnl > 0
+            out.append({
+                "time":     exit_ts,
+                "position": "aboveBar" if direction == "LONG" else "belowBar",
+                "color":    "#57cb95" if won else "#e85a4c",
+                "shape":    "circle",
+                "text":     f"Exit {exit_px} ({'+' if won else ''}{net_pnl:.2f})",
+            })
+    # TWLC requires markers sorted by time ascending
+    out.sort(key=lambda m: m["time"])
+    return out
+
+
+def _v2_overlays_for_bot(bot_class: str, df, cfg: dict) -> list[dict]:
+    """Return the bot-specific indicator overlays as TWLC line-series dicts.
+
+    Each overlay is {name, color, data: [{time, value}, ...]}. NaN values
+    are stripped because TWLC rejects them.
+    """
+    if df is None or len(df) == 0:
+        return []
+    overlays: list[dict] = []
+    close = df["close"]
+    times = df["time"]
+
+    def _line(name: str, color: str, series) -> dict:
+        data = [{"time": int(t), "value": float(v)}
+                for t, v in zip(times, series) if v == v]  # NaN-safe
+        return {"name": name, "color": color, "data": data}
+
+    if bot_class == "momentum":
+        ema_fast = int(cfg.get("ema_fast", 20))
+        ema_slow = int(cfg.get("ema_slow", 50))
+        overlays.append(_line(f"EMA{ema_fast}", "#5fa8e5",
+                                _v2_ema(close, ema_fast)))
+        overlays.append(_line(f"EMA{ema_slow}", "#d4ad58",
+                                _v2_ema(close, ema_slow)))
+    elif bot_class == "breakout":
+        entry_n = int(cfg.get("donchian_period", 55))
+        exit_n  = int(cfg.get("donchian_exit_period", 20))
+        high = df["high"]; low = df["low"]
+        entry_upper = high.rolling(entry_n, min_periods=entry_n).max()
+        entry_lower = low.rolling(entry_n, min_periods=entry_n).min()
+        exit_upper  = high.rolling(exit_n,  min_periods=exit_n ).max()
+        exit_lower  = low.rolling(exit_n,   min_periods=exit_n ).min()
+        overlays.append(_line(f"Donchian-{entry_n} upper", "#5fa8e5",
+                                entry_upper))
+        overlays.append(_line(f"Donchian-{entry_n} lower", "#5fa8e5",
+                                entry_lower))
+        overlays.append(_line(f"Donchian-{exit_n} upper",  "#d4ad58",
+                                exit_upper))
+        overlays.append(_line(f"Donchian-{exit_n} lower",  "#d4ad58",
+                                exit_lower))
+    return overlays
+
+
+def _v2_asset_chart_data(executor, bot_class: str, asset_name: str,
+                          cfg: dict, trades: list) -> dict:
+    """Build the TWLC chart-data dict for one (bot, asset) tab panel.
+
+    Schema (matches what initAssetChart in dashboard.js consumes):
+      {
+        "candles":  [{time, open, high, low, close}, ...],
+        "overlays": [{name, color, data: [{time, value}, ...]}, ...],
+        "markers":  [{time, position, color, shape, text}, ...],
+      }
+    Empty kline data returns all-empty arrays so the JS can render an
+    empty-state chart without crashing.
+    """
+    symbol   = cfg.get("symbol", "")
+    interval = cfg.get("interval", "4h")
+    rows = _v2_fetch_klines_cached(executor, symbol, interval, 200)
+    df = _v2_kline_rows_to_df(rows)
+    if df is None or len(df) == 0:
+        return {"candles": [], "overlays": [], "markers": []}
+
+    candles = [
+        {"time": int(r.time), "open": float(r.open), "high": float(r.high),
+         "low":  float(r.low), "close": float(r.close)}
+        for r in df.itertuples(index=False)
+    ]
+    overlays = _v2_overlays_for_bot(bot_class, df, cfg)
+    window = (int(df["time"].iloc[0]), int(df["time"].iloc[-1]))
+    markers = _v2_trade_markers_for_asset(
+        trades or [], bot_class, symbol, window)
+    return {"candles": candles, "overlays": overlays, "markers": markers}
+
+
+def _v2_assets_for_bot(bot_class: str) -> dict[str, dict]:
+    """Return the configured asset dict for one bot (name → cfg).
+
+    Used by the chart-panel builder to enumerate which assets get charts.
+    Falls back to {} when the bot's config module is missing or its
+    universe is dynamic (whale).
+    """
+    try:
+        if bot_class == "momentum":
+            from config import ASSETS
+            return dict(ASSETS)
+        if bot_class == "breakout":
+            from breakout_config import BREAKOUT_ASSETS
+            return dict(BREAKOUT_ASSETS)
+        if bot_class == "reversal":
+            from reversal_config import REVERSAL_ASSETS
+            return dict(REVERSAL_ASSETS)
+    except ImportError:
+        return {}
+    # whale (dynamic universe), funding (dynamic), pair (single hardcoded)
+    return {}
+
+
+def _v2_build_chart_panels_for_bot(executor, trades: list,
+                                     bot_class: str,
+                                     max_assets: int = 5) -> list[dict]:
+    """Build chart-panel entries for one bot — one per configured asset.
+
+    Returns [{asset_name, chart_id, chart_data, symbol, interval}, ...]
+    sorted by recent trade activity (most-traded first), capped to
+    max_assets. Returns [] when executor is None (test context) or the
+    bot has no configured assets (whale/funding).
+    """
+    assets = _v2_assets_for_bot(bot_class)
+    if not assets:
+        return []
+    if executor is None:
+        # Test context: emit dropdown options but no chart data
+        return [
+            {"asset_name": name,
+             "symbol":     assets[name].get("symbol", ""),
+             "interval":   assets[name].get("interval", ""),
+             "chart_id":   f"{bot_class}-{name.replace('_', '-')}",
+             "chart_data": {"candles": [], "overlays": [], "markers": []}}
+            for name in list(assets.keys())[:max_assets]
+        ]
+
+    # Rank assets by recent trade count for this bot
+    label = _BOT_CLASS_TO_LABEL.get(bot_class, bot_class.capitalize())
+    counts: dict[str, int] = {name: 0 for name in assets}
+    for t in trades or []:
+        if (t.get("bot") or "") != label:
+            continue
+        sym = t.get("symbol") or ""
+        for name, cfg in assets.items():
+            if cfg.get("symbol") == sym:
+                counts[name] += 1
+                break
+    ranked = sorted(assets.keys(),
+                    key=lambda n: (-counts[n], n))[:max_assets]
+
+    out: list[dict] = []
+    for name in ranked:
+        cfg = assets[name]
+        try:
+            data = _v2_asset_chart_data(executor, bot_class, name, cfg,
+                                          trades)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("chart data build failed for %s/%s: %s",
+                            bot_class, name, e)
+            data = {"candles": [], "overlays": [], "markers": []}
+        out.append({
+            "asset_name": name,
+            "symbol":     cfg.get("symbol", ""),
+            "interval":   cfg.get("interval", ""),
+            "chart_id":   f"{bot_class}-{name.replace('_', '-')}",
+            "chart_data": data,
+        })
+    return out
+
+
+def _v2_build_all_chart_panels(executor, trades: list) -> dict:
+    """Return per-bot chart-panel lists for templates.
+
+    Shape: {bot_class: [panel_dict, ...]}. Bots without configured asset
+    universes get [] entries — the template hides the chart section in
+    that case.
+    """
+    return {
+        "momentum": _v2_build_chart_panels_for_bot(executor, trades,
+                                                     "momentum"),
+        "breakout": _v2_build_chart_panels_for_bot(executor, trades,
+                                                     "breakout"),
+        "whale":    [],
+        "funding":  [],
+        "pair":     [],
+        "reversal": _v2_build_chart_panels_for_bot(executor, trades,
+                                                     "reversal"),
+    }
+
+
 def _v2_render_asset_chart_panel(chart_id: str, chart_data: dict,
                                    height_px: int = 400) -> str:
     """Render a TradingView Lightweight Charts container + inlined data + init.
@@ -2156,7 +2480,7 @@ def build_dashboard(executor, state: dict) -> None:
     from dashboard_renderer import render
 
     data = gather_dashboard_data(executor, state)
-    ctx = _build_v2_context(data, state=state)
+    ctx = _build_v2_context(data, state=state, executor=executor)
     html = render("base.html.j2", ctx)
     DASHBOARD_FILE.write_text(html, encoding="utf-8")
     logger.info("Dashboard written to %s", DASHBOARD_FILE)
