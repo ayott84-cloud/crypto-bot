@@ -157,6 +157,46 @@ BREAKOUT_ASSETS = {
 }
 
 
+# ─── Phase K second round (Jun 7 2026) — 5 1H alts cleared the gate ──────
+# from the top-30 candidate pass (1000-bar replay):
+#   DOGE_1H  PF=1.93  n=6  WR=50.0%  total= +7.0%  DD=7.6%
+#   ADA_1H   PF=3.25  n=5  WR=40.0%  total=+19.5%  DD=8.4%
+#   NEAR_1H  PF=6.46  n=5  WR=60.0%  total=+38.4%  DD=7.0%
+#   AAVE_1H  PF=2.39  n=5  WR=40.0%  total=+14.1%  DD=8.4%
+#   INJ_1H   PF=2.31  n=6  WR=66.7%  total=+10.5%  DD=6.7%
+# Same baseline shape as BTC_1H / ETH_1H (Donchian 55/20, sl_atr_mult 2.5,
+# volume + 1D-trend filters on, allow_short on). Updated AFTER the dict
+# is defined so we don't introduce forward-reference issues.
+for _name, _symbol, _title in [
+    ("DOGE_1H", "DOGEUSDT", "DOGE 1H Breakout"),
+    ("ADA_1H",  "ADAUSDT",  "ADA 1H Breakout"),
+    ("NEAR_1H", "NEARUSDT", "NEAR 1H Breakout"),
+    ("AAVE_1H", "AAVEUSDT", "AAVE 1H Breakout"),
+    ("INJ_1H",  "INJUSDT",  "INJ 1H Breakout"),
+]:
+    BREAKOUT_ASSETS[_name] = {
+        "symbol":                _symbol,
+        "interval":              "1h",
+        "donchian_period":       55,
+        "donchian_exit_period":  20,
+        "atr_period":            14,
+        "atr_sma_period":        20,
+        "adx_period":            14,
+        "adx_threshold":         20,
+        "adx_exit_threshold":    15,
+        "sl_atr_mult":           2.5,
+        "use_volume_filter":      True,
+        "volume_threshold_mult":  1.5,
+        "volume_sma_period":      20,
+        "use_trend_filter":       True,
+        "allow_short":           True,
+        "sl_atr_mult_short":     1.0,
+        "strategy_name":         _title,
+        "use_btc_filter":        False,
+    }
+del _name, _symbol, _title
+
+
 # ─── Phase K — candidate assets (NOT live until promoted) ────────────────
 # Per the activation gate flow: stage candidates here, run
 # tools/validate_breakout_candidates.py on the droplet (needs WEEX
@@ -228,14 +268,21 @@ def _expand_top30(tf: str) -> dict:
     }
 
 
+_PROMOTED_KEYS = {"DOGE_1H", "ADA_1H", "NEAR_1H", "AAVE_1H", "INJ_1H"}
+
 BREAKOUT_CANDIDATE_ASSETS = {
     # 4H variants — slow steady trend signal
     **_expand_top30("4h"),
     # 1H variants — 4× more bars on same WEEX limit; gives low-frequency
-    # alts more potential trades. BTC_1H + ETH_1H already passed at 1H.
-    **_expand_top30("1h"),
+    # alts more potential trades. BTC_1H + ETH_1H already promoted earlier;
+    # DOGE/ADA/NEAR/AAVE/INJ 1H promoted in the second round (see above).
+    **{k: v for k, v in _expand_top30("1h").items()
+        if k not in _PROMOTED_KEYS},
 }
-# BTC_1H + ETH_1H promoted to BREAKOUT_ASSETS in commit 998af1c.
+# Promotion history (BREAKOUT_ASSETS, in order):
+#   BTC_4H, ETH_4H, SOL_4H — original G.2 baseline
+#   BTC_1H, ETH_1H — commit 998af1c
+#   DOGE_1H, ADA_1H, NEAR_1H, AAVE_1H, INJ_1H — this commit
 
 
 # ─── Phase J.6 — backtest stats for projection table ──────────────────────
@@ -259,4 +306,15 @@ BREAKOUT_BACKTEST_STATS = {
     "ETH_1H": {"pf": 2.14, "trades":  7, "pnl_pct": 12.2, "dd_pct": 7.1,
                 "wr": 28.6, "years": 0.11,
                 "source": "1000-bar 1h replay"},
+    # Phase K second round (Jun 7 2026) — 1H alts
+    "DOGE_1H": {"pf": 1.93, "trades": 6, "pnl_pct":  7.0, "dd_pct": 7.6,
+                 "wr": 50.0, "years": 0.11, "source": "1000-bar 1h replay"},
+    "ADA_1H":  {"pf": 3.25, "trades": 5, "pnl_pct": 19.5, "dd_pct": 8.4,
+                 "wr": 40.0, "years": 0.11, "source": "1000-bar 1h replay"},
+    "NEAR_1H": {"pf": 6.46, "trades": 5, "pnl_pct": 38.4, "dd_pct": 7.0,
+                 "wr": 60.0, "years": 0.11, "source": "1000-bar 1h replay"},
+    "AAVE_1H": {"pf": 2.39, "trades": 5, "pnl_pct": 14.1, "dd_pct": 8.4,
+                 "wr": 40.0, "years": 0.11, "source": "1000-bar 1h replay"},
+    "INJ_1H":  {"pf": 2.31, "trades": 6, "pnl_pct": 10.5, "dd_pct": 6.7,
+                 "wr": 66.7, "years": 0.11, "source": "1000-bar 1h replay"},
 }

@@ -131,6 +131,108 @@ def _fetch_klines(symbol: str, interval: str, count: int) -> pd.DataFrame:
     return df.reset_index(drop=False).dropna(subset=["close"]).reset_index(drop=True)
 
 
+# ─── Momentum replay ───────────────────────────────────────────────────────
+
+def replay_momentum(asset_name: str, cfg: dict, bars: int = 500) -> BacktestReport:
+    """Replay momentum entries+exits over the last `bars` of klines.
+
+    Uses the SAME analyze_entry_signal / check_exit_conditions the live
+    bot uses, so the report reflects exactly what the bot would have
+    done — minus rotation logic (single-position-per-asset replay).
+
+    Two-phase exits: TP1 partially closes, then breakeven SL / TP2 / stale
+    decide the rest. We treat TP1 as a separate trade and the remainder
+    as another trade so PnL accounting matches the journal's row count.
+    """
+    from signals import (
+        compute_indicators, analyze_entry_signal, check_exit_conditions,
+    )
+
+    df = _fetch_klines(cfg["symbol"], cfg["interval"], bars)
+    if df is None or len(df) == 0:
+        return BacktestReport(bot="momentum", asset=asset_name, bars_seen=0)
+
+    df = compute_indicators(df, cfg)
+
+    # BTC context for correlation filter (cfg.use_btc_filter)
+    btc_close_series = None
+    btc_ema_series   = None
+    if cfg.get("use_btc_filter"):
+        try:
+            btc_df = _fetch_klines("BTCUSDT", cfg["interval"], bars)
+            ema_period = cfg.get("btc_ema_period", 50)
+            btc_df["btc_ema"] = btc_df["close"].ewm(span=ema_period, adjust=False).mean()
+            btc_close_series = btc_df["close"]
+            btc_ema_series   = btc_df["btc_ema"]
+        except Exception:  # noqa: BLE001
+            pass
+
+    report = BacktestReport(bot="momentum", asset=asset_name, bars_seen=len(df))
+
+    start = max(
+        cfg.get("ema_slow", 50),
+        cfg.get("atr_sma_period", 20),
+        cfg.get("rsi_period", 14),
+        cfg.get("macd_slow", 26),
+    ) + 5
+    position: dict | None = None
+
+    for i in range(start, len(df)):
+        window = df.iloc[: i + 1]
+
+        if position is None:
+            btc_c = btc_e = None
+            if btc_close_series is not None and i < len(btc_close_series):
+                btc_c = float(btc_close_series.iloc[i]) if not pd.isna(btc_close_series.iloc[i]) else None
+                btc_e = float(btc_ema_series.iloc[i])   if not pd.isna(btc_ema_series.iloc[i])   else None
+            sig = analyze_entry_signal(window, cfg, btc_close=btc_c, btc_ema=btc_e)
+            if sig["would_enter"]:
+                position = {
+                    "entry_bar":    i,
+                    "entry_price":  float(df.iloc[i]["close"]),
+                    "atr_at_entry": float(df.iloc[i]["atr"]),
+                    "phase":        "full",
+                }
+            continue
+
+        bars_since_entry = i - position["entry_bar"]
+        current_price    = float(df.iloc[i]["close"])
+        reason, kind = check_exit_conditions(
+            entry_price=position["entry_price"],
+            atr_at_entry=position["atr_at_entry"],
+            current_price=current_price,
+            bars_since_entry=bars_since_entry,
+            phase=position["phase"],
+            cfg=cfg,
+        )
+        if reason is None:
+            continue
+
+        sign = 1.0  # momentum is LONG only by default for candidate validation
+        pnl_pct = sign * (current_price - position["entry_price"]) / position["entry_price"] * 100
+
+        if kind == "partial":
+            # TP1 — close half (model as 50% of the move) and continue
+            report.trades.append(TradeResult(
+                direction="LONG", entry_bar=position["entry_bar"],
+                exit_bar=i, entry_price=position["entry_price"],
+                exit_price=current_price, exit_reason=reason,
+                pnl_pct=pnl_pct * 0.5,  # half the position
+            ))
+            position["phase"] = "tp1_taken"
+        else:
+            # Full exit (SL / TP2 / stale / BE)
+            remaining_factor = 0.5 if position["phase"] == "tp1_taken" else 1.0
+            report.trades.append(TradeResult(
+                direction="LONG", entry_bar=position["entry_bar"],
+                exit_bar=i, entry_price=position["entry_price"],
+                exit_price=current_price, exit_reason=reason,
+                pnl_pct=pnl_pct * remaining_factor,
+            ))
+            position = None
+    return report
+
+
 # ─── Breakout replay ───────────────────────────────────────────────────────
 
 def replay_breakout(asset_name: str, cfg: dict, bars: int = 500) -> BacktestReport:
@@ -311,6 +413,12 @@ def replay_pair(bars: int = 500) -> BacktestReport:
 
 # ─── CLI ───────────────────────────────────────────────────────────────────
 
+def _run_momentum(bars: int) -> List[BacktestReport]:
+    from config import ASSETS
+    return [replay_momentum(name, cfg, bars=bars)
+            for name, cfg in ASSETS.items()]
+
+
 def _run_breakout(bars: int) -> List[BacktestReport]:
     from breakout_config import BREAKOUT_ASSETS
     return [replay_breakout(name, cfg, bars=bars)
@@ -333,7 +441,8 @@ def main() -> None:
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--bot", choices=["breakout", "pair", "reversal", "all"],
+    parser.add_argument("--bot",
+                        choices=["momentum", "breakout", "pair", "reversal", "all"],
                         default="all", help="Which strategy to replay")
     parser.add_argument("--bars", type=int, default=500,
                         help="How many historical bars to fetch per asset")

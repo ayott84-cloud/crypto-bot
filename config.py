@@ -533,3 +533,79 @@ ASSETS = {
         "backtest_stats": {"pf": 5.495, "trades": 10, "pnl_pct": 3.63, "dd_pct": 0.83},
     },
 }
+
+
+# ─── Phase K — momentum candidate assets (NOT live until promoted) ────────
+# Same separation pattern as BREAKOUT_CANDIDATE_ASSETS: never iterated
+# by main.py — only by tools/validate_momentum_candidates.py.
+#
+# Coins already covered in ASSETS (BTC/ETH/SOL/ADA/DOGE/DOT/HBAR/SHIB/XRP)
+# are excluded. WEEX-unsupported (MATIC/SHIB/PEPE format variants) also
+# skipped — the existing SHIB rows above only work because WEEX accepts
+# the bare SHIBUSDT for spot but not for some perps; treat new symbols
+# conservatively and let the validator's get_klines call surface mismatches.
+_MOMENTUM_TOP30_NEW_COINS = [
+    ("LTC",    "LTCUSDT"),    ("TRX",    "TRXUSDT"),
+    ("BNB",    "BNBUSDT"),    ("AVAX",   "AVAXUSDT"),
+    ("LINK",   "LINKUSDT"),   ("NEAR",   "NEARUSDT"),
+    ("UNI",    "UNIUSDT"),    ("FIL",    "FILUSDT"),
+    ("ETC",    "ETCUSDT"),    ("APT",    "APTUSDT"),
+    ("ARB",    "ARBUSDT"),    ("ATOM",   "ATOMUSDT"),
+    ("SUI",    "SUIUSDT"),    ("AAVE",   "AAVEUSDT"),
+    ("OP",     "OPUSDT"),     ("INJ",    "INJUSDT"),
+    ("RENDER", "RENDERUSDT"), ("TON",    "TONUSDT"),
+    ("ICP",    "ICPUSDT"),
+]
+
+
+def _momentum_default(symbol: str, interval: str, name: str,
+                       use_btc_filter: bool = True) -> dict:
+    """Baseline momentum config — mirrors the ETH_1D / BTC_4H pattern with
+    use_adx_filter ON (helps reject low-vol regimes that produce noisy
+    EMA crosses). BTC correlation filter ON for alts, OFF for BTC itself.
+
+    Trade params (TP1/TP2/SL/stale) follow the alt-friendly numbers used
+    by ADA_4H et al. These are starting points — once an asset passes
+    validation, the operator can tune the per-asset BACKTEST_STATS row
+    and any params that the TradingView strategy report suggests.
+    """
+    return {
+        "symbol":           symbol,
+        "interval":         interval,
+        "ema_fast":         20, "ema_slow": 50,
+        "close_above":      "ema_fast",
+        "atr_period":       14, "atr_sma_period": 20,
+        "rsi_period":       14, "rsi_sma_period": 14,
+        "rsi_min":          50, "rsi_max": 70,
+        "macd_fast":        12, "macd_slow": 26,
+        "macd_signal":       9, "macd_mode": "strict",
+        "use_pmo":          False,
+        "use_volume_filter": False,
+        "use_mfi_filter":    False,
+        "use_adx_filter":    True,
+        "adx_period":       14, "adx_threshold": 18,
+        "use_btc_filter":    use_btc_filter,
+        "btc_ema_period":   50,
+        "tp1_atr_mult":      1.8, "tp2_atr_mult": 4.0,
+        "sl_atr_mult":       1.0,
+        "tp1_close_pct":     0.50,
+        "use_breakeven_after_tp1": True,
+        "stale_bars":        12 if interval == "4h" else 5,
+        "stale_threshold_mult": 0.5,
+        "strategy_name":     name,
+    }
+
+
+def _expand_momentum_top30(tf: str) -> dict:
+    suffix = "4H" if tf == "4h" else "1D"
+    return {
+        f"{name}_{suffix}": _momentum_default(
+            symbol, tf, f"{name} {suffix} Momentum")
+        for name, symbol in _MOMENTUM_TOP30_NEW_COINS
+    }
+
+
+MOMENTUM_CANDIDATE_ASSETS = {
+    **_expand_momentum_top30("4h"),
+    **_expand_momentum_top30("1d"),
+}
