@@ -496,88 +496,219 @@ def gather_dashboard_data(executor, state: dict) -> Dict[str, Any]:
     return data
 
 
+def _confidence_tag(trade_count: int) -> str:
+    """Map a backtest's trade count to a confidence bucket label.
+
+    Buckets chosen so a single small-n outlier (e.g. Breakout SOL_4H
+    at PF=91 over n=2) cannot visually dominate a row computed from a
+    healthy sample (e.g. Pair n=42).
+    """
+    if trade_count >= 50:
+        return "high"
+    if trade_count >= 20:
+        return "med"
+    if trade_count >= 1:
+        return "low"
+    return "none"
+
+
+def _project_row(bot: str, key: str, stats: dict, name: str,
+                  symbol: str, interval: str, live_notional: float,
+                  backtest_notional: float, extra: dict | None = None) -> dict:
+    """Build a single projection row from a stats dict.
+
+    Centralizes the scale + annualization math so every bot's row uses
+    the same formula. Per-bot live notional differs (Whale uses its own
+    leverage; Pair counts as 2 legs); pass the actual live $ exposure.
+    """
+    pf       = float(stats.get("pf", 0) or 0)
+    trades   = int(stats.get("trades", 0) or 0)
+    pnl_pct  = float(stats.get("pnl_pct", 0) or 0)
+    dd_pct   = float(stats.get("dd_pct", 0) or 0)
+    # Stats dicts use either "wr" (new bots) or "win_rate" (legacy Whale
+    # dict). Accept either to keep the contract loose.
+    wr       = float(stats.get("wr", 0) or stats.get("win_rate", 0) or 0)
+    years    = float(stats.get("years", BACKTEST_YEARS) or BACKTEST_YEARS)
+    source   = stats.get("source", "")
+
+    if years <= 0:
+        # Defensive: a stats dict with years=0 would divide-by-zero
+        years = max(BACKTEST_YEARS, 0.01)
+    scale = (live_notional / backtest_notional) if backtest_notional > 0 else 1.0
+    total_pnl_backtest  = (pnl_pct / 100.0) * BACKTEST_CAPITAL
+    annual_pnl_backtest = total_pnl_backtest / years
+    annual_pnl_live     = annual_pnl_backtest * scale
+    trades_per_year     = trades / years
+    row = {
+        "bot":                bot,
+        "key":                key,
+        "name":               name,
+        "symbol":             symbol,
+        "interval":           interval,
+        "pf":                 pf,
+        "wr":                 wr,
+        "trades":             trades,
+        "trades_per_year":    trades_per_year,
+        "annual_pct_backtest": pnl_pct / years,
+        "annual_pnl_live":    annual_pnl_live,
+        "dd_pct":             dd_pct,
+        "window_years":       years,
+        "confidence":         _confidence_tag(trades),
+        "source_note":        source,
+    }
+    if extra:
+        row.update(extra)
+    return row
+
+
 def _compute_yearly_projection() -> dict:
-    """Build per-strategy yearly profit projection.
+    """Build per-strategy yearly profit projection across ALL bots.
 
     Scales backtested $ P&L to user's live sizing:
-        scale = (MARGIN_PER_TRADE * DEFAULT_LEVERAGE) / (BACKTEST_CAPITAL * BACKTEST_QTY_PCT/100)
-    Annualizes by dividing the backtest total by BACKTEST_YEARS.
-    """
-    live_notional = MARGIN_PER_TRADE * DEFAULT_LEVERAGE
-    backtest_notional = BACKTEST_CAPITAL * (BACKTEST_QTY_PCT / 100)
-    scale = live_notional / backtest_notional
+        scale = live_notional / (BACKTEST_CAPITAL * BACKTEST_QTY_PCT/100)
+    Annualizes by dividing the backtest total by each row's `years`
+    (NOT the global BACKTEST_YEARS — different bots have different
+    backtest windows; using a single divisor distorts every other row).
 
-    rows = []
+    Per Phase J.6 each row carries a `confidence` tag derived from
+    trade count so the template can mute low-n rows visually.
+    """
+    live_notional_momentum = MARGIN_PER_TRADE * DEFAULT_LEVERAGE
+    backtest_notional = BACKTEST_CAPITAL * (BACKTEST_QTY_PCT / 100)
+
+    rows: list[dict] = []
     total_annual = 0.0
     total_trades_per_year = 0.0
+
+    # ─── Momentum (per-asset) ─────────────────────────────────────────────
     for key, cfg in ASSETS.items():
         stats = cfg.get("backtest_stats")
         if not stats:
             continue
-        pf = stats.get("pf", 0)
-        trades = stats.get("trades", 0)
-        pnl_pct = stats.get("pnl_pct", 0)
-        dd = stats.get("dd_pct", 0)
+        row = _project_row(
+            bot="Momentum", key=key,
+            stats={**stats, "years": stats.get("years", BACKTEST_YEARS)},
+            name=cfg.get("strategy_name", key),
+            symbol=cfg.get("symbol", ""),
+            interval=cfg.get("interval", ""),
+            live_notional=live_notional_momentum,
+            backtest_notional=backtest_notional)
+        rows.append(row)
+        total_annual += row["annual_pnl_live"]
+        total_trades_per_year += row["trades_per_year"]
 
-        total_pnl_backtest = (pnl_pct / 100.0) * BACKTEST_CAPITAL
-        annual_pnl_backtest = total_pnl_backtest / BACKTEST_YEARS
-        annual_pnl_live = annual_pnl_backtest * scale
-        trades_per_year = trades / BACKTEST_YEARS
-
-        rows.append({
-            "key": key,
-            "name": cfg.get("strategy_name", key),
-            "symbol": cfg.get("symbol", ""),
-            "interval": cfg.get("interval", ""),
-            "pf": pf,
-            "trades_per_year": trades_per_year,
-            "annual_pct_backtest": pnl_pct / BACKTEST_YEARS,
-            "annual_pnl_live": annual_pnl_live,
-            "dd_pct": dd,
-        })
-        total_annual += annual_pnl_live
-        total_trades_per_year += trades_per_year
-
-    # Whale bot — uses its own synthetic-proxy backtest (24mo window) and
-    # always trades at $500 notional (matches live config), so scale = 1.
+    # ─── Whale (single aggregate row, separate live sizing) ───────────────
     try:
-        from whale_config import WHALE_BACKTEST_STATS, WHALE_MARGIN_CONSENSUS, WHALE_LEVERAGE
-        whale_stats = WHALE_BACKTEST_STATS
-        whale_years = whale_stats.get("years", 2.0)
-        whale_total_pnl_backtest = (whale_stats["pnl_pct"] / 100.0) * BACKTEST_CAPITAL
-        whale_annual_pnl_backtest = whale_total_pnl_backtest / whale_years
-        # Whale lives at WHALE_MARGIN_CONSENSUS x WHALE_LEVERAGE notional
+        from whale_config import (WHALE_BACKTEST_STATS,
+                                    WHALE_MARGIN_CONSENSUS, WHALE_LEVERAGE)
         whale_live_notional = WHALE_MARGIN_CONSENSUS * WHALE_LEVERAGE
-        whale_scale = whale_live_notional / backtest_notional if backtest_notional > 0 else 1.0
-        whale_annual_pnl_live = whale_annual_pnl_backtest * whale_scale
-        whale_trades_per_year = whale_stats["trades"] / whale_years
-
-        rows.append({
-            "key": "WHALE",
-            "name": whale_stats.get("name", "Whale Tracker"),
-            "symbol": "Multi-asset",
-            "interval": "15m poll",
-            "pf": whale_stats["pf"],
-            "trades_per_year": whale_trades_per_year,
-            "annual_pct_backtest": whale_stats["pnl_pct"] / whale_years,
-            "annual_pnl_live": whale_annual_pnl_live,
-            "dd_pct": whale_stats["dd_pct"],
-            "is_whale": True,
-            "source_note": whale_stats.get("source", ""),
-        })
-        total_annual += whale_annual_pnl_live
-        total_trades_per_year += whale_trades_per_year
+        row = _project_row(
+            bot="Whale", key="WHALE",
+            stats=WHALE_BACKTEST_STATS,
+            name=WHALE_BACKTEST_STATS.get("name", "Whale Tracker"),
+            symbol="Multi-asset", interval="15m poll",
+            live_notional=whale_live_notional,
+            backtest_notional=backtest_notional,
+            extra={"is_whale": True})
+        rows.append(row)
+        total_annual += row["annual_pnl_live"]
+        total_trades_per_year += row["trades_per_year"]
     except ImportError:
-        # whale_config not available — render without the whale row
+        pass
+
+    # ─── Breakout (per-asset) ─────────────────────────────────────────────
+    # NOTE on sizing: tools/backtest_replay.py computes each trade's
+    # pnl_pct as a raw price move (`(exit-entry)/entry*100`), independent
+    # of position size. Treating that sum as "% of BACKTEST_CAPITAL" and
+    # then scaling by `live_notional / backtest_notional` implicitly
+    # assumes the replay sized each trade at `backtest_notional` — i.e.
+    # $1,000 per trade. Breakout's live notional is $250 (half-size during
+    # validation), so the scale 0.25 reflects that. If you later switch
+    # the replay to a different sizing model, update backtest_notional or
+    # add a per-bot override here.
+    try:
+        from breakout_config import (BREAKOUT_BACKTEST_STATS, BREAKOUT_ASSETS,
+                                       BREAKOUT_MARGIN_PER_TRADE, BREAKOUT_LEVERAGE)
+        breakout_notional = BREAKOUT_MARGIN_PER_TRADE * BREAKOUT_LEVERAGE
+        for key, stats in BREAKOUT_BACKTEST_STATS.items():
+            cfg = BREAKOUT_ASSETS.get(key, {})
+            row = _project_row(
+                bot="Breakout", key=key, stats=stats,
+                name=cfg.get("strategy_name", f"Breakout {key}"),
+                symbol=cfg.get("symbol", ""),
+                interval=cfg.get("interval", ""),
+                live_notional=breakout_notional,
+                backtest_notional=backtest_notional)
+            rows.append(row)
+            total_annual += row["annual_pnl_live"]
+            total_trades_per_year += row["trades_per_year"]
+    except ImportError:
+        pass
+
+    # ─── Pair (one row; live notional per leg) ────────────────────────────
+    # tools/backtest_replay.py computes pair pnl_pct as
+    # `(eth_pct - btc_pct)` — the differential of two single-leg percent
+    # moves. So `pnl_pct` is the percent return on ONE leg's notional,
+    # not on gross-2-leg exposure. Matching that, we use single-leg live
+    # notional ($500) as the scale numerator. This understates the
+    # actual capital consumption ($1,000 gross) — operator sees the row
+    # as "PnL per leg-equivalent" rather than "PnL for $1k gross." If
+    # that interpretation needs to change, swap `pair_notional` to
+    # `2 * PAIR_MARGIN_PER_LEG * PAIR_LEVERAGE` here.
+    try:
+        from pair_config import (PAIR_BACKTEST_STATS, PAIR_MARGIN_PER_LEG,
+                                   PAIR_LEVERAGE)
+        pair_notional = PAIR_MARGIN_PER_LEG * PAIR_LEVERAGE
+        for key, stats in PAIR_BACKTEST_STATS.items():
+            row = _project_row(
+                bot="Pair", key=key, stats=stats,
+                name=f"Pair {key}",
+                symbol="ETH/BTC", interval="1d",
+                live_notional=pair_notional,
+                backtest_notional=backtest_notional)
+            rows.append(row)
+            total_annual += row["annual_pnl_live"]
+            total_trades_per_year += row["trades_per_year"]
+    except ImportError:
+        pass
+
+    # ─── Funding (placeholder row — no stats yet) ─────────────────────────
+    try:
+        from funding_config import FUNDING_BACKTEST_STATS
+        if not FUNDING_BACKTEST_STATS:
+            rows.append({
+                "bot": "Funding", "key": "FUNDING",
+                "name": "Funding Fade", "symbol": "Multi-asset",
+                "interval": "8h",
+                "pf": 0, "wr": 0, "trades": 0, "trades_per_year": 0,
+                "annual_pct_backtest": 0, "annual_pnl_live": 0,
+                "dd_pct": 0, "window_years": 0,
+                "confidence": "none",
+                "source_note": "awaiting first qualifying signal",
+                "is_awaiting": True,
+            })
+        else:
+            for key, stats in FUNDING_BACKTEST_STATS.items():
+                row = _project_row(
+                    bot="Funding", key=key, stats=stats,
+                    name=f"Funding {key}", symbol="Multi-asset",
+                    interval="8h",
+                    live_notional=live_notional_momentum,  # same sizing
+                    backtest_notional=backtest_notional)
+                rows.append(row)
+                total_annual += row["annual_pnl_live"]
+                total_trades_per_year += row["trades_per_year"]
+    except ImportError:
         pass
 
     rows.sort(key=lambda r: r["annual_pnl_live"], reverse=True)
     return {
-        "rows": rows,
-        "total_annual": total_annual,
+        "rows":                  rows,
+        "total_annual":          total_annual,
         "total_trades_per_year": total_trades_per_year,
-        "live_notional": live_notional,
-        "scale": scale,
+        "live_notional":         live_notional_momentum,
+        "scale":                 live_notional_momentum / backtest_notional
+                                  if backtest_notional > 0 else 1.0,
     }
 
 
@@ -1567,14 +1698,43 @@ def _v2_projection() -> dict:
     annual_pct = (total_annual / starting_capital * 100) if starting_capital > 0 else 0
 
     def _fmt(row):
+        is_awaiting = bool(row.get("is_awaiting"))
+        confidence = row.get("confidence", "none")
+        confidence_label = {
+            "high": "n ≥ 50",
+            "med":  "n ≥ 20",
+            "low":  "small n",
+            "none": "no data",
+        }.get(confidence, "—")
+        # Low-n + awaiting rows get a row CSS class so the template can
+        # mute them visually (italic + lower opacity).
+        row_class = ""
+        if is_awaiting:
+            row_class = "is-awaiting"
+        elif confidence in ("low", "none"):
+            row_class = "is-low-confidence"
+        years = row.get("window_years", 0) or 0
         return {
             **row,
-            "annual_pnl_live_display": _v2_pnl_display(row.get("annual_pnl_live", 0.0)),
-            "pf_display":              f"{row.get('pf', 0):.2f}",
-            "annual_pct_display":      f"{row.get('annual_pct_backtest', 0):+.1f}%",
-            "trades_per_year_display": f"{row.get('trades_per_year', 0):.1f}",
-            "dd_display":              f"{row.get('dd_pct', 0):.1f}%",
+            "annual_pnl_live_display": (
+                "—" if is_awaiting
+                else _v2_pnl_display(row.get("annual_pnl_live", 0.0))),
+            "pf_display":              ("—" if is_awaiting
+                                          else f"{row.get('pf', 0):.2f}"),
+            "annual_pct_display":      ("—" if is_awaiting
+                                          else f"{row.get('annual_pct_backtest', 0):+.1f}%"),
+            "trades_per_year_display": ("—" if is_awaiting
+                                          else f"{row.get('trades_per_year', 0):.1f}"),
+            "dd_display":              ("—" if is_awaiting
+                                          else f"{row.get('dd_pct', 0):.1f}%"),
+            "window_years_display":    ("—" if years <= 0
+                                          else (f"{years:.2f}yr" if years < 1
+                                                 else f"{years:.1f}yr")),
+            "confidence":              confidence,
+            "confidence_label":        confidence_label,
+            "row_class":               row_class,
             "is_whale":                row.get("is_whale", False),
+            "is_awaiting":             is_awaiting,
         }
 
     return {

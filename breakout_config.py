@@ -109,3 +109,20 @@ BREAKOUT_ASSETS = {
         "use_btc_filter":       False,
     },
 }
+
+
+# ─── Phase J.6 — backtest stats for projection table ──────────────────────
+# Source: tools/backtest_replay.py 1000-bar 4h replay (Jun 2026). Each
+# row's `trades` count is genuinely small; the projection table renders
+# these as "low confidence" so the operator doesn't over-weight them.
+BREAKOUT_BACKTEST_STATS = {
+    "BTC_4H": {"pf": 2.81, "trades":  4, "pnl_pct": 11.5, "dd_pct": 6.0,
+                "wr": 50.0, "years": 0.46,
+                "source": "1000-bar 4h replay (small n)"},
+    "ETH_4H": {"pf": 3.17, "trades":  3, "pnl_pct": 21.5, "dd_pct": 9.9,
+                "wr": 66.7, "years": 0.46,
+                "source": "1000-bar 4h replay (small n)"},
+    "SOL_4H": {"pf": 91.83, "trades": 2, "pnl_pct": 23.5, "dd_pct": 0.3,
+                "wr": 50.0, "years": 0.46,
+                "source": "1000-bar 4h replay (n=2 — directional only)"},
+}

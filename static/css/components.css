@@ -296,6 +296,54 @@
 }
 .asset-chart-wrap { width: 100%; }
 
+/* J.6 — Projection table: bot tag chips + confidence pills + muting */
+
+.projection-row.is-low-confidence td,
+.projection-row.is-low-confidence td.num {
+  color: var(--ink-3);
+  font-style: italic;
+}
+.projection-row.is-awaiting td,
+.projection-row.is-awaiting td.num {
+  color: var(--ink-3);
+  font-style: italic;
+  opacity: 0.7;
+}
+
+.bot-tag {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono, ui-monospace);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+  background: transparent;
+}
+.bot-tag--momentum { color: var(--b-momentum, #5fa8e5); }
+.bot-tag--whale    { color: var(--b-whale,    #b076e3); }
+.bot-tag--funding  { color: var(--b-funding,  #d4ad58); }
+.bot-tag--breakout { color: var(--b-breakout, #57cb95); }
+.bot-tag--pair     { color: var(--b-pair,     #e85a4c); }
+.bot-tag--reversal { color: var(--ink-2); }
+
+.confidence-pill {
+  display: inline-block;
+  padding: 0.08rem 0.4rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono, ui-monospace);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+  background: transparent;
+}
+.confidence-pill--high { color: var(--up, #57cb95); }
+.confidence-pill--med  { color: var(--info, #5fa8e5); }
+.confidence-pill--low  { color: var(--warn, #d4ad58); }
+.confidence-pill--none { color: var(--ink-3); }
+
 /* ── Chart panels (Phase D.7e: equity curve + daily PnL) ───────────────── */
 
 /* Side-by-side chart row (D.7i). Collapses to a single column under 1024px. */

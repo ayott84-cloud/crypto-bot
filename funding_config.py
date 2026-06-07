@@ -131,3 +131,12 @@ FUNDING_STRATEGY_TAG = "Funding Fade"  # journal prefix, e.g. "Funding Fade BTC 
 
 FUNDING_SIGNAL_LOG = _BOT_DIR / "funding_signals.jsonl"  # append per-cycle
 FUNDING_HEARTBEAT = _BOT_DIR / ".funding_heartbeat"
+
+
+# ─── Phase J.6 — backtest stats for projection table ──────────────────────
+# Funding bot has fired zero signals live (Jun 2026) and the historical
+# funding-rate dataset needed for a replay isn't yet collected. The
+# projection table renders the funding row as "awaiting data" so the
+# operator sees the bot exists but knows it has no statistical basis
+# yet.
+FUNDING_BACKTEST_STATS: dict[str, dict] = {}

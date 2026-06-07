@@ -32,12 +32,14 @@
 </section>
 
 <div class="trades-table-wrap">
-  <table class="trades-table" aria-label="Per-strategy projection">
+  <table class="trades-table projection-table" aria-label="Per-strategy projection">
     <caption class="sr-only">
       Per-strategy yearly projection scaled from backtest results to live sizing.
+      Each row's confidence tag reflects sample size; small-n rows are visually muted.
     </caption>
     <thead>
       <tr>
+        <th scope="col">Bot</th>
         <th scope="col">Strategy</th>
         <th scope="col">Symbol</th>
         <th scope="col">TF</th>
@@ -45,12 +47,17 @@
         <th scope="col" data-sort-type="num">Trades/yr</th>
         <th scope="col" data-sort-type="num">Annual %</th>
         <th scope="col" data-sort-type="num">Max DD</th>
+        <th scope="col" data-sort-type="num">Window</th>
+        <th scope="col">Confidence</th>
         <th scope="col" data-sort-type="num">Annual PnL</th>
       </tr>
     </thead>
     <tbody>
       {% for r in projection.rows %}
-      <tr>
+      <tr class="projection-row {{ r.row_class }}">
+        <td>
+          <span class="bot-tag bot-tag--{{ r.bot|lower }}">{{ r.bot }}</span>
+        </td>
         <td class="trades-table__strategy">{{ r.name }}</td>
         <td class="trades-table__symbol">{{ r.symbol }}</td>
         <td class="trades-table__date">{{ r.interval }}</td>
@@ -58,8 +65,16 @@
         <td class="num">{{ r.trades_per_year_display }}</td>
         <td class="num">{{ r.annual_pct_display }}</td>
         <td class="num">{{ r.dd_display }}</td>
+        <td class="num">{{ r.window_years_display }}</td>
+        <td>
+          <span class="confidence-pill confidence-pill--{{ r.confidence }}"
+                title="{{ r.source_note }}">
+            {{ r.confidence_label }}
+          </span>
+        </td>
         <td class="num
-                    {% if r.annual_pnl_live > 0 %}is-up
+                    {% if r.is_awaiting %}
+                    {% elif r.annual_pnl_live > 0 %}is-up
                     {% elif r.annual_pnl_live < 0 %}is-down{% endif %}">
           {{ r.annual_pnl_live_display }}
         </td>
@@ -67,7 +82,7 @@
       {% endfor %}
       {% if not projection.rows %}
       <tr>
-        <td colspan="8" class="trades-table__strategy" style="text-align:center; padding: var(--space-5);">
+        <td colspan="11" class="trades-table__strategy" style="text-align:center; padding: var(--space-5);">
           <em>No strategies with backtest stats configured.</em>
         </td>
       </tr>
@@ -77,9 +92,13 @@
 </div>
 
 <p class="tab-note">
-  Projection scales backtest $ PnL to your live sizing
-  ({{ projection.live_notional_display }} notional per trade) and divides
-  by the backtest window. Treat as <em>rough</em> — past performance
-  doesn't predict future regime, and the funding bot has zero backtest
-  history so it's not reflected here.
+  Projection scales each row's backtest $ PnL to its live sizing and
+  divides by that row's backtest window <em>(per-bot — not a single
+  global window)</em>. Confidence tag reflects trade count:
+  <span class="confidence-pill confidence-pill--high">n ≥ 50</span> high,
+  <span class="confidence-pill confidence-pill--med">n ≥ 20</span> medium,
+  <span class="confidence-pill confidence-pill--low">small n</span> directional only,
+  <span class="confidence-pill confidence-pill--none">no data</span> awaiting first signal.
+  Low-confidence rows are muted to avoid over-weighting outliers (e.g. a
+  PF=91 row with n=2). Past performance doesn't predict future regime.
 </p>

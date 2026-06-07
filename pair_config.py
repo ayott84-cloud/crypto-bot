@@ -57,3 +57,13 @@ PAIR_CONFIG = {
     "max_hold_bars":  5,    # 5 days max hold
     "atr_stop_mult":  2.0,  # |z| past entry_z × this → adverse stop
 }
+
+
+# ─── Phase J.6 — backtest stats for projection table ──────────────────────
+# Source: tools/backtest_replay.py 1000-bar 1d replay (Jun 2026). n=42
+# trades over 2.63yr — highest-confidence row in the projection.
+PAIR_BACKTEST_STATS = {
+    "ETHBTC": {"pf": 4.96, "trades": 42, "pnl_pct": 227.2, "dd_pct": 20.7,
+                "wr": 76.2, "years": 2.63,
+                "source": "1000-bar 1d replay"},
+}

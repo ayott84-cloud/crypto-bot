@@ -109,5 +109,7 @@ def test_projection_tab_renders_per_strategy_table_or_empty_message():
 
 def test_projection_tab_includes_disclaimer_note():
     html = render("base.html.j2", _ctx())
-    assert "Treat as" in html
-    assert "doesn" in html.lower() or "doesn't" in html  # "past performance doesn't predict"
+    # J.6 rewrote the disclaimer copy. Key claim still present:
+    # confidence-based interpretation + past-performance caveat.
+    assert "Confidence" in html or "confidence" in html
+    assert "Past performance" in html or "past performance" in html.lower()
