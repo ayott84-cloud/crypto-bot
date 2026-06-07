@@ -66,3 +66,6 @@
 
 {% set bot_trades = bot_panels.momentum.trades %}
 {% include "components/bot_trades_panel.html.j2" %}
+
+{% set activity_rows = activity_logs.momentum if activity_logs is defined else [] %}
+{% include "components/bot_activity_log.html.j2" %}

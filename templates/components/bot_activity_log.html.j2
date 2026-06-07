@@ -1,0 +1,35 @@
+{# J.10 — per-bot activity log (journalctl tail rendered at build time).
+
+    Consumers do:
+      {% set activity_rows = activity_logs.<bot_class> %}
+      {% include "components/bot_activity_log.html.j2" %}
+
+    Hidden when no rows (no journalctl available on Windows dev box,
+    or unit not yet installed). Filtered to ENTRY / EXIT / SIGNAL /
+    ERROR / WARN / kill_switch / pause-resume events — heartbeat noise
+    is dropped at parse time.
+#}
+<section class="bot-activity" aria-label="Recent bot activity">
+  <header class="bot-activity__head">
+    <h2 class="bot-activity__heading">Recent activity</h2>
+    <span class="bot-activity__hint">
+      newest first · journalctl tail · refresh ≤ 5m
+    </span>
+  </header>
+
+  {% if activity_rows and activity_rows|length > 0 %}
+  <ol class="bot-activity__list" role="log" aria-live="off">
+    {% for r in activity_rows %}
+    <li class="bot-activity__row bot-activity__row--{{ r.level }}">
+      <time class="bot-activity__ts" datetime="{{ r.ts_iso }}">{{ r.ts_display }}</time>
+      <span class="bot-activity__msg">{{ r.msg }}</span>
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <p class="bot-activity__empty">
+    No recent entries. (Journal tail unavailable, or no entries/exits/
+    blocks logged since launch.)
+  </p>
+  {% endif %}
+</section>

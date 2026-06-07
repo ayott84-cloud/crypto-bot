@@ -344,6 +344,71 @@
 .confidence-pill--low  { color: var(--warn, #d4ad58); }
 .confidence-pill--none { color: var(--ink-3); }
 
+/* J.10 — Per-bot activity log */
+.bot-activity {
+  margin: var(--space-4) 0;
+  background: var(--surface-1);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+.bot-activity__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+  flex-wrap: wrap;
+}
+.bot-activity__heading {
+  font-family: var(--font-display, ui-monospace);
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-2);
+  margin: 0;
+}
+.bot-activity__hint {
+  font-family: var(--font-mono, ui-monospace);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.bot-activity__list {
+  list-style: none;
+  margin: 0; padding: 0;
+  font-family: var(--font-mono, ui-monospace);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  max-height: 18rem;
+  overflow-y: auto;
+}
+.bot-activity__row {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr;
+  gap: var(--space-2);
+  padding: 0.25rem 0;
+  border-bottom: 1px dashed var(--rule-soft);
+}
+.bot-activity__row:last-child { border-bottom: 0; }
+.bot-activity__ts {
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.bot-activity__msg {
+  color: var(--ink-1);
+  word-break: break-word;
+}
+.bot-activity__row--signal .bot-activity__msg { color: var(--info, #5fa8e5); }
+.bot-activity__row--error  .bot-activity__msg { color: var(--down, #e85a4c); }
+.bot-activity__empty {
+  font-family: var(--font-mono, ui-monospace);
+  font-size: 0.78rem;
+  color: var(--ink-3);
+  margin: var(--space-2) 0 0;
+}
+
 /* ── Chart panels (Phase D.7e: equity curve + daily PnL) ───────────────── */
 
 /* Side-by-side chart row (D.7i). Collapses to a single column under 1024px. */

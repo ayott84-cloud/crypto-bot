@@ -872,6 +872,8 @@ def _build_v2_context(data: Dict[str, Any], state: dict | None = None,
         "reversal_meta": _v2_reversal_meta(trades),
         # J.5a: per-bot chart panels (asset dropdown + chart data per asset)
         "chart_panels_root": _v2_build_all_chart_panels(executor, trades),
+        # J.10: per-bot recent activity log from journalctl
+        "activity_logs": _v2_build_activity_logs(),
         "projection":   _v2_projection(),
         "equity_curve_svg": _v2_equity_curve_svg(
             _v2_equity_series(trades, days=90)),
@@ -1058,6 +1060,9 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
         "reversal_meta": _v2_reversal_meta(trades),
         # J.5a: chart panels (empty when no executor available in test context)
         "chart_panels_root": _v2_build_all_chart_panels(None, trades),
+        # J.10: activity logs — test context returns empty lists per bot
+        "activity_logs":  {b: [] for b in ("momentum", "whale", "funding",
+                                              "breakout", "pair", "reversal")},
         "projection":    _v2_projection(),
         "equity_curve_svg": _v2_equity_curve_svg(
             _v2_equity_series(trades, days=90)),
@@ -2273,6 +2278,117 @@ def _v2_asset_chart_data(executor, bot_class: str, asset_name: str,
     markers = _v2_trade_markers_for_asset(
         trades or [], bot_class, symbol, window)
     return {"candles": candles, "overlays": overlays, "markers": markers}
+
+
+# ─── J.10 — per-bot activity log (journalctl read at build time) ──────────
+
+_ACTIVITY_LOG_TTL_S = 60.0  # bump for very chatty bots; trade-off w/ freshness
+_ACTIVITY_LOG_TAIL_LINES = 400
+_ACTIVITY_LOG_KEEP_ROWS = 40
+_activity_log_cache: dict[str, tuple[float, list[dict]]] = {}
+
+# Substrings that mark an "interesting" log line — what an operator
+# actually wants to see at a glance. Heartbeat noise + DEBUG level
+# diagnostics are filtered out.
+_ACTIVITY_INCLUDE = (
+    "ENTRY",  "EXIT",  "OPENED", "CLOSED", "SIGNAL", "FILL",
+    "STOP",   "TAKE",  "ROTATE", "PAUSED", "RESUME",
+    "ERROR",  "WARN",  "BLOCKED", "kill_switch",
+)
+_ACTIVITY_EXCLUDE = (
+    "heartbeat", "DEBUG", "GET /", "POST /",
+)
+
+
+def _activity_log_cache_clear() -> None:
+    """Test hook + manual recompute trigger."""
+    _activity_log_cache.clear()
+
+
+def _parse_journal_iso_line(line: str) -> dict | None:
+    """Parse one `journalctl -o short-iso` line into {ts, level, msg}.
+
+    Format: "2026-06-07T16:10:23-0500 hostname crypto-momentum[1234]: actual message"
+    Returns None when the line doesn't match (header / blank / truncated).
+    """
+    import re
+    m = re.match(
+        r"^(\S+)\s+\S+\s+crypto-[a-z]+\[\d+\]:\s*(.*)$", line)
+    if not m:
+        return None
+    ts_iso, msg = m.group(1), m.group(2).rstrip()
+    if not msg:
+        return None
+    msg_lower = msg.lower()
+    if any(tok.lower() in msg_lower for tok in _ACTIVITY_EXCLUDE):
+        return None
+    if not any(tok.lower() in msg_lower for tok in _ACTIVITY_INCLUDE):
+        return None
+    level = "error" if ("ERROR" in msg or "WARN" in msg) else (
+            "signal" if "SIGNAL" in msg or "ENTRY" in msg or "EXIT" in msg
+            else "info")
+    return {"ts": ts_iso, "level": level, "msg": msg}
+
+
+def _v2_bot_activity_log(bot_class: str) -> list[dict]:
+    """Read the recent journalctl tail for crypto-{bot_class}.service.
+
+    Returns a list of {ts_display, level, msg} dicts, newest first, capped
+    at _ACTIVITY_LOG_KEEP_ROWS. Returns [] when journalctl is unavailable
+    (Windows dev box, missing systemd, unit not installed) or when no
+    interesting lines were found in the tail.
+
+    TTL-cached for 60s so a re-render burst doesn't fork journalctl N
+    times per build.
+    """
+    import time as _time
+    now = _time.time()
+    hit = _activity_log_cache.get(bot_class)
+    if hit is not None and (now - hit[0]) < _ACTIVITY_LOG_TTL_S:
+        return hit[1]
+
+    unit = f"crypto-{bot_class}"
+    try:
+        result = subprocess.run(
+            ["journalctl", "-u", unit,
+              "-n", str(_ACTIVITY_LOG_TAIL_LINES),
+              "--no-pager", "-o", "short-iso"],
+            capture_output=True, text=True, timeout=3,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError,
+              OSError, subprocess.TimeoutExpired):
+        _activity_log_cache[bot_class] = (now, [])
+        return []
+    if result.returncode != 0:
+        _activity_log_cache[bot_class] = (now, [])
+        return []
+
+    rows: list[dict] = []
+    for line in result.stdout.splitlines():
+        parsed = _parse_journal_iso_line(line)
+        if parsed is None:
+            continue
+        # Trim timestamp to "HH:MM" for tight tables; date prefix elided
+        # because operators care about recency, not absolute dates.
+        ts_display = parsed["ts"][11:16] if len(parsed["ts"]) >= 16 else parsed["ts"]
+        rows.append({
+            "ts_display": ts_display,
+            "ts_iso":     parsed["ts"],
+            "level":      parsed["level"],
+            "msg":        parsed["msg"],
+        })
+    rows.reverse()  # newest-first
+    rows = rows[:_ACTIVITY_LOG_KEEP_ROWS]
+    _activity_log_cache[bot_class] = (now, rows)
+    return rows
+
+
+def _v2_build_activity_logs(executor=None) -> dict[str, list[dict]]:
+    """Bundle activity logs for every bot tab. Per-bot failure is swallowed
+    (returns [] for that bot) — one bot's missing service file must not
+    block the whole dashboard render."""
+    bots = ("momentum", "whale", "funding", "breakout", "pair", "reversal")
+    return {b: _v2_bot_activity_log(b) for b in bots}
 
 
 def _sanitize_chart_id(raw: str) -> str:

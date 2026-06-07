@@ -60,3 +60,6 @@
 
 {% set bot_trades = bot_panels.whale.trades %}
 {% include "components/bot_trades_panel.html.j2" %}
+
+{% set activity_rows = activity_logs.whale if activity_logs is defined else [] %}
+{% include "components/bot_activity_log.html.j2" %}
