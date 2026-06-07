@@ -194,6 +194,69 @@ def test_per_regime_expectancy_reports_win_rate_per_bucket():
     assert result["strong_up"]["win_rate"] == pytest.approx(66.67, abs=0.1)
 
 
+# ─── Phase J.7: consecutive_streak ─────────────────────────────────────────
+
+def test_streak_empty_returns_zero():
+    assert metrics.consecutive_streak([]) == (0, "")
+
+
+def test_streak_all_wins():
+    assert metrics.consecutive_streak([5, 10, 3, 8]) == (4, "WIN")
+
+
+def test_streak_all_losses():
+    assert metrics.consecutive_streak([-5, -3, -10]) == (3, "LOSS")
+
+
+def test_streak_counts_only_most_recent_run():
+    # 2 wins → 3 losses (most recent) → streak is 3 LOSSes
+    pnls = [5, 10, -5, -3, -2]
+    assert metrics.consecutive_streak(pnls) == (3, "LOSS")
+
+
+def test_streak_treats_flat_as_neither():
+    # Flat (0) breaks the streak and doesn't extend either side
+    pnls = [5, 10, 0, -3, -2]
+    # Most recent run after the flat: 2 LOSSes
+    assert metrics.consecutive_streak(pnls) == (2, "LOSS")
+
+
+def test_streak_handles_single_trade():
+    assert metrics.consecutive_streak([7]) == (1, "WIN")
+    assert metrics.consecutive_streak([-7]) == (1, "LOSS")
+    assert metrics.consecutive_streak([0]) == (0, "")
+
+
+# ─── Phase J.7: recovery_factor ────────────────────────────────────────────
+
+def test_recovery_factor_empty_returns_zero():
+    assert metrics.recovery_factor([], initial_equity=5000) == 0.0
+
+
+def test_recovery_factor_no_drawdown_returns_sentinel():
+    """Monotonic-up series has no DD → ∞; cap at 999."""
+    rf = metrics.recovery_factor([5, 5, 5], initial_equity=5000)
+    assert rf == 999.0
+
+
+def test_recovery_factor_simple_case():
+    # Total profit = 30 (sum), max DD = 10 ($ from peak +20 to trough +10)
+    # Wait: pnls = [+20, -10, +20] → equity goes 5000 → 5020 → 5010 → 5030
+    # peak = 5030, trough = 5010 → DD = $20 (peak after final to 5030 from 5020)
+    # actually equity curve: 5000, 5020, 5010, 5030 → running peak after each: 5000, 5020, 5020, 5030
+    # max DD = 20 - 10 = $10 (from peak 5020 to 5010)
+    # total profit = 30
+    # RF = 30 / 10 = 3.0
+    rf = metrics.recovery_factor([+20, -10, +20], initial_equity=5000)
+    assert rf == pytest.approx(3.0, rel=0.01)
+
+
+def test_recovery_factor_negative_for_losing_strategy():
+    # Total profit = -10 (sum), drawdown exists
+    rf = metrics.recovery_factor([-10, +5, -5], initial_equity=5000)
+    assert rf < 0
+
+
 # ─── Dashboard V2 render integration ───────────────────────────────────────
 
 def _trade(bot, days_ago, net_pnl, regime=None):

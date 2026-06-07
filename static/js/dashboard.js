@@ -32,7 +32,10 @@
     });
   }
 
-  const tabs   = Array.from(document.querySelectorAll('.tab-nav [role="tab"]'));
+  // J.1: tab buttons now live in the sidebar (was .tab-nav).
+  // Selector covers both so a partial deploy doesn't break navigation.
+  const tabs   = Array.from(document.querySelectorAll(
+    '.sidebar [role="tab"], .tab-nav [role="tab"]'));
   const panels = Array.from(document.querySelectorAll('[role="tabpanel"]'));
 
   function activate(tabId) {
@@ -52,16 +55,21 @@
     tab.addEventListener('click', () => activate(tab.dataset.tab));
   });
 
-  // Keyboard arrow nav (tablist convention)
-  document.querySelector('.tab-nav')?.addEventListener('keydown', (e) => {
+  // Keyboard arrow nav (tablist convention).
+  // J.1: sidebar is vertical → up/down. Left/right still works for the
+  // horizontal sidebar mode on narrow viewports.
+  const navRoot = document.querySelector('.sidebar') || document.querySelector('.tab-nav');
+  navRoot?.addEventListener('keydown', (e) => {
     const idx = tabs.indexOf(document.activeElement);
     if (idx === -1) return;
-    if (e.key === 'ArrowRight') {
+    const advance = (e.key === 'ArrowDown' || e.key === 'ArrowRight');
+    const retreat = (e.key === 'ArrowUp'   || e.key === 'ArrowLeft');
+    if (advance) {
       e.preventDefault();
       const next = tabs[(idx + 1) % tabs.length];
       next.focus();
       activate(next.dataset.tab);
-    } else if (e.key === 'ArrowLeft') {
+    } else if (retreat) {
       e.preventDefault();
       const prev = tabs[(idx - 1 + tabs.length) % tabs.length];
       prev.focus();

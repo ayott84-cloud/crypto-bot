@@ -66,18 +66,41 @@ def test_active_tab_has_aria_current_page():
     assert 'aria-selected="true"  aria-current="page"' in html
 
 
+def test_sidebar_nav_has_vertical_orientation():
+    """J.1: sidebar tablist must declare aria-orientation=vertical."""
+    html = render("base.html.j2", dashboard._v2_test_context([]))
+    assert 'aria-orientation="vertical"' in html
+    assert 'class="sidebar"' in html
+
+
+def test_sidebar_groups_system_bots_and_analysis():
+    """J.1: sidebar items are organized into three labeled groups."""
+    html = render("base.html.j2", dashboard._v2_test_context([]))
+    for label in ("SYSTEM", "BOTS", "ANALYSIS"):
+        assert label in html, f"Missing sidebar group label: {label}"
+
+
+def test_momentum_tab_now_exists_and_includes_momentum_meta_rows():
+    """J.1: Momentum tab template renders without error and shows the new meta."""
+    html = render("base.html.j2", dashboard._v2_test_context([]))
+    assert 'data-tab="momentum"' in html
+    assert 'id="tab-momentum"' in html
+    # Heading is present
+    assert "Momentum</h1>" in html or ">Momentum<" in html
+
+
 def test_inactive_tabs_have_aria_selected_false():
     html = render("base.html.j2", dashboard._v2_test_context([]))
-    # 7 inactive tabs after Overview (Phase 2C added breakout/pair/reversal)
-    assert html.count('aria-selected="false"') == 7
+    # 8 inactive tabs after Overview (Phase J.1 added Momentum tab → 9 total)
+    assert html.count('aria-selected="false"') == 8
 
 
 def test_all_panels_have_tabpanel_role_and_tabindex():
     html = render("base.html.j2", dashboard._v2_test_context([]))
-    # 8 tab panels — count the actual <section> opening tag, not the
+    # 9 tab panels — count the actual <section> opening tag, not the
     # substring (which also appears in inlined JS selectors)
-    assert html.count('<section role="tabpanel"') == 8
-    assert html.count('tabindex="0"') >= 8
+    assert html.count('<section role="tabpanel"') == 9
+    assert html.count('tabindex="0"') >= 9
 
 
 # ─── Theme toggle ──────────────────────────────────────────────────────────

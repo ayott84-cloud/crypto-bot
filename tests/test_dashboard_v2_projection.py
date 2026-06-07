@@ -70,6 +70,7 @@ def _ctx():
                       "closed_count": 0, "open_count": 0,
                       "win_rate_display": "—"},
         "trades":       [],
+        "momentum_meta": dashboard._v2_momentum_meta(trades if "trades" in dir() else []),
         "whale_meta":   dashboard._v2_whale_meta([]),
         "funding_meta": dashboard._v2_funding_meta([]),
         "breakout_meta": dashboard._v2_breakout_meta([]),

@@ -54,6 +54,7 @@ def _ctx(net_pnl: float = -147.47):
             "win_rate_display": "45.0%",
         },
         "trades":       [],
+        "momentum_meta": dashboard._v2_momentum_meta(trades if "trades" in dir() else []),
         "whale_meta":   dashboard._v2_whale_meta([]),
         "funding_meta": dashboard._v2_funding_meta([]),
         "breakout_meta": dashboard._v2_breakout_meta([]),

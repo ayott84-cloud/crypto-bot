@@ -132,6 +132,7 @@ def _ctx(trades=None, **overrides):
                       "closed_count": 0, "open_count": 0,
                       "win_rate_display": "—"},
         "trades": trades,
+        "momentum_meta": dashboard._v2_momentum_meta(trades if "trades" in dir() else []),
         "whale_meta":   dashboard._v2_whale_meta(trades),
         "funding_meta": dashboard._v2_funding_meta(trades),
         "breakout_meta": dashboard._v2_breakout_meta(trades),

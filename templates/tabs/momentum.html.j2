@@ -1,0 +1,56 @@
+<h1 class="tab-heading">Momentum</h1>
+
+<div class="banner banner--info" role="status">
+  <span class="banner__label">{{ momentum_meta.state_label if momentum_meta else "LIVE" }}</span>
+  <span class="banner__msg">
+    Multi-asset trend-following — EMA crossover + RSI cross + ATR regime + MACD.
+    Full per-asset detail (open positions, closed trades, chart with EMA overlays + entry/exit markers) lands in Phase J.3.
+  </span>
+</div>
+
+{% if momentum_meta %}
+<section class="kv-grid" aria-label="Momentum performance">
+  <div class="kv-cell">
+    <span class="kv-cell__k">CLOSED TRADES</span>
+    <span class="kv-cell__v">{{ momentum_meta.closed_count }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">WIN RATE</span>
+    <span class="kv-cell__v">{{ momentum_meta.win_rate_display }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">NET PnL</span>
+    <span class="kv-cell__v
+                {% if momentum_meta.net_pnl_display.startswith('+') %}is-up
+                {% elif momentum_meta.net_pnl_display.startswith('−') %}is-down{% endif %}">
+      {{ momentum_meta.net_pnl_display }}
+    </span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">ASSETS CONFIGURED</span>
+    <span class="kv-cell__v">{{ momentum_meta.assets|length }}</span>
+  </div>
+</section>
+
+<section class="config-grid" aria-label="Configured assets">
+  <h2 class="config-grid__heading">Configured strategies ({{ momentum_meta.assets|length }})</h2>
+  <table class="regime-table">
+    <thead>
+      <tr>
+        <th scope="col">Strategy</th>
+        <th scope="col">Symbol</th>
+        <th scope="col">Timeframe</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in momentum_meta.assets %}
+      <tr>
+        <td>{{ a.name }}</td>
+        <td>{{ a.symbol }}</td>
+        <td>{{ a.interval }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}

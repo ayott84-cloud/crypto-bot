@@ -96,6 +96,16 @@
       <span class="risk-cell__value">{{ risk_metrics.time_underwater_display }}</span>
       <span class="risk-cell__note">since last peak</span>
     </div>
+    <div class="risk-cell">
+      <span class="risk-cell__label">Streak</span>
+      <span class="risk-cell__value {{ risk_metrics.streak_class }}">{{ risk_metrics.streak_display }}</span>
+      <span class="risk-cell__note">most recent run</span>
+    </div>
+    <div class="risk-cell">
+      <span class="risk-cell__label">Recovery factor</span>
+      <span class="risk-cell__value">{{ risk_metrics.recovery_display }}</span>
+      <span class="risk-cell__note">profit / max DD $</span>
+    </div>
   </div>
 </section>
 

@@ -171,6 +171,60 @@ def annualized_sharpe(pnls: Sequence[float], days_observed: int) -> float:
 
 # ─── Per-regime expectancy ─────────────────────────────────────────────────
 
+def consecutive_streak(pnls: Sequence[float]) -> tuple:
+    """Return (count, type) for the streak ending at the most recent trade.
+
+    type ∈ {"WIN", "LOSS", ""}.  Flat trades (pnl == 0) break a streak —
+    they neither extend nor count toward either direction.
+
+    Empty input or trailing flat returns (0, "").
+    """
+    if not pnls:
+        return (0, "")
+    last = pnls[-1]
+    if last > 0:
+        streak_type = "WIN"
+    elif last < 0:
+        streak_type = "LOSS"
+    else:
+        return (0, "")
+    count = 0
+    for p in reversed(pnls):
+        if streak_type == "WIN" and p > 0:
+            count += 1
+        elif streak_type == "LOSS" and p < 0:
+            count += 1
+        else:
+            break
+    return (count, streak_type)
+
+
+def recovery_factor(pnls: Sequence[float], initial_equity: float) -> float:
+    """Total profit ($) / Max drawdown ($).
+
+    Common alternative to Calmar; more intuitive for operators because
+    both numerator and denominator are dollar amounts (not annualized
+    return / pct drawdown). A score of 2.0+ is healthy.
+
+    Returns 0 on empty input. Returns 999 sentinel when there's no
+    drawdown (monotonic-up series). Negative when total PnL is negative.
+    """
+    if not pnls:
+        return 0.0
+    equity = _equity_from_pnls(pnls, initial_equity)
+    total_pnl = sum(pnls)
+    # Compute max DD in dollar terms (not %)
+    peak = equity[0]
+    max_dd_dollars = 0.0
+    for v in equity:
+        peak = max(peak, v)
+        dd = peak - v
+        max_dd_dollars = max(max_dd_dollars, dd)
+    if max_dd_dollars == 0:
+        return 999.0 if total_pnl > 0 else 0.0
+    return round(total_pnl / max_dd_dollars, 2)
+
+
 def per_regime_expectancy(trades: List[dict]) -> Dict[str, dict]:
     """Bucket closed trades by regime_at_entry tag and report per-bucket stats.
 

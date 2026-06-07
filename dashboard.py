@@ -134,6 +134,9 @@ def _compute_metrics(trades: List[dict]) -> dict:
     ttr_bars = _m.time_to_recovery(equity_curve)
     regime_exp = _m.per_regime_expectancy(closed)
     max_dd   = _m.max_drawdown(equity_curve)
+    # J.7: new KPIs
+    streak_count, streak_type = _m.consecutive_streak(pnls)
+    recovery   = _m.recovery_factor(pnls, initial_equity=INITIAL_CAPITAL)
 
     expectancy = statistics.mean(pnls) if pnls else 0
 
@@ -156,6 +159,9 @@ def _compute_metrics(trades: List[dict]) -> dict:
         "all_trades_count":      len(trades),
         "regime_expectancy":     regime_exp,
         "days_observed":         days_observed,
+        "streak_count":          streak_count,
+        "streak_type":           streak_type,
+        "recovery_factor":       recovery,
     }
 
 
@@ -717,6 +723,7 @@ def _build_v2_context(data: Dict[str, Any], state: dict | None = None) -> Dict[s
                 label="Portfolio 30-day cumulative PnL"),
         },
         "trades": _v2_trade_rows(trades),
+        "momentum_meta": _v2_momentum_meta(trades),
         "whale_meta":    _v2_whale_meta(trades),
         "funding_meta":  _v2_funding_meta(trades),
         "breakout_meta": _v2_breakout_meta(trades),
@@ -745,6 +752,16 @@ def _v2_risk_metrics(metrics: dict) -> dict:
             return "∞"
         return f"{v:+.2f}"
 
+    # J.7: streak + recovery factor display
+    streak_count = int(metrics.get("streak_count", 0) or 0)
+    streak_type  = metrics.get("streak_type", "") or ""
+    if streak_count == 0:
+        streak_display = "—"
+        streak_class   = "is-flat"
+    else:
+        streak_display = f"{streak_count} {streak_type}"
+        streak_class   = "is-up" if streak_type == "WIN" else "is-down"
+
     return {
         "sortino_display":     _ratio(metrics.get("sortino", 0)),
         "calmar_display":      _ratio(metrics.get("calmar", 0)),
@@ -757,6 +774,9 @@ def _v2_risk_metrics(metrics: dict) -> dict:
             "at peak" if metrics.get("time_to_recovery_bars", 0) == 0
             else f"{metrics.get('time_to_recovery_bars', 0)} bars"),
         "days_observed":       metrics.get("days_observed", 0),
+        "streak_display":      streak_display,
+        "streak_class":        streak_class,
+        "recovery_display":    _ratio(metrics.get("recovery_factor", 0)),
     }
 
 
@@ -879,6 +899,7 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
                           stroke_class="spark__line",
                           label="Portfolio 30-day cumulative PnL")},
         "trades":        _v2_trade_rows(trades),
+        "momentum_meta": _v2_momentum_meta(trades),
         "whale_meta":    _v2_whale_meta(trades),
         "funding_meta":  _v2_funding_meta(trades),
         "breakout_meta": _v2_breakout_meta(trades),
@@ -1629,6 +1650,33 @@ def _v2_funding_meta(trades: List[dict]) -> dict:
         "margin_usd":          float(FUNDING_MARGIN_USD),
         "leverage":            int(FUNDING_LEVERAGE),
         "notional_usd":        float(FUNDING_MARGIN_USD) * int(FUNDING_LEVERAGE),
+        "closed_count":        len(closed),
+        "win_rate_display":    (f"{sum(1 for p in pnl_list if p > 0) / len(pnl_list) * 100:.1f}%"
+                                if pnl_list else "—"),
+        "net_pnl_display":     _v2_pnl_display(sum(pnl_list)),
+    }
+
+
+def _v2_momentum_meta(trades: List[dict]) -> dict:
+    """Momentum bot metadata for the Momentum tab (J.1 minimal; J.3 expands)."""
+    try:
+        from config import ASSETS
+    except ImportError:
+        ASSETS = {}
+
+    asset_rows = [
+        {"name": k, "symbol": v.get("symbol", ""),
+         "interval": v.get("interval", "")}
+        for k, v in ASSETS.items()
+    ]
+    momentum_trades = [t for t in trades if t.get("bot") == "Momentum"]
+    closed = [t for t in momentum_trades
+              if t.get("exit_price") not in (None, 0, "0", "")]
+    pnl_list = [float(t.get("net_pnl") or 0) for t in closed]
+    return {
+        "paused":              False,
+        "state_label":         "LIVE",
+        "assets":              asset_rows,
         "closed_count":        len(closed),
         "win_rate_display":    (f"{sum(1 for p in pnl_list if p > 0) / len(pnl_list) * 100:.1f}%"
                                 if pnl_list else "—"),
