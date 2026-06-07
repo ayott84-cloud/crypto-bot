@@ -163,6 +163,32 @@ def test_markers_skipped_for_wrong_symbol():
 
 # ─── Empty kline edge case ───────────────────────────────────────────────
 
+def test_kline_cache_does_not_pin_empty_on_failure():
+    """J review I1: a transient kline-fetch failure must NOT cache [] for
+    the full TTL window — that would blank every chart for 5 min."""
+    dashboard._kline_cache_clear()
+    ex = MagicMock()
+    # First call: raise
+    ex.get_klines.side_effect = RuntimeError("network blip")
+    rows1 = dashboard._v2_fetch_klines_cached(ex, "BTCUSDT", "4h", 50)
+    assert rows1 == []
+    # Second call: succeed — we should NOT see the cached [] from call 1
+    ex.get_klines.side_effect = None
+    ex.get_klines.return_value = _weex_klines(30)
+    rows2 = dashboard._v2_fetch_klines_cached(ex, "BTCUSDT", "4h", 50)
+    assert len(rows2) == 30, "cache pinned empty result from failed fetch"
+
+
+def test_sanitize_chart_id_strips_unsafe_chars():
+    """J review N1: chart_id must survive direct HTML id/value emission."""
+    assert dashboard._sanitize_chart_id("momentum-BTC_4H") == "momentum-BTC_4H"
+    # Quotes + tags + spaces all get stripped
+    assert "<" not in dashboard._sanitize_chart_id("evil\"<script>x</script>")
+    assert " " not in dashboard._sanitize_chart_id("name with spaces")
+    assert dashboard._sanitize_chart_id("") == "anon"
+    assert dashboard._sanitize_chart_id("---") == "anon"
+
+
 def test_empty_klines_returns_empty_chart_data():
     dashboard._kline_cache_clear()
     ex = _mock_executor([])

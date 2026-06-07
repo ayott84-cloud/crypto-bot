@@ -2017,11 +2017,13 @@ def _v2_fetch_klines_cached(executor, symbol: str, interval: str,
         return hit[1]
     try:
         rows = executor.get_klines(symbol, interval, count) or []
+        # Only cache on success — caching [] on a transient failure
+        # would blank every chart for the full TTL window.
+        _kline_cache[key] = (now, rows)
+        return rows
     except Exception as e:  # noqa: BLE001
         logger.warning("kline fetch failed for %s %s: %s", symbol, interval, e)
-        rows = []
-    _kline_cache[key] = (now, rows)
-    return rows
+        return []
 
 
 def _v2_kline_rows_to_df(rows: list):
@@ -2273,6 +2275,16 @@ def _v2_asset_chart_data(executor, bot_class: str, asset_name: str,
     return {"candles": candles, "overlays": overlays, "markers": markers}
 
 
+def _sanitize_chart_id(raw: str) -> str:
+    """Strip everything outside [a-zA-Z0-9_-] so the chart_id survives as
+    an HTML id/value attribute even if a future config key contains an
+    unexpected character. Falls back to "anon" on empty input."""
+    import re
+    safe = re.sub(r"[^a-zA-Z0-9_-]", "-", raw or "")
+    safe = re.sub(r"-+", "-", safe).strip("-")
+    return safe or "anon"
+
+
 def _v2_assets_for_bot(bot_class: str) -> dict[str, dict]:
     """Return the configured asset dict for one bot (name → cfg).
 
@@ -2330,7 +2342,7 @@ def _v2_build_chart_panels_for_bot(executor, trades: list,
             {"asset_name": name,
              "symbol":     assets[name].get("symbol", ""),
              "interval":   assets[name].get("interval", ""),
-             "chart_id":   f"{bot_class}-{name.replace('_', '-')}",
+             "chart_id":   _sanitize_chart_id(f"{bot_class}-{name}"),
              "chart_data": {"candles": [], "overlays": [], "markers": []}}
             for name in list(assets.keys())[:max_assets]
         ]
@@ -2388,40 +2400,6 @@ def _v2_build_all_chart_panels(executor, trades: list) -> dict:
         "reversal": _v2_build_chart_panels_for_bot(executor, trades,
                                                      "reversal"),
     }
-
-
-def _v2_render_asset_chart_panel(chart_id: str, chart_data: dict,
-                                   height_px: int = 400) -> str:
-    """Render a TradingView Lightweight Charts container + inlined data + init.
-
-    Emits three elements:
-      1. <div id="chart-{id}" class="asset-chart" style="height:{H}px">
-      2. <script type="application/json" id="chartdata-{id}">…JSON…</script>
-      3. <script>initAssetChart("{id}", JSON.parse(...))</script>
-
-    The JS-side `initAssetChart` function lives in dashboard.js (Phase J.2)
-    and is responsible for constructing a chart, adding the candle series,
-    looping over overlays as line series, and applying markers.
-
-    chart_id is sanitized to [a-zA-Z0-9_] only — injection-safe.
-    """
-    import json
-    import re
-    safe_id = re.sub(r"[^a-zA-Z0-9_]", "", chart_id) or "anon"
-    data_json = json.dumps(chart_data, separators=(", ", ": "))
-    return (
-        f'<div id="chart-{safe_id}" class="asset-chart" '
-        f'style="height:{int(height_px)}px"></div>\n'
-        f'<script type="application/json" id="chartdata-{safe_id}">'
-        f'{data_json}</script>\n'
-        f'<script>(function(){{'
-        f'if (window.initAssetChart) {{'
-        f'  var el = document.getElementById("chartdata-{safe_id}");'
-        f'  try {{ window.initAssetChart("{safe_id}", JSON.parse(el.textContent)); }}'
-        f'  catch (e) {{ console.error("chart-{safe_id} init failed", e); }}'
-        f'}}'
-        f'}})();</script>'
-    )
 
 
 def _v2_momentum_meta(trades: List[dict]) -> dict:

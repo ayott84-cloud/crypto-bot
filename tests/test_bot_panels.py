@@ -162,6 +162,21 @@ def test_each_bot_tab_renders_panels():
     assert html.count('class="bot-trades"')    >= 6
 
 
+def test_every_bot_tab_includes_chart_panel_partial():
+    """J review C1: Reversal tab silently skipped the chart-panel include.
+    Now every bot tab that gets chart panels built MUST consume them.
+    """
+    pytest.importorskip("jinja2")
+    template_dir = Path(dashboard.__file__).parent / "templates" / "tabs"
+    expected_with_charts = {"momentum.html.j2", "breakout.html.j2",
+                              "pair.html.j2", "reversal.html.j2"}
+    for fname in expected_with_charts:
+        text = (template_dir / fname).read_text(encoding="utf-8")
+        assert "bot_chart_panel.html.j2" in text, (
+            f"{fname} missing chart_panel include — "
+            "computed chart data is dropped on the floor")
+
+
 def test_bot_tab_filters_trades_by_bot_column():
     """The Whale tab shows only whale trades; Momentum shows only momentum trades."""
     pytest.importorskip("jinja2")
