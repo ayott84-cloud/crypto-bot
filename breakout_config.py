@@ -108,6 +108,52 @@ BREAKOUT_ASSETS = {
         "strategy_name":        "SOL 4H Breakout",
         "use_btc_filter":       False,
     },
+    # Phase K (Jun 2026) — promoted from BREAKOUT_CANDIDATE_ASSETS after
+    # tools/validate_breakout_candidates.py cleared the gates:
+    #   BTC_1H  PF=4.40  n=6  WR=50.0%  total=+13.2%  DD=3.0%
+    #   ETH_1H  PF=2.14  n=7  WR=28.6%  total=+12.2%  DD=7.1%
+    # Faster TF — 55-bar Donchian on 1h = ~2.3 days. Catches moves the
+    # 4H configs sleep through.
+    "BTC_1H": {
+        "symbol":               "BTCUSDT",
+        "interval":             "1h",
+        "donchian_period":      55,
+        "donchian_exit_period": 20,
+        "atr_period":           14,
+        "atr_sma_period":       20,
+        "adx_period":           14,
+        "adx_threshold":        20,
+        "adx_exit_threshold":   15,
+        "sl_atr_mult":          2.5,
+        "use_volume_filter":     True,
+        "volume_threshold_mult": 1.5,
+        "volume_sma_period":     20,
+        "use_trend_filter":      True,
+        "allow_short":          True,
+        "sl_atr_mult_short":    1.0,
+        "strategy_name":        "BTC 1H Breakout",
+        "use_btc_filter":       False,
+    },
+    "ETH_1H": {
+        "symbol":               "ETHUSDT",
+        "interval":             "1h",
+        "donchian_period":      55,
+        "donchian_exit_period": 20,
+        "atr_period":           14,
+        "atr_sma_period":       20,
+        "adx_period":           14,
+        "adx_threshold":        20,
+        "adx_exit_threshold":   15,
+        "sl_atr_mult":          2.5,
+        "use_volume_filter":     True,
+        "volume_threshold_mult": 1.5,
+        "volume_sma_period":     20,
+        "use_trend_filter":      True,
+        "allow_short":          True,
+        "sl_atr_mult_short":    1.0,
+        "strategy_name":        "ETH 1H Breakout",
+        "use_btc_filter":       False,
+    },
 }
 
 
@@ -147,16 +193,18 @@ def _breakout_default(symbol: str, interval: str, name: str) -> dict:
 
 
 BREAKOUT_CANDIDATE_ASSETS = {
-    # Large-cap 4H alts — similar vol profile to ETH
+    # Large-cap 4H alts — failed n<5 gate in Jun 2026 validation; trade
+    # frequency on 1000-bar window was too low to qualify. Re-validate
+    # with longer windows or different params before promotion.
     "BNB_4H":  _breakout_default("BNBUSDT",  "4h", "BNB 4H Breakout"),
     "AVAX_4H": _breakout_default("AVAXUSDT", "4h", "AVAX 4H Breakout"),
     "LINK_4H": _breakout_default("LINKUSDT", "4h", "LINK 4H Breakout"),
-    # 1H variants — 55-bar window ≈ 2.3 days, catches faster moves
-    "BTC_1H":  _breakout_default("BTCUSDT",  "1h", "BTC 1H Breakout"),
-    "ETH_1H":  _breakout_default("ETHUSDT",  "1h", "ETH 1H Breakout"),
-    # Weekly — swing-conviction trades
+    # Weekly — failed in Jun 2026 (0 trades): WEEX likely doesn't return
+    # enough historical 1W bars for the 55-bar Donchian to even compute.
+    # Park indefinitely.
     "BTC_1W":  _breakout_default("BTCUSDT",  "1w", "BTC 1W Breakout"),
 }
+# BTC_1H + ETH_1H promoted to BREAKOUT_ASSETS (Jun 2026, see comment above).
 
 
 # ─── Phase J.6 — backtest stats for projection table ──────────────────────
@@ -173,4 +221,11 @@ BREAKOUT_BACKTEST_STATS = {
     "SOL_4H": {"pf": 91.83, "trades": 2, "pnl_pct": 23.5, "dd_pct": 0.3,
                 "wr": 50.0, "years": 0.46,
                 "source": "1000-bar 4h replay (n=2 — directional only)"},
+    # Phase K (Jun 2026) — promoted candidates
+    "BTC_1H": {"pf": 4.40, "trades":  6, "pnl_pct": 13.2, "dd_pct": 3.0,
+                "wr": 50.0, "years": 0.11,
+                "source": "1000-bar 1h replay"},
+    "ETH_1H": {"pf": 2.14, "trades":  7, "pnl_pct": 12.2, "dd_pct": 7.1,
+                "wr": 28.6, "years": 0.11,
+                "source": "1000-bar 1h replay"},
 }
