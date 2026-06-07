@@ -42,6 +42,26 @@ GATE_TRADES_MIN = 5
 GATE_DD_MAX_PCT = 15.0
 
 
+_INTERVAL_HOURS = {
+    "1m": 1 / 60,  "5m": 5 / 60,  "15m": 0.25,  "30m": 0.5,
+    "1h": 1,       "2h": 2,       "4h": 4,      "6h": 6,
+    "8h": 8,       "12h": 12,
+    "1d": 24,      "1w": 168,
+}
+
+
+def _interval_to_years(interval: str, bars: int) -> float:
+    """Convert (interval, bars) → window length in years.
+
+    Returns 0 when interval is unknown so the validator output doesn't
+    misrepresent the window with a guess.
+    """
+    hours = _INTERVAL_HOURS.get(interval.lower())
+    if hours is None:
+        return 0.0
+    return (bars * hours) / (365.25 * 24)
+
+
 def _format_verdict(pf: float, n: int, dd: float) -> str:
     fails = []
     if pf < GATE_PF_MIN:
@@ -98,31 +118,40 @@ def main() -> int:
             failed.append((name, f"replay error: {e}"))
             continue
 
-        pf = report.profit_factor
-        n  = report.n_trades
-        dd = report.max_drawdown_pct
+        pf      = report.profit_factor
+        n       = report.n_trades
+        dd      = report.max_drawdown_pct
+        wr      = report.win_rate
+        total   = report.total_return_pct
+        # window in years: bars × (interval seconds) / (seconds per year)
+        cfg_iv  = cfg.get("interval", "")
+        years   = _interval_to_years(cfg_iv, args.bars)
         verdict = _format_verdict(pf, n, dd)
-        print(f"  {name:10s}  PF={pf:6.2f}  n={n:3d}  "
-                f"maxDD={dd:5.1f}%  → {verdict}")
+        print(f"  {name:10s}  PF={pf:6.2f}  n={n:3d}  WR={wr:5.1f}%  "
+                f"total={total:+6.1f}%  maxDD={dd:5.1f}%  "
+                f"window={years:.2f}yr  → {verdict}")
 
         if verdict == "PASS":
-            passed.append((name, pf, n, dd))
+            passed.append((name, pf, n, dd, wr, total, years))
         else:
             failed.append((name, verdict))
 
     print(f"\n=== SUMMARY ===")
     print(f"  PASS:  {len(passed)} / {len(candidates)}")
-    for name, pf, n, dd in passed:
-        print(f"    promote: {name}  (PF={pf:.2f}, n={n}, DD={dd:.1f}%)")
+    for name, pf, n, dd, wr, total, years in passed:
+        print(f"    promote: {name}  PF={pf:.2f}  n={n}  WR={wr:.1f}%  "
+                f"total={total:+.1f}%  DD={dd:.1f}%  window={years:.2f}yr")
     if failed:
         print(f"  fail:  {len(failed)}")
         for name, why in failed:
             print(f"    skip:    {name}  ({why})")
     if passed:
-        print(f"\nTo promote: move {len(passed)} row(s) from "
-                f"BREAKOUT_CANDIDATE_ASSETS into BREAKOUT_ASSETS in "
-                f"breakout_config.py, then add matching entries to "
-                f"BREAKOUT_BACKTEST_STATS so the projection table updates.")
+        print(f"\nCopy-paste BREAKOUT_BACKTEST_STATS entries:")
+        for name, pf, n, dd, wr, total, years in passed:
+            print(f'    "{name}": {{"pf": {pf:.2f}, "trades": {n}, '
+                    f'"pnl_pct": {total:.1f}, "dd_pct": {dd:.1f}, '
+                    f'"wr": {wr:.1f}, "years": {years:.2f}, '
+                    f'"source": "1000-bar replay"}},')
     return 0
 
 
