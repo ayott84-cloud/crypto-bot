@@ -77,8 +77,10 @@ def main() -> int:
     logging.basicConfig(level=logging.WARNING,
                           format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--bars", type=int, default=1000,
-                          help="Historical bars per asset (default 1000)")
+    parser.add_argument("--bars", type=int, default=1500,
+                          help="Historical bars per asset (default 1500 — "
+                                "wider window than the BTC_1H/ETH_1H round so "
+                                "low-frequency 4H assets get a fair shot)")
     parser.add_argument("--asset", default=None,
                           help="Validate just one candidate asset name (e.g. BNB_4H)")
     args = parser.parse_args()

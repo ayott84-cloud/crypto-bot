@@ -192,19 +192,48 @@ def _breakout_default(symbol: str, interval: str, name: str) -> dict:
     }
 
 
+# Top-30 universe per whale_universe._FALLBACK_TOP_SYMBOLS (Apr 2026).
+# Already-promoted (BTC, ETH, SOL) and BNB/AVAX/LINK (kept from earlier
+# Phase K round) are excluded from the auto-expansion. BTC_1W dropped:
+# WEEX kline history depth caps below the 55-bar Donchian's requirement
+# on 1W timeframe — 0 trades aren't a strategy problem, they're a data
+# problem. Re-add if/when WEEX widens 1W history.
+_TOP30_NEW_ALTS = [
+    ("XRP",    "XRPUSDT"),    ("DOGE",   "DOGEUSDT"),
+    ("ADA",    "ADAUSDT"),    ("TRX",    "TRXUSDT"),
+    ("DOT",    "DOTUSDT"),    ("LTC",    "LTCUSDT"),
+    ("MATIC",  "MATICUSDT"),  ("NEAR",   "NEARUSDT"),
+    ("UNI",    "UNIUSDT"),    ("FIL",    "FILUSDT"),
+    ("ETC",    "ETCUSDT"),    ("APT",    "APTUSDT"),
+    ("ARB",    "ARBUSDT"),    ("ATOM",   "ATOMUSDT"),
+    ("SUI",    "SUIUSDT"),    ("HBAR",   "HBARUSDT"),
+    ("AAVE",   "AAVEUSDT"),   ("OP",     "OPUSDT"),
+    ("INJ",    "INJUSDT"),    ("RENDER", "RENDERUSDT"),
+    ("SHIB",   "SHIBUSDT"),   ("PEPE",   "PEPEUSDT"),
+    ("TON",    "TONUSDT"),    ("ICP",    "ICPUSDT"),
+]
+
+
+def _expand_top30_4h() -> dict:
+    """Build {NAME_4H: cfg} for every top-30 alt not already promoted.
+    Symbols WEEX doesn't trade will simply return 0 klines on validation
+    and fail the gates — no in-code whitelist needed."""
+    return {
+        f"{name}_4H": _breakout_default(symbol, "4h", f"{name} 4H Breakout")
+        for name, symbol in _TOP30_NEW_ALTS
+    }
+
+
 BREAKOUT_CANDIDATE_ASSETS = {
-    # Large-cap 4H alts — failed n<5 gate in Jun 2026 validation; trade
-    # frequency on 1000-bar window was too low to qualify. Re-validate
-    # with longer windows or different params before promotion.
+    # Earlier candidates that failed n<5 on 1000 bars — re-evaluating
+    # with 1500 bars (~33% more window) may push them over the gate.
     "BNB_4H":  _breakout_default("BNBUSDT",  "4h", "BNB 4H Breakout"),
     "AVAX_4H": _breakout_default("AVAXUSDT", "4h", "AVAX 4H Breakout"),
     "LINK_4H": _breakout_default("LINKUSDT", "4h", "LINK 4H Breakout"),
-    # Weekly — failed in Jun 2026 (0 trades): WEEX likely doesn't return
-    # enough historical 1W bars for the 55-bar Donchian to even compute.
-    # Park indefinitely.
-    "BTC_1W":  _breakout_default("BTCUSDT",  "1w", "BTC 1W Breakout"),
+    # Top-30 alts not yet covered (added Jun 2026)
+    **_expand_top30_4h(),
 }
-# BTC_1H + ETH_1H promoted to BREAKOUT_ASSETS (Jun 2026, see comment above).
+# BTC_1H + ETH_1H promoted to BREAKOUT_ASSETS in commit 998af1c.
 
 
 # ─── Phase J.6 — backtest stats for projection table ──────────────────────
