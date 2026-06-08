@@ -196,6 +196,39 @@ for _name, _symbol, _title in [
     }
 del _name, _symbol, _title
 
+# ─── Phase K round 3 (Jun 7 2026) — D20 recovery passers ────────────────
+# Turtle System 2 (Donchian 20/10) generated enough signals to clear the
+# gate where the baseline 55/20 had n<5:
+#   BNB_4H_D20  PF=2.33  n=9  WR=44.4%  total=+14.2%  DD=7.7%
+#   TRX_4H_D20  PF=3.82  n=6  WR=50.0%  total= +6.0%  DD=0.9%
+#   BNB_1H_D20  PF=5.27  n=8  WR=62.5%  total=+12.3%  DD=2.5%
+for _name, _symbol, _interval, _title in [
+    ("BNB_4H_D20", "BNBUSDT", "4h", "BNB 4H Breakout (D20)"),
+    ("TRX_4H_D20", "TRXUSDT", "4h", "TRX 4H Breakout (D20)"),
+    ("BNB_1H_D20", "BNBUSDT", "1h", "BNB 1H Breakout (D20)"),
+]:
+    BREAKOUT_ASSETS[_name] = {
+        "symbol":                _symbol,
+        "interval":              _interval,
+        "donchian_period":       20,   # Turtle System 2
+        "donchian_exit_period":  10,
+        "atr_period":            14,
+        "atr_sma_period":        20,
+        "adx_period":            14,
+        "adx_threshold":         20,
+        "adx_exit_threshold":    15,
+        "sl_atr_mult":           2.5,
+        "use_volume_filter":      True,
+        "volume_threshold_mult":  1.5,
+        "volume_sma_period":      20,
+        "use_trend_filter":       True,
+        "allow_short":           True,
+        "sl_atr_mult_short":     1.0,
+        "strategy_name":         _title,
+        "use_btc_filter":        False,
+    }
+del _name, _symbol, _interval, _title
+
 
 # ─── Phase K — candidate assets (NOT live until promoted) ────────────────
 # Per the activation gate flow: stage candidates here, run
@@ -268,7 +301,12 @@ def _expand_top30(tf: str) -> dict:
     }
 
 
-_PROMOTED_KEYS = {"DOGE_1H", "ADA_1H", "NEAR_1H", "AAVE_1H", "INJ_1H"}
+_PROMOTED_KEYS = {
+    # Round 2 (Jun 7, commit 86253c4)
+    "DOGE_1H", "ADA_1H", "NEAR_1H", "AAVE_1H", "INJ_1H",
+    # Round 3 D20 recovery (Jun 7, this commit)
+    "BNB_4H_D20", "TRX_4H_D20", "BNB_1H_D20",
+}
 
 
 # Recovery variant: Donchian-20 / exit-10 (Turtle System 2). The 55/20
@@ -337,7 +375,8 @@ BREAKOUT_CANDIDATE_ASSETS = {
         if k not in _PROMOTED_KEYS},
     # Recovery: Donchian-20 (Turtle Sys 2) for assets that showed strong
     # PF on 55/20 but failed n<5. ~3× signal density at same gate level.
-    **_expand_recovery_d20(),
+    **{k: v for k, v in _expand_recovery_d20().items()
+        if k not in _PROMOTED_KEYS},
 }
 # Promotion history (BREAKOUT_ASSETS, in order):
 #   BTC_4H, ETH_4H, SOL_4H — original G.2 baseline
@@ -377,4 +416,14 @@ BREAKOUT_BACKTEST_STATS = {
                  "wr": 40.0, "years": 0.11, "source": "1000-bar 1h replay"},
     "INJ_1H":  {"pf": 2.31, "trades": 6, "pnl_pct": 10.5, "dd_pct": 6.7,
                  "wr": 66.7, "years": 0.11, "source": "1000-bar 1h replay"},
+    # Phase K round 3 (Jun 7 2026) — D20 recovery promotions
+    "BNB_4H_D20": {"pf": 2.33, "trades": 9, "pnl_pct": 14.2, "dd_pct": 7.7,
+                    "wr": 44.4, "years": 0.46,
+                    "source": "1000-bar 4h replay (Donchian 20/10)"},
+    "TRX_4H_D20": {"pf": 3.82, "trades": 6, "pnl_pct":  6.0, "dd_pct": 0.9,
+                    "wr": 50.0, "years": 0.46,
+                    "source": "1000-bar 4h replay (Donchian 20/10)"},
+    "BNB_1H_D20": {"pf": 5.27, "trades": 8, "pnl_pct": 12.3, "dd_pct": 2.5,
+                    "wr": 62.5, "years": 0.11,
+                    "source": "1000-bar 1h replay (Donchian 20/10)"},
 }

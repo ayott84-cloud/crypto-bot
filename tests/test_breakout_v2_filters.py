@@ -127,10 +127,17 @@ def test_trend_filter_on_passes_when_df_1d_missing():
 # ─── Default config changed to Turtle-style ──────────────────────────────
 
 def test_breakout_assets_default_to_55_20_donchian():
+    """Baseline strategies use Turtle System 1 (55/20). Phase K round 3
+    added some Turtle System 2 (20/10) variants via the _D20 suffix —
+    those are exempt because they're an intentional alternate strategy."""
     from breakout_config import BREAKOUT_ASSETS
     for name, cfg in BREAKOUT_ASSETS.items():
-        assert cfg["donchian_period"] == 55, f"{name}: not Turtle-style 55"
-        assert cfg["donchian_exit_period"] == 20, f"{name}: exit not Turtle-style 20"
+        if name.endswith("_D20"):
+            assert cfg["donchian_period"] == 20, f"{name}: D20 entry must be 20"
+            assert cfg["donchian_exit_period"] == 10, f"{name}: D20 exit must be 10"
+        else:
+            assert cfg["donchian_period"] == 55, f"{name}: not Turtle-style 55"
+            assert cfg["donchian_exit_period"] == 20, f"{name}: exit not Turtle-style 20"
 
 
 def test_breakout_assets_have_volume_filter_enabled_by_default():
