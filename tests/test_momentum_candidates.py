@@ -50,10 +50,10 @@ def test_candidates_not_iterated_by_main_module():
     assert "MOMENTUM_CANDIDATE_ASSETS" not in text
 
 
-def test_candidate_symbols_unique_per_timeframe():
-    """Each (symbol, interval) appears at most once."""
+def test_candidate_keys_unique():
+    """Candidate keys must not duplicate. (symbol, interval) tuples CAN
+    duplicate when a variant exists — e.g. LINK_1D vs LINK_1D_TS test
+    the same coin/TF with different stop-loss params."""
     from config import MOMENTUM_CANDIDATE_ASSETS
-    pairs = [(v["symbol"], v["interval"])
-              for v in MOMENTUM_CANDIDATE_ASSETS.values()]
-    assert len(pairs) == len(set(pairs)), \
-        f"duplicate (symbol, interval) in MOMENTUM_CANDIDATE_ASSETS"
+    keys = list(MOMENTUM_CANDIDATE_ASSETS.keys())
+    assert len(keys) == len(set(keys)), "duplicate candidate keys"

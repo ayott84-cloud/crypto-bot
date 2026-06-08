@@ -353,7 +353,14 @@ def replay_reversal(asset_name: str, cfg: dict, bars: int = 500) -> BacktestRepo
 
 # ─── Pair replay ──────────────────────────────────────────────────────────
 
-def replay_pair(bars: int = 500) -> BacktestReport:
+def replay_pair(bars: int = 500, asset_name: str | None = None,
+                 long_symbol: str | None = None,
+                 short_symbol: str | None = None,
+                 interval: str | None = None,
+                 cfg: dict | None = None) -> BacktestReport:
+    """Replay pair entries+exits. Defaults to ETH/BTC from pair_config;
+    every argument is overridable so the same function validates
+    candidate pairs (BTC/SOL, ETH/SOL, etc.)."""
     from pair_signals import (
         compute_ratio, rolling_z_score, analyze_pair_entry, check_pair_exit,
     )
@@ -361,20 +368,26 @@ def replay_pair(bars: int = 500) -> BacktestReport:
         PAIR_CONFIG, PAIR_INTERVAL, PAIR_LONG_SYMBOL, PAIR_SHORT_SYMBOL,
     )
 
-    eth = _fetch_klines(PAIR_LONG_SYMBOL,  PAIR_INTERVAL, bars)
-    btc = _fetch_klines(PAIR_SHORT_SYMBOL, PAIR_INTERVAL, bars)
+    long_symbol  = long_symbol  or PAIR_LONG_SYMBOL
+    short_symbol = short_symbol or PAIR_SHORT_SYMBOL
+    interval     = interval     or PAIR_INTERVAL
+    cfg          = cfg          or PAIR_CONFIG
+    asset_name   = asset_name   or "ETHBTC"
+
+    eth = _fetch_klines(long_symbol,  interval, bars)
+    btc = _fetch_klines(short_symbol, interval, bars)
     n = min(len(eth), len(btc))
     eth_close = eth["close"].iloc[:n].reset_index(drop=True)
     btc_close = btc["close"].iloc[:n].reset_index(drop=True)
-    report = BacktestReport(bot="pair", asset="ETHBTC", bars_seen=n)
+    report = BacktestReport(bot="pair", asset=asset_name, bars_seen=n)
 
-    start = PAIR_CONFIG.get("z_window", 30) + 2
+    start = cfg.get("z_window", 30) + 2
     position = None
     for i in range(start, n):
         e_win = eth_close.iloc[: i + 1]
         b_win = btc_close.iloc[: i + 1]
         if position is None:
-            sig = analyze_pair_entry(e_win, b_win, PAIR_CONFIG)
+            sig = analyze_pair_entry(e_win, b_win, cfg)
             if sig["would_enter"]:
                 position = {
                     "direction":    sig["direction"],
@@ -389,7 +402,7 @@ def replay_pair(bars: int = 500) -> BacktestReport:
                 e_win, b_win,
                 position_direction=position["direction"],
                 bars_held=bars_held, entry_ratio=position["entry_ratio"],
-                cfg=PAIR_CONFIG,
+                cfg=cfg,
             )
             if reason:
                 exit_eth = float(e_win.iloc[-1])

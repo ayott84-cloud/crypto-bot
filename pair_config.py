@@ -59,6 +59,51 @@ PAIR_CONFIG = {
 }
 
 
+# ─── Phase K — pair candidate configs (NOT live until promoted) ──────────
+# Each entry describes one mean-reversion candidate pair. Same strategy
+# logic (z-score on the ratio); only the symbols differ.
+#
+# Cointegration is asset-specific — ETH/BTC works because they share macro
+# drivers (BTC dominance, ETH/BTC ratio mean-reversion). For other pairs:
+#   BTC/SOL — both large-cap but SOL has its own L1 cycles → weaker
+#             cointegration than ETHBTC. Worth checking.
+#   ETH/SOL — both smart-contract L1s, sometimes mean-revert against each
+#             other on rotation flows. Plausible.
+#   BTC/LTC — historical correlation, "digital silver vs gold" narrative.
+#             Lower frequency but cleaner long-term cointegration.
+# tools/validate_pair_candidates.py runs each cfg through replay_pair
+# and gates against PF≥1.3, n≥5, DD≤20%. Pair-specific thresholds since
+# spread strategies typically have lower PF than directional ones.
+PAIR_CANDIDATE_CONFIGS = {
+    "BTCSOL": {
+        "long_symbol":  "BTCUSDT",
+        "short_symbol": "SOLUSDT",
+        "interval":     "1d",
+        "cfg":          dict(PAIR_CONFIG),
+    },
+    "ETHSOL": {
+        "long_symbol":  "ETHUSDT",
+        "short_symbol": "SOLUSDT",
+        "interval":     "1d",
+        "cfg":          dict(PAIR_CONFIG),
+    },
+    "BTCLTC": {
+        "long_symbol":  "BTCUSDT",
+        "short_symbol": "LTCUSDT",
+        "interval":     "1d",
+        "cfg":          dict(PAIR_CONFIG),
+    },
+    # ETHBTC short-TF variant (4H) — same cointegration story but faster
+    # reversion cycles. Tighter z_window matches the bar count.
+    "ETHBTC_4H": {
+        "long_symbol":  "ETHUSDT",
+        "short_symbol": "BTCUSDT",
+        "interval":     "4h",
+        "cfg":          {**PAIR_CONFIG, "z_window": 30, "max_hold_bars": 30},
+    },
+}
+
+
 # ─── Phase J.6 — backtest stats for projection table ──────────────────────
 # Source: tools/backtest_replay.py 1000-bar 1d replay (Jun 2026). n=42
 # trades over 2.63yr — highest-confidence row in the projection.

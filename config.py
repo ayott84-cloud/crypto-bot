@@ -657,9 +657,37 @@ del _name, _symbol, _interval, _stats, _cfg
 # Promoted keys filtered out of candidates so re-runs don't re-test them
 _MOMENTUM_PROMOTED_KEYS = {name for name, _s, _i, _bts in _MOMENTUM_PROMOTIONS}
 
+# DD-tight recovery variants for momentum 1D candidates that failed only
+# on DD>15%. Same baseline params but sl_atr_mult tightened 1.0 → 0.7,
+# tp1_atr_mult 1.8 → 1.5 (proportional). Reduces tail risk on adverse
+# moves; trade-off is more frequent stop-outs on noise. Targets:
+#   LINK_1D  PF=1.76  total=+15.5%  DD=18.7%  (failed DD by 3.7pp)
+#   FIL_1D   PF=1.59  total=+10.5%  DD=17.7%  (failed DD by 2.7pp)
+#   APT_1D   PF=3.65  total=+52.5%  DD=18.1%  (failed DD by 3.1pp, strongest PF)
+#   LINK_1D  also a near-miss — adding 4H variant of same TS pattern
+# Suffix _TS = "Tight Stop"
+_MOMENTUM_DD_RECOVERY_TARGETS = [
+    ("LINK_1D_TS", "LINKUSDT", "1d", "LINK 1D Momentum (TS)"),
+    ("FIL_1D_TS",  "FILUSDT",  "1d", "FIL 1D Momentum (TS)"),
+    ("APT_1D_TS",  "APTUSDT",  "1d", "APT 1D Momentum (TS)"),
+]
+
+
+def _momentum_tight_stop(symbol: str, interval: str, name: str) -> dict:
+    """DD-recovery variant: tighter SL + scaled TPs to maintain R-multiple."""
+    cfg = _momentum_default(symbol, interval, name)
+    cfg["sl_atr_mult"]  = 0.7   # was 1.0
+    cfg["tp1_atr_mult"] = 1.5   # was 1.8  (keep ~2.1 R/R ratio at TP1)
+    cfg["tp2_atr_mult"] = 3.5   # was 4.0  (keep ~5R at TP2)
+    return cfg
+
+
 MOMENTUM_CANDIDATE_ASSETS = {
-    k: v for k, v in {
-        **_expand_momentum_top30("4h"),
-        **_expand_momentum_top30("1d"),
-    }.items() if k not in _MOMENTUM_PROMOTED_KEYS
+    **{k: v for k, v in {
+            **_expand_momentum_top30("4h"),
+            **_expand_momentum_top30("1d"),
+        }.items() if k not in _MOMENTUM_PROMOTED_KEYS},
+    # DD-tight recovery variants
+    **{name: _momentum_tight_stop(sym, tf, title)
+        for name, sym, tf, title in _MOMENTUM_DD_RECOVERY_TARGETS},
 }
