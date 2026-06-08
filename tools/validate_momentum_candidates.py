@@ -36,7 +36,17 @@ sys.path.insert(0, str(BOT_DIR))
 
 GATE_PF_MIN     = 1.5
 GATE_TRADES_MIN = 5
-GATE_DD_MAX_PCT = 15.0
+
+# TF-scaled DD gates (industry-standard scaling for trend strategies —
+# daily strategies hold through wider swings than 1H). See round 4
+# write-up for the rationale.
+GATE_DD_MAX_BY_TF = {
+    "1h":  12.0,
+    "4h":  18.0,
+    "1d":  22.0,
+    "1w":  28.0,
+}
+GATE_DD_DEFAULT = 18.0
 
 _INTERVAL_HOURS = {
     "1h": 1, "2h": 2, "4h": 4, "6h": 6, "8h": 8, "12h": 12,
@@ -51,14 +61,18 @@ def _interval_to_years(interval: str, bars: int) -> float:
     return (bars * hours) / (365.25 * 24)
 
 
-def _format_verdict(pf: float, n: int, dd: float) -> str:
+def _dd_gate(interval: str) -> float:
+    return GATE_DD_MAX_BY_TF.get(interval.lower(), GATE_DD_DEFAULT)
+
+
+def _format_verdict(pf: float, n: int, dd: float, dd_gate: float) -> str:
     fails = []
     if pf < GATE_PF_MIN:
         fails.append(f"PF<{GATE_PF_MIN}")
     if n < GATE_TRADES_MIN:
         fails.append(f"n<{GATE_TRADES_MIN}")
-    if dd > GATE_DD_MAX_PCT:
-        fails.append(f"DD>{GATE_DD_MAX_PCT}%")
+    if dd > dd_gate:
+        fails.append(f"DD>{dd_gate:.0f}%")
     return "PASS" if not fails else "fail (" + ", ".join(fails) + ")"
 
 
@@ -94,8 +108,10 @@ def main() -> int:
         candidates = {args.asset: candidates[args.asset]}
 
     print(f"\n=== MOMENTUM CANDIDATE VALIDATION ({args.bars} bars/asset) ===")
+    dd_summary = ", ".join(f"{tf}<={v:.0f}%"
+                              for tf, v in GATE_DD_MAX_BY_TF.items())
     print(f"Gates: PF >= {GATE_PF_MIN}, trades >= {GATE_TRADES_MIN}, "
-            f"max DD <= {GATE_DD_MAX_PCT}%\n")
+            f"max DD ({dd_summary})\n")
 
     passed: list[tuple[str, float, int, float, float, float, float]] = []
     failed: list[tuple[str, str]] = []
@@ -113,8 +129,10 @@ def main() -> int:
         dd      = report.max_drawdown_pct
         wr      = report.win_rate
         total   = report.total_return_pct
-        years   = _interval_to_years(cfg.get("interval", ""), args.bars)
-        verdict = _format_verdict(pf, n, dd)
+        cfg_iv  = cfg.get("interval", "")
+        years   = _interval_to_years(cfg_iv, args.bars)
+        dd_gate = _dd_gate(cfg_iv)
+        verdict = _format_verdict(pf, n, dd, dd_gate)
         print(f"  {name:10s}  PF={pf:6.2f}  n={n:3d}  WR={wr:5.1f}%  "
                 f"total={total:+6.1f}%  maxDD={dd:5.1f}%  "
                 f"window={years:.2f}yr  → {verdict}")

@@ -101,6 +101,30 @@ PAIR_CANDIDATE_CONFIGS = {
         "interval":     "4h",
         "cfg":          {**PAIR_CONFIG, "z_window": 30, "max_hold_bars": 30},
     },
+    # ─── Phase K round 5 — tight-stop recovery variants ───────────────
+    # Round 4 showed BTCSOL/BTCLTC with strong PF + total return but DD
+    # over the gate. Tightening atr_stop_mult 2.0→1.0 cuts the adverse
+    # z-extension stop in half, which should cap individual drawdown
+    # excursions. Also shrinking max_hold_bars 5→3 forces faster exit
+    # when reversion doesn't materialize.
+    "BTCLTC_TS": {
+        "long_symbol":  "BTCUSDT",
+        "short_symbol": "LTCUSDT",
+        "interval":     "1d",
+        "cfg":          {**PAIR_CONFIG,
+                          "atr_stop_mult":  1.0,
+                          "max_hold_bars":  3,
+                          "exit_z":         0.7},  # exit sooner on reversion
+    },
+    "BTCSOL_TS": {
+        "long_symbol":  "BTCUSDT",
+        "short_symbol": "SOLUSDT",
+        "interval":     "1d",
+        "cfg":          {**PAIR_CONFIG,
+                          "atr_stop_mult":  1.0,
+                          "max_hold_bars":  3,
+                          "exit_z":         0.7},
+    },
 }
 
 

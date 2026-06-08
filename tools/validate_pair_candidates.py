@@ -36,7 +36,16 @@ sys.path.insert(0, str(BOT_DIR))
 
 GATE_PF_MIN     = 1.3
 GATE_TRADES_MIN = 5
-GATE_DD_MAX_PCT = 20.0
+
+# Pair PnL is the differential of two legs — naturally wider DD than
+# single-leg strategies. TF-scaled but with higher ceilings than
+# breakout/momentum.
+GATE_DD_MAX_BY_TF = {
+    "4h":  18.0,
+    "1d":  25.0,
+    "1w":  32.0,
+}
+GATE_DD_DEFAULT = 25.0
 
 _INTERVAL_HOURS = {
     "1h": 1, "4h": 4, "8h": 8, "12h": 12, "1d": 24, "1w": 168,
@@ -50,14 +59,18 @@ def _interval_to_years(interval: str, bars: int) -> float:
     return (bars * h) / (365.25 * 24)
 
 
-def _format_verdict(pf: float, n: int, dd: float) -> str:
+def _dd_gate(interval: str) -> float:
+    return GATE_DD_MAX_BY_TF.get(interval.lower(), GATE_DD_DEFAULT)
+
+
+def _format_verdict(pf: float, n: int, dd: float, dd_gate: float) -> str:
     fails = []
     if pf < GATE_PF_MIN:
         fails.append(f"PF<{GATE_PF_MIN}")
     if n < GATE_TRADES_MIN:
         fails.append(f"n<{GATE_TRADES_MIN}")
-    if dd > GATE_DD_MAX_PCT:
-        fails.append(f"DD>{GATE_DD_MAX_PCT}%")
+    if dd > dd_gate:
+        fails.append(f"DD>{dd_gate:.0f}%")
     return "PASS" if not fails else "fail (" + ", ".join(fails) + ")"
 
 
@@ -94,8 +107,10 @@ def main() -> int:
         candidates = {args.asset: candidates[args.asset]}
 
     print(f"\n=== PAIR CANDIDATE VALIDATION ({args.bars} bars/asset) ===")
+    dd_summary = ", ".join(f"{tf}<={v:.0f}%"
+                              for tf, v in GATE_DD_MAX_BY_TF.items())
     print(f"Gates: PF >= {GATE_PF_MIN}, trades >= {GATE_TRADES_MIN}, "
-            f"max DD <= {GATE_DD_MAX_PCT}%\n")
+            f"max DD ({dd_summary})\n")
 
     passed: list[tuple] = []
     failed: list[tuple[str, str]] = []
@@ -121,7 +136,8 @@ def main() -> int:
         wr      = report.win_rate
         total   = report.total_return_pct
         years   = _interval_to_years(pair_spec["interval"], args.bars)
-        verdict = _format_verdict(pf, n, dd)
+        dd_gate = _dd_gate(pair_spec["interval"])
+        verdict = _format_verdict(pf, n, dd, dd_gate)
         print(f"  {name:10s}  PF={pf:6.2f}  n={n:3d}  WR={wr:5.1f}%  "
                 f"total={total:+6.1f}%  maxDD={dd:5.1f}%  "
                 f"window={years:.2f}yr  → {verdict}")
