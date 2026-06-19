@@ -130,6 +130,8 @@ BREAKOUT_ASSETS = {
         "volume_sma_period":     20,
         "use_trend_filter":      True,
         "use_regime_gate":       True,   # L.2 (Phase K promotion)
+        "use_breakeven_after_tp1": True,  # L.3.1 (Phase K promotion)
+        "breakeven_trigger_atr":   1.0,
         "allow_short":          True,
         "sl_atr_mult_short":    1.0,
         "strategy_name":        "BTC 1H Breakout",
@@ -151,6 +153,8 @@ BREAKOUT_ASSETS = {
         "volume_sma_period":     20,
         "use_trend_filter":      True,
         "use_regime_gate":       True,   # L.2 (Phase K promotion)
+        "use_breakeven_after_tp1": True,  # L.3.1 (Phase K promotion)
+        "breakeven_trigger_atr":   1.0,
         "allow_short":          True,
         "sl_atr_mult_short":    1.0,
         "strategy_name":        "ETH 1H Breakout",
@@ -192,6 +196,8 @@ for _name, _symbol, _title in [
         "volume_sma_period":      20,
         "use_trend_filter":       True,
         "use_regime_gate":        True,   # L.2 (Phase K promotion)
+        "use_breakeven_after_tp1": True,  # L.3.1 (Phase K promotion)
+        "breakeven_trigger_atr":   1.0,
         "allow_short":           True,
         "sl_atr_mult_short":     1.0,
         "strategy_name":         _title,
@@ -226,6 +232,8 @@ for _name, _symbol, _interval, _title in [
         "volume_sma_period":      20,
         "use_trend_filter":       True,
         "use_regime_gate":        True,   # L.2 (Phase K D20 recovery)
+        "use_breakeven_after_tp1": True,  # L.3.1 (Phase K D20 recovery)
+        "breakeven_trigger_atr":   1.0,
         "allow_short":           True,
         "sl_atr_mult_short":     1.0,
         "strategy_name":         _title,
@@ -271,6 +279,8 @@ def _breakout_default(symbol: str, interval: str, name: str) -> dict:
         "volume_sma_period":      20,
         "use_trend_filter":       True,
         "use_regime_gate":        True,   # L.2
+        "use_breakeven_after_tp1": True,  # L.3.1
+        "breakeven_trigger_atr":   1.0,
         "allow_short":           True,
         "sl_atr_mult_short":     1.0,
         "strategy_name":         name,

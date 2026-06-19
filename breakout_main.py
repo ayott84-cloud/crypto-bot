@@ -28,6 +28,7 @@ from breakout_config import (
 )
 from breakout_signals import (
     compute_donchian_channels, analyze_breakout_entry, check_breakout_exit,
+    check_breakeven_trigger,
 )
 from executor import Executor
 from journal import log_trade
@@ -251,13 +252,33 @@ def run_cycle(executor: Executor, state: dict) -> None:
             df = _build_dataframe(raw)
             df = _compute_indicators(df, cfg)
             pos = state["positions"][state_key]
+            entry_price = float(pos["entry_price"])
+            atr_at_entry = float(pos["atr_at_entry"])
+            direction = pos.get("direction", "LONG")
+            current_close = float(df.iloc[-1]["close"])
+
+            # L.3.1: ratchet SL to breakeven once favorable move ≥ 1×ATR.
+            # Boolean persists on the position dict so we don't re-evaluate
+            # the trigger every cycle (it's monotonic — never un-ratchets).
+            if not pos.get("breakeven_triggered", False):
+                if check_breakeven_trigger(
+                        current_close, entry_price, atr_at_entry,
+                        direction, cfg):
+                    pos["breakeven_triggered"] = True
+                    logger.info("[%s] breakeven ratchet triggered "
+                                  "(close=%.6f, entry=%.6f, +%.2f ATR)",
+                                  asset_name, current_close, entry_price,
+                                  (current_close - entry_price) / atr_at_entry
+                                    if direction.upper() == "LONG"
+                                    else (entry_price - current_close) / atr_at_entry)
             reason, kind = check_breakout_exit(
                 df,
-                position_direction=pos.get("direction", "LONG"),
-                entry_price=float(pos["entry_price"]),
-                atr_at_entry=float(pos["atr_at_entry"]),
+                position_direction=direction,
+                entry_price=entry_price,
+                atr_at_entry=atr_at_entry,
                 current_adx=float(df.iloc[-1].get("adx", 0) or 0),
                 cfg=cfg,
+                breakeven_triggered=bool(pos.get("breakeven_triggered", False)),
             )
             if reason:
                 logger.info("[%s] exit %s — closing", asset_name, reason)

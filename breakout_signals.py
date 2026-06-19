@@ -161,6 +161,31 @@ def analyze_breakout_entry(df, cfg: dict, df_1d=None) -> dict:
 
 # ─── Exit ──────────────────────────────────────────────────────────────────
 
+def check_breakeven_trigger(close: float, entry_price: float,
+                              atr_at_entry: float, direction: str,
+                              cfg: dict) -> bool:
+    """Phase L.3.1 — has price moved enough favorably to ratchet the SL to
+    breakeven?
+
+    Returns True iff:
+      - `use_breakeven_after_tp1` is True in cfg
+      - Position has moved favorably by `breakeven_trigger_atr × ATR_at_entry`
+        (default 1.0 ATR — same scale signals.py uses for its tp1_atr_mult
+        baseline)
+
+    Caller persists the resulting boolean on the position dict so the
+    next check_breakout_exit invocation tightens the SL to entry price.
+    Once True, stays True for the life of the position — never un-ratchets.
+    """
+    if not cfg.get("use_breakeven_after_tp1", False):
+        return False
+    trigger_atr = float(cfg.get("breakeven_trigger_atr", 1.0))
+    threshold_distance = trigger_atr * atr_at_entry
+    is_long = direction.upper() == "LONG"
+    favorable_move = (close - entry_price) if is_long else (entry_price - close)
+    return favorable_move >= threshold_distance
+
+
 def check_breakout_exit(
     df,
     position_direction: str,
@@ -168,13 +193,20 @@ def check_breakout_exit(
     atr_at_entry: float,
     current_adx: float,
     cfg: dict,
+    breakeven_triggered: bool = False,
 ) -> Tuple[Optional[str], Optional[str]]:
     """Return (reason, kind) or (None, None).
 
     Three exit rules per plan G:
       1. Donchian opposite-side cross over the EXIT period (default 10)
-      2. Adverse move ≥ sl_atr_mult × ATR_at_entry (default 1.5)
+      2. Adverse move ≥ sl_atr_mult × ATR_at_entry (default 2.5)
       3. ADX drops below adx_exit_threshold (default 15) — trend dying
+
+    Phase L.3.1: when `breakeven_triggered=True` (favorable move ≥ 1×
+    ATR has already happened), SL ratchets to entry_price ("BE Hit")
+    instead of staying at the wider entry_price - sl_mult × ATR. This
+    converts would-be losers-after-a-winner into break-even exits.
+    Mirrors signals.py:217-219 BTC_1D pattern.
     """
     if df is None or len(df) < cfg.get("donchian_exit_period", 10):
         return None, None
@@ -188,16 +220,24 @@ def check_breakout_exit(
     prior_lower = lower.iloc[-2]
     is_long = position_direction.upper() == "LONG"
 
-    # 1. SL (1.5 × ATR adverse)
+    # 1. SL (sl_mult × ATR adverse) — or breakeven if L.3.1 triggered.
     sl_mult = cfg.get("sl_atr_mult", 2.0)
-    if is_long:
+    if breakeven_triggered:
+        sl_price = entry_price
+        sl_reason = "BE Hit"
+    elif is_long:
         sl_price = entry_price - sl_mult * atr_at_entry
-        if close <= sl_price:
-            return "SL Hit", "full"
+        sl_reason = "SL Hit"
     else:
         sl_price = entry_price + sl_mult * atr_at_entry
+        sl_reason = "SL Hit"
+
+    if is_long:
+        if close <= sl_price:
+            return sl_reason, "full"
+    else:
         if close >= sl_price:
-            return "SL Hit", "full"
+            return sl_reason, "full"
 
     # 2. Donchian opposite-side cross
     if is_long and not pd.isna(prior_lower) and close < prior_lower:
