@@ -95,8 +95,17 @@ def open_breakout_position(
     current_price = float(df.iloc[-1]["close"])
     atr_at_entry  = float(df.iloc[-1]["atr"])
 
-    # Sizing: fixed margin × leverage / price
-    notional = BREAKOUT_MARGIN_PER_TRADE * BREAKOUT_LEVERAGE
+    # L.3.2: Vol-adaptive sizing. Same regime classifier the L.2 gate uses.
+    from regime import classify_from_df
+    from risk import vol_scaled_margin
+    regime = classify_from_df(df, cfg)
+    scaled_margin = vol_scaled_margin(BREAKOUT_MARGIN_PER_TRADE, regime["vol"])
+    if scaled_margin < BREAKOUT_MARGIN_PER_TRADE:
+        logger.info("[%s] high-vol throttle: margin $%.2f → $%.2f",
+                      asset_name, BREAKOUT_MARGIN_PER_TRADE, scaled_margin)
+
+    # Sizing: scaled margin × leverage / price
+    notional = scaled_margin * BREAKOUT_LEVERAGE
     qty = round(notional / current_price, 4)
     if qty <= 0:
         logger.warning("[%s] computed qty <= 0; skipping", asset_name)

@@ -371,13 +371,20 @@ def calculate_position_quantity(
     current_price: float,
     leverage: int,
     executor,
+    margin_override: float | None = None,
 ) -> str:
     """Calculate position quantity based on margin allocation.
 
     $50 margin * 10x leverage = $500 notional
     quantity = notional / price, rounded to qty step
+
+    L.3.2: caller can pass `margin_override` (typically the output of
+    `risk.vol_scaled_margin(MARGIN_PER_TRADE, vol_regime)`) to reduce
+    notional during high-vol regimes. Default behavior unchanged when
+    override is None.
     """
-    notional = MARGIN_PER_TRADE * leverage
+    base_margin = MARGIN_PER_TRADE if margin_override is None else margin_override
+    notional = base_margin * leverage
     raw_qty = notional / current_price
 
     # Round down to the symbol's step size

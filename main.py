@@ -501,8 +501,27 @@ def run():
                         current_price = float(df.iloc[-2]["close"])
                         atr_at_entry = float(df.iloc[-2]["atr"])
 
+                        # L.3.2: Vol-adaptive sizing. Use the regime already
+                        # computed for the L.2 gate when available; otherwise
+                        # re-classify (low-vol assets that don't use the gate
+                        # still benefit from sizing).
+                        from risk import vol_scaled_margin
+                        regime_for_sizing = analysis.get("regime") if analysis else None
+                        if regime_for_sizing is None:
+                            try:
+                                from regime import classify_from_df
+                                regime_for_sizing = classify_from_df(df, cfg)
+                            except Exception:  # noqa: BLE001
+                                regime_for_sizing = {"vol": "unknown"}
+                        scaled_margin = vol_scaled_margin(
+                            MARGIN_PER_TRADE, regime_for_sizing.get("vol"))
+                        if scaled_margin < MARGIN_PER_TRADE:
+                            logger.info("[%s] high-vol throttle: margin $%.2f → $%.2f",
+                                          asset_name, MARGIN_PER_TRADE, scaled_margin)
+
                         qty = calculate_position_quantity(
-                            symbol, current_price, DEFAULT_LEVERAGE, executor
+                            symbol, current_price, DEFAULT_LEVERAGE, executor,
+                            margin_override=scaled_margin,
                         )
 
                         # Calculate SL price
