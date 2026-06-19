@@ -412,11 +412,35 @@ def run_cycle(executor: Executor, state: dict) -> None:
                     sig["would_enter"] = False
                     sig["blocked_by"] = "regime_misalign"
 
+            # Observability: log + persist per-asset signal evaluation so
+            # the operator can see why each asset is silent. Mirrors the
+            # momentum bot's pattern (main.py:227-242).
+            def _sym(v):
+                return "✅" if v is True else "❌" if v is False else "➖"
+            filter_line = " ".join(
+                f"{k}:{_sym(v)}" for k, v in (sig.get("filters") or {}).items()
+                if v is not None
+            )
+            status_emoji = "🟢" if sig["would_enter"] else "⚪"
+            logger.info("%s [%s] signal: would_enter=%s | blocked_by=%s | %s",
+                          status_emoji, asset_name, sig["would_enter"],
+                          sig.get("blocked_by") or "none", filter_line)
+            if "signal_status" not in state:
+                state["signal_status"] = {}
+            state["signal_status"][asset_name] = {
+                "symbol":        cfg["symbol"],
+                "interval":      cfg["interval"],
+                "strategy_name": cfg.get("strategy_name", asset_name),
+                "checked_at":    datetime.now(timezone.utc).isoformat(),
+                "would_enter":   sig.get("would_enter", False),
+                "blocked_by":    sig.get("blocked_by"),
+                "filters":       sig.get("filters", {}),
+                "direction":     sig.get("direction"),
+            }
+
             if sig["would_enter"]:
                 open_breakout_position(
                     executor, state, asset_name, cfg, df, sig["direction"])
-            elif sig.get("blocked_by"):
-                logger.debug("[%s] no entry: %s", asset_name, sig["blocked_by"])
         except Exception as e:
             logger.error("[%s] entry cycle errored: %s",
                          asset_name, e, exc_info=True)
