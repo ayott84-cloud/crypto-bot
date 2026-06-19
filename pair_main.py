@@ -22,7 +22,7 @@ from pair_config import (
     PAIR_LONG_LEG_KEY, PAIR_SHORT_LEG_KEY,
     PAIR_LONG_SYMBOL, PAIR_SHORT_SYMBOL,
     PAIR_MARGIN_PER_LEG, PAIR_LEVERAGE, MAX_PAIR_POSITIONS,
-    PAIR_CONFIG,
+    PAIR_CONFIG, PAIR_CONFIGS,
 )
 from pair_signals import (
     compute_ratio, rolling_z_score, analyze_pair_entry, check_pair_exit,
@@ -54,85 +54,122 @@ def _closes_from_klines(raw_klines: list) -> pd.Series:
     return df["close"].reset_index(drop=True)
 
 
-def _pair_is_open(state: dict) -> bool:
-    keys = state.get("positions", {})
-    return PAIR_LONG_LEG_KEY in keys or PAIR_SHORT_LEG_KEY in keys
+def leg_keys(pair_name: str) -> tuple[str, str]:
+    """Phase K round 5b: parameterized state-key generator per pair.
+
+    Returns (long_leg_key, short_leg_key) — e.g. for pair_name="BTCLTC":
+      ("PAIR_BTCLTC_LONG_LEG", "PAIR_BTCLTC_SHORT_LEG").
+    """
+    return (
+        f"{PAIR_STATE_KEY_PREFIX}{pair_name}_LONG_LEG",
+        f"{PAIR_STATE_KEY_PREFIX}{pair_name}_SHORT_LEG",
+    )
+
+
+def _pair_is_open(state: dict, pair_name: str = "ETHBTC") -> bool:
+    """Is the named pair currently holding legs? Defaults to ETHBTC for
+    backwards compat with the original single-pair API."""
+    long_k, short_k = leg_keys(pair_name)
+    positions = state.get("positions", {})
+    return long_k in positions or short_k in positions
 
 
 def open_pair_position(
     executor: Executor, state: dict, direction: str,
     eth_price: float, btc_price: float, current_ratio: float, z: float,
+    pair_name: str = "ETHBTC",
+    pair_spec: dict | None = None,
 ) -> None:
     """Open BOTH legs as one logical trade.
 
     direction: "LONG_ETH_SHORT_BTC" or "SHORT_ETH_LONG_BTC"
+    pair_name: which pair in PAIR_CONFIGS. Default "ETHBTC" preserves
+               the single-pair caller contract.
+    pair_spec: full spec dict from PAIR_CONFIGS[pair_name]; falls back
+               to legacy ETHBTC symbols if None.
     """
-    is_long_eth = direction == "LONG_ETH_SHORT_BTC"
+    if pair_spec is None:
+        pair_spec = PAIR_CONFIGS.get(pair_name, {
+            "long_symbol":  PAIR_LONG_SYMBOL,
+            "short_symbol": PAIR_SHORT_SYMBOL,
+            "interval":     PAIR_INTERVAL,
+            "cfg":          PAIR_CONFIG,
+        })
+    long_sym  = pair_spec["long_symbol"]
+    short_sym = pair_spec["short_symbol"]
+    long_k, short_k = leg_keys(pair_name)
+
+    is_long_eth = direction == "LONG_ETH_SHORT_BTC"  # rich-leg long convention
 
     notional = PAIR_MARGIN_PER_LEG * PAIR_LEVERAGE  # $500 per leg
     eth_qty = round(notional / eth_price, 6)
     btc_qty = round(notional / btc_price, 6)
     if eth_qty <= 0 or btc_qty <= 0:
-        logger.warning("Pair-open: computed qty <= 0; aborting")
+        logger.warning("[%s] Pair-open: computed qty <= 0; aborting", pair_name)
         return
 
-    logger.info("PAIR OPEN %s | ratio=%.6f z=%.2f | ETH qty=%s @ %.2f, BTC qty=%s @ %.2f",
-                direction, current_ratio, z, eth_qty, eth_price, btc_qty, btc_price)
+    logger.info("PAIR OPEN [%s] %s | ratio=%.6f z=%.2f | %s qty=%s @ %.2f, %s qty=%s @ %.2f",
+                pair_name, direction, current_ratio, z,
+                long_sym, eth_qty, eth_price, short_sym, btc_qty, btc_price)
 
     try:
         if is_long_eth:
-            executor.open_long(PAIR_LONG_SYMBOL,   eth_qty)
-            executor.open_short(PAIR_SHORT_SYMBOL, btc_qty)
+            executor.open_long(long_sym,  eth_qty)
+            executor.open_short(short_sym, btc_qty)
         else:
-            executor.open_short(PAIR_LONG_SYMBOL, eth_qty)
-            executor.open_long(PAIR_SHORT_SYMBOL, btc_qty)
+            executor.open_short(long_sym, eth_qty)
+            executor.open_long(short_sym, btc_qty)
     except Exception as e:
-        logger.error("Pair-open exchange call failed: %s", e)
+        logger.error("[%s] Pair-open exchange call failed: %s", pair_name, e)
         return
 
-    reason = f"Pair entry z={z:.2f} ratio={current_ratio:.6f}"
+    reason = f"{pair_name} pair entry z={z:.2f} ratio={current_ratio:.6f}"
+    strategy_tag = f"{PAIR_STRATEGY_TAG} {pair_name}"
     register_entry(
-        state, PAIR_LONG_LEG_KEY,
+        state, long_k,
         entry_price=eth_price, atr_at_entry=0.0,
-        quantity=eth_qty, strategy=PAIR_STRATEGY_TAG,
-        entry_reason=reason, symbol=PAIR_LONG_SYMBOL,
+        quantity=eth_qty, strategy=strategy_tag,
+        entry_reason=reason, symbol=long_sym,
         direction="LONG" if is_long_eth else "SHORT",
-        entry_ratio=current_ratio, entry_z=z,
+        entry_ratio=current_ratio, entry_z=z, pair_name=pair_name,
     )
     register_entry(
-        state, PAIR_SHORT_LEG_KEY,
+        state, short_k,
         entry_price=btc_price, atr_at_entry=0.0,
-        quantity=btc_qty, strategy=PAIR_STRATEGY_TAG,
-        entry_reason=reason, symbol=PAIR_SHORT_SYMBOL,
+        quantity=btc_qty, strategy=strategy_tag,
+        entry_reason=reason, symbol=short_sym,
         direction="SHORT" if is_long_eth else "LONG",
-        entry_ratio=current_ratio, entry_z=z,
+        entry_ratio=current_ratio, entry_z=z, pair_name=pair_name,
     )
 
     # Email open notification — single email for the pair (mentions both legs)
     try:
         from notifier import notify_trade_opened
         notify_trade_opened(
-            symbol=f"ETH/BTC pair ({direction})",
+            symbol=f"{pair_name} pair ({direction})",
             entry_price=current_ratio,
-            quantity=f"{eth_qty} ETH / {btc_qty} BTC",
+            quantity=f"{eth_qty} {long_sym[:3]} / {btc_qty} {short_sym[:3]}",
             leverage=PAIR_LEVERAGE,
             sl_price=current_ratio * 1.05 if is_long_eth else current_ratio * 0.95,
             tp1_price=current_ratio if abs(z) < 0.5 else current_ratio * (1 - 0.5 * z / abs(z)),
             tp2_price=current_ratio,
             atr_at_entry=0.0,
-            strategy=PAIR_STRATEGY_TAG,
+            strategy=strategy_tag,
             entry_reason=f"z-score {z:+.2f}, ratio {current_ratio:.6f}",
             direction="LONG" if is_long_eth else "SHORT",
         )
     except Exception as e:
-        logger.warning("pair-open notification failed: %s", e)
+        logger.warning("[%s] pair-open notification failed: %s", pair_name, e)
 
 
-def close_pair_position(executor: Executor, state: dict, reason: str) -> None:
-    """Close BOTH legs of the pair. Reason applied to both journal rows."""
+def close_pair_position(executor: Executor, state: dict, reason: str,
+                          pair_name: str = "ETHBTC") -> None:
+    """Close BOTH legs of the named pair. Reason applied to both journal
+    rows. Defaults to ETHBTC for backwards compat."""
+    long_k, short_k = leg_keys(pair_name)
     positions = state.get("positions", {})
-    long_leg  = positions.get(PAIR_LONG_LEG_KEY)
-    short_leg = positions.get(PAIR_SHORT_LEG_KEY)
+    long_leg  = positions.get(long_k)
+    short_leg = positions.get(short_k)
     if not (long_leg or short_leg):
         return
 
@@ -167,9 +204,9 @@ def close_pair_position(executor: Executor, state: dict, reason: str) -> None:
         except Exception as e:
             logger.error("[%s] log_trade failed: %s", state_key, e)
 
-    _close_one(PAIR_LONG_LEG_KEY,  long_leg)
-    _close_one(PAIR_SHORT_LEG_KEY, short_leg)
-    logger.info("PAIR CLOSED — %s", reason)
+    _close_one(long_k,  long_leg)
+    _close_one(short_k, short_leg)
+    logger.info("PAIR [%s] CLOSED — %s", pair_name, reason)
 
     # Email close notification — single email for the pair
     try:
@@ -178,9 +215,13 @@ def close_pair_position(executor: Executor, state: dict, reason: str) -> None:
         anchor = long_leg or short_leg or {}
         entry = float(anchor.get("entry_ratio") or anchor.get("entry_price") or 0)
         # Best-effort current price for ratio display
+        pair_spec = PAIR_CONFIGS.get(pair_name, {
+            "long_symbol":  PAIR_LONG_SYMBOL,
+            "short_symbol": PAIR_SHORT_SYMBOL,
+        })
         try:
-            eth_now = executor.get_symbol_price(PAIR_LONG_SYMBOL) or 0
-            btc_now = executor.get_symbol_price(PAIR_SHORT_SYMBOL) or 1
+            eth_now = executor.get_symbol_price(pair_spec["long_symbol"]) or 0
+            btc_now = executor.get_symbol_price(pair_spec["short_symbol"]) or 1
             current_ratio = float(eth_now) / float(btc_now) if btc_now else entry
         except Exception:
             current_ratio = entry
@@ -191,7 +232,7 @@ def close_pair_position(executor: Executor, state: dict, reason: str) -> None:
         except Exception:
             pass
         notify_trade_closed(
-            symbol="ETH/BTC pair",
+            symbol=f"{pair_name} pair",
             direction=anchor.get("direction", "LONG"),
             entry_price=entry,
             exit_price=current_ratio,
@@ -201,64 +242,66 @@ def close_pair_position(executor: Executor, state: dict, reason: str) -> None:
             tp1_price=entry,
             tp2_price=entry,
             exit_reason=reason,
-            strategy=PAIR_STRATEGY_TAG,
+            strategy=f"{PAIR_STRATEGY_TAG} {pair_name}",
             portfolio_value=portfolio_value,
         )
     except Exception as e:
         logger.warning("pair-close notification failed: %s", e)
 
 
-def run_cycle(executor: Executor, state: dict) -> None:
-    _write_heartbeat(_HEARTBEAT_FILE)
+def _run_one_pair(executor: Executor, state: dict, pair_name: str,
+                    pair_spec: dict) -> None:
+    """Phase K round 5b — exit-or-entry cycle for a single configured pair.
 
-    # Always pull latest prices for both symbols
+    Caller iterates PAIR_CONFIGS and calls this once per pair. Each pair
+    has its own state keys (PAIR_<NAME>_LONG_LEG / SHORT_LEG) so two
+    pairs can be open simultaneously without colliding.
+    """
+    long_sym  = pair_spec["long_symbol"]
+    short_sym = pair_spec["short_symbol"]
+    interval  = pair_spec.get("interval", PAIR_INTERVAL)
+    cfg       = pair_spec["cfg"]
+    long_k, short_k = leg_keys(pair_name)
+
     try:
         eth_klines = executor.get_klines(
-            PAIR_LONG_SYMBOL,  PAIR_INTERVAL, max(60, PAIR_CONFIG["z_window"] * 2))
+            long_sym,  interval, max(60, cfg["z_window"] * 2))
         btc_klines = executor.get_klines(
-            PAIR_SHORT_SYMBOL, PAIR_INTERVAL, max(60, PAIR_CONFIG["z_window"] * 2))
+            short_sym, interval, max(60, cfg["z_window"] * 2))
     except Exception as e:
-        logger.error("Failed to fetch klines: %s", e)
-        save_state(state, owner="pair")
+        logger.error("[%s] Failed to fetch klines: %s", pair_name, e)
         return
 
     eth_close = _closes_from_klines(eth_klines)
     btc_close = _closes_from_klines(btc_klines)
 
     # 1. Exit-management for an open pair
-    if _pair_is_open(state):
-        long_leg = state.get("positions", {}).get(PAIR_LONG_LEG_KEY) or {}
+    if _pair_is_open(state, pair_name):
+        long_leg = state.get("positions", {}).get(long_k) or {}
         bars_held = int(long_leg.get("bars_held") or 0) + 1
         entry_ratio = float(long_leg.get("entry_ratio") or 0.0)
-        # Reconstruct direction
-        pos_dir = "LONG_ETH_SHORT_BTC" if long_leg.get("direction") == "LONG" \
-                  else "SHORT_ETH_LONG_BTC"
+        pos_dir = ("LONG_ETH_SHORT_BTC"
+                    if long_leg.get("direction") == "LONG"
+                    else "SHORT_ETH_LONG_BTC")
         reason, _kind = check_pair_exit(
             eth_close, btc_close,
             position_direction=pos_dir,
             bars_held=bars_held, entry_ratio=entry_ratio,
-            cfg=PAIR_CONFIG,
+            cfg=cfg,
         )
         if reason:
-            close_pair_position(executor, state, reason)
+            close_pair_position(executor, state, reason, pair_name=pair_name)
         else:
-            # Bump bars_held on both legs
-            for k in (PAIR_LONG_LEG_KEY, PAIR_SHORT_LEG_KEY):
+            for k in (long_k, short_k):
                 if k in state.get("positions", {}):
                     state["positions"][k]["bars_held"] = bars_held
+        return  # don't open a new leg same cycle this pair just acted
 
-    # 2. Pause flag short-circuits new entries
+    # 2. Pause + entry. Pause is a global flag — short-circuit both pairs.
     if PAIR_PAUSED:
-        save_state(state, owner="pair")
         return
 
-    # 3. Capacity check — one pair at a time during validation
-    if _pair_is_open(state):
-        save_state(state, owner="pair")
-        return
-
-    # 4. New entry
-    sig = analyze_pair_entry(eth_close, btc_close, PAIR_CONFIG)
+    sig = analyze_pair_entry(eth_close, btc_close, cfg)
     if sig["would_enter"]:
         eth_price = float(eth_close.iloc[-1])
         btc_price = float(btc_close.iloc[-1])
@@ -266,7 +309,20 @@ def run_cycle(executor: Executor, state: dict) -> None:
             executor, state, sig["direction"],
             eth_price=eth_price, btc_price=btc_price,
             current_ratio=sig["ratio"] or 0.0, z=sig["z"] or 0.0,
+            pair_name=pair_name, pair_spec=pair_spec,
         )
+
+
+def run_cycle(executor: Executor, state: dict) -> None:
+    """One full poll — iterates every configured pair in PAIR_CONFIGS."""
+    _write_heartbeat(_HEARTBEAT_FILE)
+
+    for pair_name, pair_spec in PAIR_CONFIGS.items():
+        try:
+            _run_one_pair(executor, state, pair_name, pair_spec)
+        except Exception as e:  # noqa: BLE001
+            logger.error("[%s] pair cycle errored: %s", pair_name, e,
+                          exc_info=True)
 
     save_state(state, owner="pair")
 

@@ -115,13 +115,16 @@ def test_projection_breakout_uses_own_window_not_global():
 
 
 def test_projection_pair_uses_own_window():
+    """Each pair row has its own backtest window (post-multi-pair refactor:
+    ETHBTC = 2.63yr, BTCLTC = 2.74yr). Both should fall in the same
+    "~daily-bar-1000-row" ballpark."""
     proj = dashboard._compute_yearly_projection()
     pair_rows = [r for r in proj["rows"] if r["bot"] == "Pair"]
     if not pair_rows:
         pytest.skip("pair_config not importable")
     for r in pair_rows:
-        assert 2.5 <= r["window_years"] <= 2.7, (
-            f"pair {r['key']} expected ~2.63yr window, got {r['window_years']}")
+        assert 2.5 <= r["window_years"] <= 2.8, (
+            f"pair {r['key']} expected 2.5-2.8yr window, got {r['window_years']}")
 
 
 # ─── _v2_projection — display layer ──────────────────────────────────────
