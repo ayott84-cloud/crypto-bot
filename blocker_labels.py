@@ -28,6 +28,7 @@ BLOCKER_LABELS: dict[str, str] = {
     "mfi":                "MFI not in the bullish band",
     "adx":                "ADX trend strength below threshold",
     "btc_filter":         "BTC below EMA — alt correlation gate",
+    "regime_misalign":    "Regime misaligned with direction (L.2 gate)",
 }
 
 

@@ -299,6 +299,16 @@ def run_cycle(executor: Executor, state: dict) -> None:
                                     asset_name, e)
                     df_1d = None
             sig = analyze_breakout_entry(df, cfg, df_1d=df_1d)
+
+            # ── L.2: Regime gate ──────────────────────────────
+            if sig.get("would_enter") and cfg.get("use_regime_gate", False):
+                from regime import classify_from_df, gate_blocks_direction
+                regime = classify_from_df(df, cfg)
+                sig["regime"] = regime
+                if gate_blocks_direction(regime["label"], sig.get("direction", "LONG")):
+                    sig["would_enter"] = False
+                    sig["blocked_by"] = "regime_misalign"
+
             if sig["would_enter"]:
                 open_breakout_position(
                     executor, state, asset_name, cfg, df, sig["direction"])

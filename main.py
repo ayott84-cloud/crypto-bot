@@ -214,6 +214,28 @@ def run():
                     analysis = analyze_entry_signal(
                         df, cfg, btc_close=btc_close_val, btc_ema=btc_ema_val
                     )
+
+                    # ── L.2: Regime gate ──────────────────────────────
+                    # Per-asset `use_regime_gate` flag. Default OFF for
+                    # legacy assets (preserves their behavior); Phase K
+                    # promotions set it ON. The gate blocks LONG entries
+                    # during strong_down regime + SHORT during strong_up
+                    # — fundamentally misaligned directions.
+                    if cfg.get("use_regime_gate", False):
+                        from regime import classify_from_df, gate_blocks_direction
+                        regime = classify_from_df(df, cfg)
+                        analysis["regime"] = regime  # for dashboard
+                        # Momentum is LONG-only by default; allow_short flips
+                        # the direction. Read the direction the signal would
+                        # have taken, else default LONG.
+                        signal_direction = analysis.get("direction", "LONG") or "LONG"
+                        if (analysis.get("would_enter")
+                                and gate_blocks_direction(regime["label"],
+                                                            signal_direction)):
+                            analysis["would_enter"] = False
+                            analysis["blocked_by"] = "regime_misalign"
+                            analysis["filters"]["regime"] = False
+
                     # Log filter breakdown
                     def _sym(v):
                         if v is True:

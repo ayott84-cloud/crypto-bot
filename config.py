@@ -559,7 +559,8 @@ _MOMENTUM_TOP30_NEW_COINS = [
 
 
 def _momentum_default(symbol: str, interval: str, name: str,
-                       use_btc_filter: bool = True) -> dict:
+                       use_btc_filter: bool = True,
+                       use_regime_gate: bool = True) -> dict:
     """Baseline momentum config — mirrors the ETH_1D / BTC_4H pattern with
     use_adx_filter ON (helps reject low-vol regimes that produce noisy
     EMA crosses). BTC correlation filter ON for alts, OFF for BTC itself.
@@ -586,6 +587,11 @@ def _momentum_default(symbol: str, interval: str, name: str,
         "adx_period":       14, "adx_threshold": 18,
         "use_btc_filter":    use_btc_filter,
         "btc_ema_period":   50,
+        # L.2: regime gate (Phase K promotions default ON; legacy stays
+        # untouched). Blocks LONG entries during strong_down + SHORT
+        # entries during strong_up. The classifier needs >=200 bars so
+        # short-window 1H configs still receive klines.
+        "use_regime_gate":   use_regime_gate,
         "tp1_atr_mult":      1.8, "tp2_atr_mult": 4.0,
         "sl_atr_mult":       1.0,
         "tp1_close_pct":     0.50,

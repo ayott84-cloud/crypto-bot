@@ -129,6 +129,7 @@ BREAKOUT_ASSETS = {
         "volume_threshold_mult": 1.5,
         "volume_sma_period":     20,
         "use_trend_filter":      True,
+        "use_regime_gate":       True,   # L.2 (Phase K promotion)
         "allow_short":          True,
         "sl_atr_mult_short":    1.0,
         "strategy_name":        "BTC 1H Breakout",
@@ -149,6 +150,7 @@ BREAKOUT_ASSETS = {
         "volume_threshold_mult": 1.5,
         "volume_sma_period":     20,
         "use_trend_filter":      True,
+        "use_regime_gate":       True,   # L.2 (Phase K promotion)
         "allow_short":          True,
         "sl_atr_mult_short":    1.0,
         "strategy_name":        "ETH 1H Breakout",
@@ -189,6 +191,7 @@ for _name, _symbol, _title in [
         "volume_threshold_mult":  1.5,
         "volume_sma_period":      20,
         "use_trend_filter":       True,
+        "use_regime_gate":        True,   # L.2 (Phase K promotion)
         "allow_short":           True,
         "sl_atr_mult_short":     1.0,
         "strategy_name":         _title,
@@ -222,6 +225,7 @@ for _name, _symbol, _interval, _title in [
         "volume_threshold_mult":  1.5,
         "volume_sma_period":      20,
         "use_trend_filter":       True,
+        "use_regime_gate":        True,   # L.2 (Phase K D20 recovery)
         "allow_short":           True,
         "sl_atr_mult_short":     1.0,
         "strategy_name":         _title,
@@ -242,7 +246,15 @@ del _name, _symbol, _interval, _title
 # ADX 20/15, sl_atr_mult 2.5, volume + 1D-trend filters ON,
 # allow_short ON).
 def _breakout_default(symbol: str, interval: str, name: str) -> dict:
-    """Build a candidate config row using the validated 4H baseline."""
+    """Build a candidate config row using the validated 4H baseline.
+
+    L.2 default: use_regime_gate ON for any asset built via this factory
+    (covers all Phase K promotions + candidates). The 3 legacy assets
+    (BTC_4H, ETH_4H, SOL_4H) defined as inline dicts above don't get
+    this default — their flag remains absent (= False) to preserve
+    their original behavior until each is individually backtested with
+    the gate on.
+    """
     return {
         "symbol":                symbol,
         "interval":              interval,
@@ -258,6 +270,7 @@ def _breakout_default(symbol: str, interval: str, name: str) -> dict:
         "volume_threshold_mult":  1.5,
         "volume_sma_period":      20,
         "use_trend_filter":       True,
+        "use_regime_gate":        True,   # L.2
         "allow_short":           True,
         "sl_atr_mult_short":     1.0,
         "strategy_name":         name,
