@@ -35,7 +35,8 @@ sys.path.insert(0, str(BOT_DIR))
 
 
 GATE_PF_MIN     = 1.3
-GATE_TRADES_MIN = 5
+# Phase L gate tightening — see validate_breakout_candidates for rationale
+GATE_TRADES_MIN = 15
 
 # Pair PnL is the differential of two legs — naturally wider DD than
 # single-leg strategies. TF-scaled but with higher ceilings than

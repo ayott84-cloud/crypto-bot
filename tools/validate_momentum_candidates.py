@@ -35,7 +35,8 @@ sys.path.insert(0, str(BOT_DIR))
 
 
 GATE_PF_MIN     = 1.5
-GATE_TRADES_MIN = 5
+# Phase L gate tightening — see validate_breakout_candidates for rationale
+GATE_TRADES_MIN = 15
 
 # TF-scaled DD gates (industry-standard scaling for trend strategies —
 # daily strategies hold through wider swings than 1H). See round 4

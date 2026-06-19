@@ -38,7 +38,12 @@ sys.path.insert(0, str(BOT_DIR))
 
 
 GATE_PF_MIN     = 1.5
-GATE_TRADES_MIN = 5
+# Phase L gate tightening (Jun 19 2026): raised from 5 → 15 after
+# Phase K round 3 promotions went 0-for-5 on first live entries.
+# The n=5 threshold was too permissive — PF means little at that
+# sample size. n>=15 still admits short windows but produces less
+# small-sample blowback.
+GATE_TRADES_MIN = 15
 
 # TF-scaled DD gates. Drawdown is bar-frequency-dependent in trend
 # strategies: a 1H signal sees more whipsaw stops (small DD), a daily
