@@ -366,6 +366,39 @@ def increment_bar_count(state: dict, symbol: str) -> int:
     return 0
 
 
+def aggregate_position_qty(position: dict) -> float:
+    """Phase L.3.3 — sum baseline quantity + every pyramid leg quantity.
+
+    Returns the total exchange-side quantity that would be closed by
+    a single market-close call. Used at exit time to flatten the whole
+    position (baseline + pyramid legs) in one journal row.
+    """
+    baseline = float(position.get("quantity") or 0)
+    legs = position.get("pyramid_legs") or []
+    pyramid_total = sum(float(leg.get("quantity") or 0) for leg in legs)
+    return baseline + pyramid_total
+
+
+def aggregate_avg_entry(position: dict) -> float:
+    """Quantity-weighted average entry price across baseline + pyramid
+    legs. Falls back to baseline entry when no pyramid legs exist."""
+    baseline_qty = float(position.get("quantity") or 0)
+    baseline_entry = float(position.get("entry_price") or 0)
+    legs = position.get("pyramid_legs") or []
+    if not legs:
+        return baseline_entry
+    total_qty = baseline_qty
+    weighted_sum = baseline_qty * baseline_entry
+    for leg in legs:
+        q = float(leg.get("quantity") or 0)
+        p = float(leg.get("entry_price") or 0)
+        total_qty += q
+        weighted_sum += q * p
+    if total_qty <= 0:
+        return baseline_entry
+    return weighted_sum / total_qty
+
+
 def calculate_position_quantity(
     symbol: str,
     current_price: float,

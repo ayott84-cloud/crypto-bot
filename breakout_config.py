@@ -132,6 +132,10 @@ BREAKOUT_ASSETS = {
         "use_regime_gate":       True,   # L.2 (Phase K promotion)
         "use_breakeven_after_tp1": True,  # L.3.1 (Phase K promotion)
         "breakeven_trigger_atr":   1.0,
+        "allow_pyramiding":        True,  # L.3.3 (Phase K promotion)
+        "max_pyramid_legs":        2,
+        "pyramid_trigger_atr":     1.0,
+        "pyramid_size_fraction":   0.5,
         "allow_short":          True,
         "sl_atr_mult_short":    1.0,
         "strategy_name":        "BTC 1H Breakout",
@@ -155,6 +159,10 @@ BREAKOUT_ASSETS = {
         "use_regime_gate":       True,   # L.2 (Phase K promotion)
         "use_breakeven_after_tp1": True,  # L.3.1 (Phase K promotion)
         "breakeven_trigger_atr":   1.0,
+        "allow_pyramiding":        True,  # L.3.3 (Phase K promotion)
+        "max_pyramid_legs":        2,
+        "pyramid_trigger_atr":     1.0,
+        "pyramid_size_fraction":   0.5,
         "allow_short":          True,
         "sl_atr_mult_short":    1.0,
         "strategy_name":        "ETH 1H Breakout",
@@ -198,6 +206,10 @@ for _name, _symbol, _title in [
         "use_regime_gate":        True,   # L.2 (Phase K promotion)
         "use_breakeven_after_tp1": True,  # L.3.1 (Phase K promotion)
         "breakeven_trigger_atr":   1.0,
+        "allow_pyramiding":        True,  # L.3.3 (Phase K promotion)
+        "max_pyramid_legs":        2,
+        "pyramid_trigger_atr":     1.0,
+        "pyramid_size_fraction":   0.5,
         "allow_short":           True,
         "sl_atr_mult_short":     1.0,
         "strategy_name":         _title,
@@ -234,6 +246,10 @@ for _name, _symbol, _interval, _title in [
         "use_regime_gate":        True,   # L.2 (Phase K D20 recovery)
         "use_breakeven_after_tp1": True,  # L.3.1 (Phase K D20 recovery)
         "breakeven_trigger_atr":   1.0,
+        "allow_pyramiding":        True,  # L.3.3 (Phase K D20 recovery)
+        "max_pyramid_legs":        2,
+        "pyramid_trigger_atr":     1.0,
+        "pyramid_size_fraction":   0.5,
         "allow_short":           True,
         "sl_atr_mult_short":     1.0,
         "strategy_name":         _title,
@@ -281,6 +297,10 @@ def _breakout_default(symbol: str, interval: str, name: str) -> dict:
         "use_regime_gate":        True,   # L.2
         "use_breakeven_after_tp1": True,  # L.3.1
         "breakeven_trigger_atr":   1.0,
+        "allow_pyramiding":        True,  # L.3.3
+        "max_pyramid_legs":        2,
+        "pyramid_trigger_atr":     1.0,
+        "pyramid_size_fraction":   0.5,
         "allow_short":           True,
         "sl_atr_mult_short":     1.0,
         "strategy_name":         name,

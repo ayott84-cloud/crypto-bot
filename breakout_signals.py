@@ -161,6 +161,72 @@ def analyze_breakout_entry(df, cfg: dict, df_1d=None) -> dict:
 
 # ─── Exit ──────────────────────────────────────────────────────────────────
 
+def analyze_breakout_pyramid(df, position: dict, cfg: dict) -> dict | None:
+    """Phase L.3.3 — should the breakout bot add a pyramid leg?
+
+    Returns a leg spec dict {direction, entry_price, atr_at_entry,
+    size_fraction} when all conditions pass; None otherwise.
+
+    Conditions (all required):
+      1. cfg["allow_pyramiding"] is True
+      2. Existing pyramid_legs count < cfg["max_pyramid_legs"] (default 2)
+      3. Close has moved favorably by pyramid_trigger_atr × ATR_at_entry
+         beyond the LAST anchor (baseline entry, or most recent pyramid
+         leg if any). Default trigger = 1.0 × ATR — same scale as the
+         L.3.1 breakeven trigger so the two share intuition.
+      4. Strict continuation: current bar closes outside the prior
+         Donchian channel in the position's direction. This prevents
+         pyramiding into a fade after the initial breakout.
+
+    Per the peer-review correction, pyramid legs live in the existing
+    position dict's `pyramid_legs` list — NOT as separate top-level
+    state keys. This keeps `count_open_positions` consuming one slot
+    per position regardless of leg count.
+    """
+    if not cfg.get("allow_pyramiding", False):
+        return None
+    if df is None or len(df) < cfg.get("donchian_period", 55) + 1:
+        return None
+
+    legs = position.get("pyramid_legs", []) or []
+    max_legs = int(cfg.get("max_pyramid_legs", 2))
+    if len(legs) >= max_legs:
+        return None
+
+    direction = position.get("direction", "LONG").upper()
+    baseline_entry = float(position["entry_price"])
+    baseline_atr = float(position["atr_at_entry"])
+    last_anchor_price = (float(legs[-1]["entry_price"])
+                          if legs else baseline_entry)
+    trigger_distance = float(cfg.get("pyramid_trigger_atr", 1.0)) * baseline_atr
+
+    close = float(df.iloc[-1]["close"])
+    favorable = ((close - last_anchor_price)
+                  if direction == "LONG"
+                  else (last_anchor_price - close))
+    if favorable < trigger_distance:
+        return None
+
+    # Continuation check — strict same-direction Donchian print
+    period = cfg.get("donchian_period", 55)
+    upper, lower = compute_donchian_channels(df, period)
+    if direction == "LONG":
+        prior_upper = upper.iloc[-2]
+        if pd.isna(prior_upper) or close <= float(prior_upper):
+            return None
+    else:
+        prior_lower = lower.iloc[-2]
+        if pd.isna(prior_lower) or close >= float(prior_lower):
+            return None
+
+    return {
+        "direction":     direction,
+        "entry_price":   close,
+        "atr_at_entry":  float(df.iloc[-1].get("atr", baseline_atr) or baseline_atr),
+        "size_fraction": float(cfg.get("pyramid_size_fraction", 0.5)),
+    }
+
+
 def check_breakeven_trigger(close: float, entry_price: float,
                               atr_at_entry: float, direction: str,
                               cfg: dict) -> bool:

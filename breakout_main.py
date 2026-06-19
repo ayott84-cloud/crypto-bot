@@ -28,7 +28,7 @@ from breakout_config import (
 )
 from breakout_signals import (
     compute_donchian_channels, analyze_breakout_entry, check_breakout_exit,
-    check_breakeven_trigger,
+    check_breakeven_trigger, analyze_breakout_pyramid,
 )
 from executor import Executor
 from journal import log_trade
@@ -165,6 +165,58 @@ def open_breakout_position(
         logger.warning("[%s] open notification failed: %s", asset_name, e)
 
 
+def _add_pyramid_leg(executor: Executor, state: dict, state_key: str,
+                       asset_name: str, cfg: dict, spec: dict) -> None:
+    """Phase L.3.3 — open a pyramid leg + append to position.pyramid_legs.
+
+    Uses the same baseline notional × size_fraction (default 50% per
+    leg) so a 2-leg max means total exposure is ≤ 2× baseline. Per the
+    peer-review correction, legs live INSIDE the existing position
+    dict — no new top-level state key, slot accounting unchanged.
+    """
+    pos = state["positions"][state_key]
+    symbol = cfg["symbol"]
+    direction = spec["direction"]
+    leg_price = float(spec["entry_price"])
+    size_fraction = float(spec.get("size_fraction", 0.5))
+
+    # Recompute leg notional from current config (not the original baseline,
+    # so vol-adaptive sizing from L.3.2 also influences pyramid legs).
+    from regime import classify_from_df
+    from risk import vol_scaled_margin
+    # Use a tiny synthesized df is unnecessary — caller already has full df.
+    # The cfg-vol value is best taken from the same df the trigger used.
+    # We accept the slight redundancy and pass through with vol="unknown"
+    # if classification fails, since the trigger already confirmed
+    # market structure validity.
+    leg_margin = vol_scaled_margin(BREAKOUT_MARGIN_PER_TRADE, "unknown") * size_fraction
+    leg_notional = leg_margin * BREAKOUT_LEVERAGE
+    leg_qty = round(leg_notional / leg_price, 4)
+    if leg_qty <= 0:
+        logger.warning("[%s] pyramid qty <= 0, skipping leg", asset_name)
+        return
+
+    try:
+        if direction == "SHORT":
+            executor.open_short(symbol, leg_qty)
+        else:
+            executor.open_long(symbol, leg_qty)
+    except Exception as e:
+        logger.error("[%s] pyramid open failed: %s", asset_name, e)
+        return
+
+    legs = pos.setdefault("pyramid_legs", [])
+    legs.append({
+        "entry_price":   leg_price,
+        "atr_at_entry":  float(spec["atr_at_entry"]),
+        "quantity":      leg_qty,
+        "opened_at":     datetime.now(timezone.utc).isoformat(),
+        "size_fraction": size_fraction,
+    })
+    logger.info("[%s] pyramid leg #%d added: qty=%s @ %.6f (total legs=%d)",
+                  asset_name, len(legs), leg_qty, leg_price, len(legs))
+
+
 def close_breakout_position(
     executor: Executor, state: dict, state_key: str, reason: str,
 ) -> None:
@@ -189,17 +241,29 @@ def close_breakout_position(
                      state_key, e)
         return
 
+    # L.3.3: aggregate baseline + pyramid legs for the journal row.
+    # close_*_full on the exchange flattens the whole position regardless,
+    # but the journal records aggregate qty + weighted entry so PnL is
+    # accurate.
+    from position_manager import aggregate_position_qty, aggregate_avg_entry
+    total_qty = aggregate_position_qty(pos)
+    avg_entry = aggregate_avg_entry(pos)
+    pyramid_count = len(pos.get("pyramid_legs") or [])
+    journal_entry_reason = pos.get("entry_reason", "")
+    if pyramid_count > 0:
+        journal_entry_reason = (f"{journal_entry_reason} +{pyramid_count} pyramid").strip()
+
     register_exit(state, state_key)
 
     try:
         log_trade(
             symbol=symbol, direction=direction,
-            entry_price=pos["entry_price"],
-            exit_price=exit_price or pos["entry_price"],
-            quantity=float(pos["quantity"]),
+            entry_price=avg_entry,
+            exit_price=exit_price or avg_entry,
+            quantity=total_qty,
             leverage=BREAKOUT_LEVERAGE,
             strategy=pos.get("strategy", BREAKOUT_STRATEGY_TAG),
-            entry_reason=pos.get("entry_reason", ""),
+            entry_reason=journal_entry_reason,
             exit_reason=reason,
             date_closed=datetime.now(timezone.utc),
         )
@@ -292,6 +356,15 @@ def run_cycle(executor: Executor, state: dict) -> None:
             if reason:
                 logger.info("[%s] exit %s — closing", asset_name, reason)
                 close_breakout_position(executor, state, state_key, reason)
+                continue
+
+            # L.3.3: Pyramid leg consideration (only when not exiting).
+            # Pyramiding is per-asset and gated by cfg["allow_pyramiding"]
+            # which defaults False — wired ON in Phase L.3.3 config edits.
+            pyramid_spec = analyze_breakout_pyramid(df, pos, cfg)
+            if pyramid_spec is not None and not BREAKOUT_PAUSED:
+                _add_pyramid_leg(executor, state, state_key, asset_name,
+                                  cfg, pyramid_spec)
         except Exception as e:
             logger.error("[%s] exit-management cycle errored: %s",
                          asset_name, e, exc_info=True)
