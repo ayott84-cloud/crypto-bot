@@ -344,6 +344,24 @@
 .confidence-pill--low  { color: var(--warn, #d4ad58); }
 .confidence-pill--none { color: var(--ink-3); }
 
+/* L.1: projection headline split + sample-size chip */
+.kv-cell__hint {
+  display: block;
+  margin-top: 0.2rem;
+  font-family: var(--font-mono, ui-monospace);
+  font-size: 0.7rem;
+  color: var(--ink-3);
+  letter-spacing: 0.02em;
+}
+.sample-chip {
+  display: inline-block;
+  margin-left: 0.4rem;
+  font-family: var(--font-mono, ui-monospace);
+  font-size: 0.68rem;
+  color: var(--ink-3);
+  font-style: italic;
+}
+
 /* J.10 — Per-bot activity log */
 .bot-activity {
   margin: var(--space-4) 0;

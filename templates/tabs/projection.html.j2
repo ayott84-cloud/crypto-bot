@@ -10,24 +10,34 @@
     <span class="kv-cell__v">{{ projection.live_notional_display }}</span>
   </div>
   <div class="kv-cell">
-    <span class="kv-cell__k">PROJECTED ANNUAL PnL</span>
+    <span class="kv-cell__k">DIRECTIONAL · annual</span>
     <span class="kv-cell__v
-                {% if projection.total_annual > 0 %}is-up
-                {% elif projection.total_annual < 0 %}is-down{% endif %}">
-      {{ projection.total_annual_display }}
+                {% if projection.directional_annual > 0 %}is-up
+                {% elif projection.directional_annual < 0 %}is-down{% endif %}">
+      {{ projection.directional_annual_display }}
     </span>
+    <span class="kv-cell__hint">{{ projection.directional_pct_display }} · momentum + whale + breakout + reversal</span>
   </div>
   <div class="kv-cell">
-    <span class="kv-cell__k">PROJECTED ANNUAL %</span>
+    <span class="kv-cell__k">PAIR-SPREAD · annual</span>
     <span class="kv-cell__v
-                {% if projection.annual_pct > 0 %}is-up
-                {% elif projection.annual_pct < 0 %}is-down{% endif %}">
-      {{ projection.annual_pct_display }}
+                {% if projection.pair_annual > 0 %}is-up
+                {% elif projection.pair_annual < 0 %}is-down{% endif %}">
+      {{ projection.pair_annual_display }}
     </span>
+    <span class="kv-cell__hint">{{ projection.pair_pct_display }} · dollar-neutral, not directly comparable</span>
   </div>
   <div class="kv-cell">
-    <span class="kv-cell__k">TRADES / YEAR</span>
-    <span class="kv-cell__v">{{ projection.total_trades_display }}</span>
+    <span class="kv-cell__k">OBSERVED · 30d annualized</span>
+    <span class="kv-cell__v
+                {% if projection.observed_annual > 0 %}is-up
+                {% elif projection.observed_annual < 0 %}is-down{% endif %}">
+      {{ projection.observed_annual_display }}
+    </span>
+    <span class="kv-cell__hint">
+      {{ projection.observed_pct_display }} · n={{ projection.observed_n }} closed
+      {% if projection.reality_check_display != "—" %}· {{ projection.reality_check_display }}{% endif %}
+    </span>
   </div>
 </section>
 
@@ -35,7 +45,7 @@
   <table class="trades-table projection-table" aria-label="Per-strategy projection">
     <caption class="sr-only">
       Per-strategy yearly projection scaled from backtest results to live sizing.
-      Each row's confidence tag reflects sample size; small-n rows are visually muted.
+      Each row's annual PnL is discounted on display by sqrt(n/20) so small-sample rows don't visually dominate.
     </caption>
     <thead>
       <tr>
@@ -61,7 +71,10 @@
         <td class="trades-table__strategy">{{ r.name }}</td>
         <td class="trades-table__symbol">{{ r.symbol }}</td>
         <td class="trades-table__date">{{ r.interval }}</td>
-        <td class="num">{{ r.pf_display }}</td>
+        <td class="num"
+            {% if r.pf_tooltip %}title="{{ r.pf_tooltip }}"{% endif %}>
+          {{ r.pf_display }}
+        </td>
         <td class="num">{{ r.trades_per_year_display }}</td>
         <td class="num">{{ r.annual_pct_display }}</td>
         <td class="num">{{ r.dd_display }}</td>
@@ -77,6 +90,7 @@
                     {% elif r.annual_pnl_live > 0 %}is-up
                     {% elif r.annual_pnl_live < 0 %}is-down{% endif %}">
           {{ r.annual_pnl_live_display }}
+          {% if r.sample_chip %}<small class="sample-chip">{{ r.sample_chip }}</small>{% endif %}
         </td>
       </tr>
       {% endfor %}
@@ -92,13 +106,13 @@
 </div>
 
 <p class="tab-note">
-  Projection scales each row's backtest $ PnL to its live sizing and
-  divides by that row's backtest window <em>(per-bot — not a single
-  global window)</em>. Confidence tag reflects trade count:
-  <span class="confidence-pill confidence-pill--high">n ≥ 50</span> high,
-  <span class="confidence-pill confidence-pill--med">n ≥ 20</span> medium,
-  <span class="confidence-pill confidence-pill--low">small n</span> directional only,
-  <span class="confidence-pill confidence-pill--none">no data</span> awaiting first signal.
-  Low-confidence rows are muted to avoid over-weighting outliers (e.g. a
-  PF=91 row with n=2). Past performance doesn't predict future regime.
+  Annual PnL per row is discounted on display by
+  <code>√(n/20)</code> — a row with n=5 trades shows ≈50% of its raw
+  projected number; n=20+ shows the full number. The
+  <strong>Observed · 30d annualized</strong> card is the reality check:
+  if it's far below the modeled headline, the gap tells you which side
+  to trust. PF capped at <code>>10</code> on display to avoid
+  three-digit ratios; <code>∞</code> means the backtest window had no
+  losses (treat as directional only). Past performance doesn't predict
+  future regime.
 </p>

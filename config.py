@@ -621,31 +621,36 @@ def _expand_momentum_top30(tf: str) -> dict:
 #   SUI_1D    PF=4.17    n=14  WR=85.7%  total=+66.4%  DD=11.2%
 # PF=inf means no losses in the 1000-bar window — using 999.0 sentinel
 # (same as metrics.py recovery_factor uses for divide-by-zero cases).
+# Phase L.1b: each row carries its true backtest window in `years` so the
+# projection's annualization divisor is correct. 4H rows: 1000 bars =
+# 0.46yr; 1D rows: 1000 bars = 2.74yr. Adding `years` here is REQUIRED —
+# the projection function falls back to the global BACKTEST_YEARS=5.3
+# without it, which UNDER-annualizes 4H rows by ~11×.
 _MOMENTUM_PROMOTIONS = [
     ("TRX_4H",    "TRXUSDT",    "4h",
-     {"pf":   2.68, "trades": 16, "pnl_pct":  6.4, "dd_pct":  2.1}),
+     {"pf":   2.68, "trades": 16, "pnl_pct":  6.4, "dd_pct":  2.1, "years": 0.46}),
     ("AVAX_4H",   "AVAXUSDT",   "4h",
-     {"pf":   5.99, "trades":  6, "pnl_pct":  6.4, "dd_pct":  1.3}),
+     {"pf":   5.99, "trades":  6, "pnl_pct":  6.4, "dd_pct":  1.3, "years": 0.46}),
     ("LINK_4H",   "LINKUSDT",   "4h",
-     {"pf":   2.45, "trades":  9, "pnl_pct":  6.5, "dd_pct":  2.4}),
+     {"pf":   2.45, "trades":  9, "pnl_pct":  6.5, "dd_pct":  2.4, "years": 0.46}),
     ("FIL_4H",    "FILUSDT",    "4h",
-     {"pf":   1.64, "trades":  7, "pnl_pct":  5.1, "dd_pct":  8.0}),
+     {"pf":   1.64, "trades":  7, "pnl_pct":  5.1, "dd_pct":  8.0, "years": 0.46}),
     ("APT_4H",    "APTUSDT",    "4h",
-     {"pf":   1.61, "trades":  8, "pnl_pct":  6.1, "dd_pct":  6.9}),
+     {"pf":   1.61, "trades":  8, "pnl_pct":  6.1, "dd_pct":  6.9, "years": 0.46}),
     ("ARB_4H",    "ARBUSDT",    "4h",
-     {"pf": 999.0,  "trades":  9, "pnl_pct": 27.4, "dd_pct":  0.0}),
+     {"pf": 999.0,  "trades":  9, "pnl_pct": 27.4, "dd_pct":  0.0, "years": 0.46}),
     ("SUI_4H",    "SUIUSDT",    "4h",
-     {"pf":   3.23, "trades":  5, "pnl_pct":  6.9, "dd_pct":  3.1}),
+     {"pf":   3.23, "trades":  5, "pnl_pct":  6.9, "dd_pct":  3.1, "years": 0.46}),
     ("AAVE_4H",   "AAVEUSDT",   "4h",
-     {"pf": 100.34, "trades":  6, "pnl_pct": 17.1, "dd_pct":  0.2}),
+     {"pf": 100.34, "trades":  6, "pnl_pct": 17.1, "dd_pct":  0.2, "years": 0.46}),
     ("INJ_4H",    "INJUSDT",    "4h",
-     {"pf":  13.70, "trades": 11, "pnl_pct": 35.5, "dd_pct":  2.7}),
+     {"pf":  13.70, "trades": 11, "pnl_pct": 35.5, "dd_pct":  2.7, "years": 0.46}),
     ("RENDER_4H", "RENDERUSDT", "4h",
-     {"pf":   4.40, "trades":  6, "pnl_pct": 12.7, "dd_pct":  3.0}),
+     {"pf":   4.40, "trades":  6, "pnl_pct": 12.7, "dd_pct":  3.0, "years": 0.46}),
     ("NEAR_1D",   "NEARUSDT",   "1d",
-     {"pf": 999.0,  "trades":  5, "pnl_pct": 41.2, "dd_pct":  0.0}),
+     {"pf": 999.0,  "trades":  5, "pnl_pct": 41.2, "dd_pct":  0.0, "years": 2.74}),
     ("SUI_1D",    "SUIUSDT",    "1d",
-     {"pf":   4.17, "trades": 14, "pnl_pct": 66.4, "dd_pct": 11.2}),
+     {"pf":   4.17, "trades": 14, "pnl_pct": 66.4, "dd_pct": 11.2, "years": 2.74}),
 ]
 for _name, _symbol, _interval, _stats in _MOMENTUM_PROMOTIONS:
     _cfg = _momentum_default(_symbol, _interval,

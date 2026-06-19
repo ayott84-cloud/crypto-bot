@@ -91,10 +91,12 @@ def _ctx():
 
 
 def test_projection_tab_renders_headline_kv_cells():
+    """Phase L.1d split the single headline into separate Directional
+    and Pair-spread cards, plus an Observed reality-check cell."""
     html = render("base.html.j2", _ctx())
     for label in (
-        "STARTING CAPITAL", "NOTIONAL", "PROJECTED ANNUAL PnL",
-        "PROJECTED ANNUAL %", "TRADES / YEAR",
+        "STARTING CAPITAL", "NOTIONAL",
+        "DIRECTIONAL", "PAIR-SPREAD", "OBSERVED",
     ):
         assert label in html, f"{label} missing from projection tab"
 

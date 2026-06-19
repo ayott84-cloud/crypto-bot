@@ -874,7 +874,7 @@ def _build_v2_context(data: Dict[str, Any], state: dict | None = None,
         "chart_panels_root": _v2_build_all_chart_panels(executor, trades),
         # J.10: per-bot recent activity log from journalctl
         "activity_logs": _v2_build_activity_logs(),
-        "projection":   _v2_projection(),
+        "projection":   _v2_projection(trades=trades),
         "equity_curve_svg": _v2_equity_curve_svg(
             _v2_equity_series(trades, days=90)),
         "daily_pnl_svg":    _v2_daily_pnl_svg(
@@ -1063,7 +1063,7 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
         # J.10: activity logs — test context returns empty lists per bot
         "activity_logs":  {b: [] for b in ("momentum", "whale", "funding",
                                               "breakout", "pair", "reversal")},
-        "projection":    _v2_projection(),
+        "projection":    _v2_projection(trades=trades),
         "equity_curve_svg": _v2_equity_curve_svg(
             _v2_equity_series(trades, days=90)),
         "daily_pnl_svg":    _v2_daily_pnl_svg(
@@ -1688,19 +1688,94 @@ def _v2_trend(trades: List[dict], bot_label: str, metric: str,
     return {"direction": direction, "delta": delta, "available": True}
 
 
-def _v2_projection() -> dict:
+def _pf_display(pf_value: float) -> tuple[str, str]:
+    """L.1a: cap PF display at "10+" / "∞ (no losses)" sentinels.
+
+    Returns (display_text, tooltip_with_raw_number). The sentinel 999.0
+    (set by the validator when gross_loss == 0) renders as "∞" with the
+    raw number in the tooltip. Anything above 10 also displays as ">10"
+    so three-digit PFs don't visually inflate operator perception. The
+    raw float stays available for sort.
+    """
+    if pf_value is None:
+        return "—", ""
+    if pf_value >= 999.0:
+        return "∞", "PF = ∞ (no losses in backtest window)"
+    if pf_value > 10.0:
+        return ">10", f"PF = {pf_value:.2f}"
+    if pf_value <= 0:
+        return "0.00", ""
+    return f"{pf_value:.2f}", ""
+
+
+def _v2_observed_annual_pnl(trades: List[dict],
+                              window_days: int = 30) -> tuple[float, int]:
+    """L.1e: trailing-N-day observed PnL annualized.
+
+    Used by the projection page to surface the reality-check number next
+    to the model's headline. Returns (annualized_pnl, n_closed_trades).
+
+    Sums net_pnl from trades whose date_closed falls inside the trailing
+    window, multiplies by 365 / window_days. Excludes open positions
+    (no exit_price) and the reconciler's zero-pnl orphan closes
+    (`exit_reason` starts with "reconciled").
+    """
+    from datetime import datetime, timedelta, timezone
+    cutoff = datetime.now(timezone.utc) - timedelta(days=window_days)
+    pnls = []
+    for t in trades or []:
+        closed = t.get("date_closed")
+        if not closed:
+            continue
+        exit_reason = (t.get("exit_reason") or "").lower()
+        if exit_reason.startswith("reconciled"):
+            continue
+        try:
+            dt = datetime.fromisoformat(str(closed).replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+        except (ValueError, TypeError):
+            continue
+        if dt < cutoff:
+            continue
+        pnls.append(float(t.get("net_pnl") or 0))
+    if not pnls:
+        return 0.0, 0
+    return sum(pnls) * 365.0 / window_days, len(pnls)
+
+
+def _sample_size_discount(trades: int) -> float:
+    """L.1c: sqrt(n/20) discount for small-sample projections.
+
+    n=1   → 0.22×
+    n=10  → 0.71×
+    n=20+ → 1.00×
+
+    No hard cliff at n<20 (peer-review correction over the original
+    binary 0.5×). Returns a float multiplier on annual_pnl_live for
+    display only — the underlying number stays untouched.
+    """
+    import math
+    if trades <= 0:
+        return 0.0
+    if trades >= 20:
+        return 1.0
+    return math.sqrt(trades / 20.0)
+
+
+def _v2_projection(trades: List[dict] | None = None) -> dict:
     """Wrap _compute_yearly_projection() with display-formatted fields.
 
-    Returns dict with `rows` (per-strategy + whale), `total_annual`,
-    `total_trades_per_year`, and the pre-formatted display strings the
-    template renders.
+    Phase L.1: PF capped at "∞ / >10"; per-row annual_pnl_live discounted
+    by sqrt(n/20) on display; headline split into Directional vs Pair-
+    spread because pair PnL is dollar-neutral leg-differential and
+    isn't directly comparable to single-leg bots. Trailing 30d observed
+    PnL surfaced as a reality-check column.
     """
     proj = _compute_yearly_projection()
     rows = proj.get("rows", [])
-    total_annual = proj.get("total_annual", 0.0)
     total_trades = proj.get("total_trades_per_year", 0.0)
     starting_capital = INITIAL_CAPITAL
-    annual_pct = (total_annual / starting_capital * 100) if starting_capital > 0 else 0
 
     def _fmt(row):
         is_awaiting = bool(row.get("is_awaiting"))
@@ -1711,21 +1786,35 @@ def _v2_projection() -> dict:
             "low":  "small n",
             "none": "no data",
         }.get(confidence, "—")
-        # Low-n + awaiting rows get a row CSS class so the template can
-        # mute them visually (italic + lower opacity).
         row_class = ""
         if is_awaiting:
             row_class = "is-awaiting"
         elif confidence in ("low", "none"):
             row_class = "is-low-confidence"
         years = row.get("window_years", 0) or 0
+        trades = int(row.get("trades", 0) or 0)
+        raw_pf = row.get("pf", 0) or 0
+        pf_text, pf_tooltip = _pf_display(raw_pf)
+        # L.1c: shrink the projected $ for display by sqrt(n/20)
+        discount = _sample_size_discount(trades) if not is_awaiting else 0.0
+        raw_annual = row.get("annual_pnl_live", 0.0) or 0.0
+        discounted_annual = raw_annual * discount
+        # Small-n chip text — actual sample size, not the bucket threshold
+        if is_awaiting:
+            sample_chip = ""
+        elif discount >= 1.0:
+            sample_chip = ""
+        else:
+            sample_chip = f"× {discount:.2f} (n={trades})"
         return {
             **row,
+            "annual_pnl_live_raw":     raw_annual,
+            "annual_pnl_live":         discounted_annual,
             "annual_pnl_live_display": (
                 "—" if is_awaiting
-                else _v2_pnl_display(row.get("annual_pnl_live", 0.0))),
-            "pf_display":              ("—" if is_awaiting
-                                          else f"{row.get('pf', 0):.2f}"),
+                else _v2_pnl_display(discounted_annual)),
+            "pf_display":              ("—" if is_awaiting else pf_text),
+            "pf_tooltip":              pf_tooltip,
             "annual_pct_display":      ("—" if is_awaiting
                                           else f"{row.get('annual_pct_backtest', 0):+.1f}%"),
             "trades_per_year_display": ("—" if is_awaiting
@@ -1735,6 +1824,8 @@ def _v2_projection() -> dict:
             "window_years_display":    ("—" if years <= 0
                                           else (f"{years:.2f}yr" if years < 1
                                                  else f"{years:.1f}yr")),
+            "sample_chip":             sample_chip,
+            "discount":                discount,
             "confidence":              confidence,
             "confidence_label":        confidence_label,
             "row_class":               row_class,
@@ -1742,18 +1833,59 @@ def _v2_projection() -> dict:
             "is_awaiting":             is_awaiting,
         }
 
+    formatted = [_fmt(r) for r in rows]
+    # L.1d: split headline into Directional vs Pair-spread cards.
+    directional_rows = [r for r in formatted if r.get("bot") != "Pair"]
+    pair_rows        = [r for r in formatted if r.get("bot") == "Pair"]
+    directional_annual = sum(r["annual_pnl_live"] for r in directional_rows
+                              if not r.get("is_awaiting"))
+    pair_annual        = sum(r["annual_pnl_live"] for r in pair_rows
+                              if not r.get("is_awaiting"))
+    total_annual = directional_annual + pair_annual
+    annual_pct        = (total_annual       / starting_capital * 100) if starting_capital > 0 else 0
+    directional_pct   = (directional_annual / starting_capital * 100) if starting_capital > 0 else 0
+    pair_pct          = (pair_annual        / starting_capital * 100) if starting_capital > 0 else 0
+
+    # L.1e: observed trailing-30d annualized vs the modeled projection.
+    observed_annual, observed_n = _v2_observed_annual_pnl(trades or [], window_days=30)
+    observed_pct = (observed_annual / starting_capital * 100) if starting_capital > 0 else 0
+    # Reality-check ratio: observed / modeled. > 1 means the model is
+    # CONSERVATIVE; < 1 means the model is OPTIMISTIC. Null when modeled
+    # is zero/negative to avoid div-by-zero and useless ratios.
+    if total_annual > 0:
+        reality_check_ratio = observed_annual / total_annual
+        reality_check_display = f"{reality_check_ratio:.2f}× modeled"
+    else:
+        reality_check_ratio = 0.0
+        reality_check_display = "—"
+
     return {
-        "rows":                       [_fmt(r) for r in rows],
-        "starting_capital":           starting_capital,
-        "starting_capital_display":   f"${starting_capital:,.0f}",
-        "live_notional":              proj.get("live_notional", 0.0),
-        "live_notional_display":      f"${proj.get('live_notional', 0):,.0f}",
-        "total_annual":               total_annual,
-        "total_annual_display":       _v2_pnl_display(total_annual),
-        "annual_pct":                 annual_pct,
-        "annual_pct_display":         f"{annual_pct:+.2f}%",
-        "total_trades_per_year":      total_trades,
-        "total_trades_display":       f"{total_trades:.1f}",
+        "rows":                            formatted,
+        "starting_capital":                starting_capital,
+        "starting_capital_display":        f"${starting_capital:,.0f}",
+        "live_notional":                   proj.get("live_notional", 0.0),
+        "live_notional_display":           f"${proj.get('live_notional', 0):,.0f}",
+        "total_annual":                    total_annual,
+        "total_annual_display":            _v2_pnl_display(total_annual),
+        "annual_pct":                      annual_pct,
+        "annual_pct_display":              f"{annual_pct:+.2f}%",
+        # L.1d: split headline cards
+        "directional_annual":              directional_annual,
+        "directional_annual_display":      _v2_pnl_display(directional_annual),
+        "directional_pct_display":         f"{directional_pct:+.2f}%",
+        "pair_annual":                     pair_annual,
+        "pair_annual_display":             _v2_pnl_display(pair_annual),
+        "pair_pct_display":                f"{pair_pct:+.2f}%",
+        "pair_row_count":                  len(pair_rows),
+        # L.1e: observed reality check
+        "observed_annual":                 observed_annual,
+        "observed_annual_display":         _v2_pnl_display(observed_annual),
+        "observed_pct_display":            f"{observed_pct:+.2f}%",
+        "observed_n":                      observed_n,
+        "reality_check_ratio":             reality_check_ratio,
+        "reality_check_display":           reality_check_display,
+        "total_trades_per_year":           total_trades,
+        "total_trades_display":            f"{total_trades:.1f}",
     }
 
 

@@ -170,3 +170,183 @@ def test_projection_template_renders_bot_tags_and_confidence_pills():
         # At least one bot-tag class and one confidence-pill class
         assert 'class="bot-tag bot-tag--' in html
         assert "confidence-pill confidence-pill--" in html
+
+
+# ─── Phase L.1 — projection honesty pass ─────────────────────────────────
+
+# L.1a — PF display cap
+
+def test_pf_display_caps_999_sentinel_as_infinity():
+    text, tooltip = dashboard._pf_display(999.0)
+    assert text == "∞"
+    assert "∞" in tooltip
+
+
+def test_pf_display_caps_above_10_with_gt_symbol():
+    text, tooltip = dashboard._pf_display(100.34)
+    assert text == ">10"
+    assert "100.34" in tooltip
+
+
+def test_pf_display_passes_through_normal_values():
+    text, tooltip = dashboard._pf_display(2.81)
+    assert text == "2.81"
+    assert tooltip == ""
+
+
+def test_pf_display_handles_zero_and_none():
+    assert dashboard._pf_display(0)[0] == "0.00"
+    assert dashboard._pf_display(None)[0] == "—"
+
+
+# L.1b — years field added ONLY to Phase K _MOMENTUM_PROMOTIONS
+
+def test_phase_k_momentum_promotions_have_years_field():
+    """Every entry in _MOMENTUM_PROMOTIONS must carry a `years` field.
+    Without it, the projection falls back to BACKTEST_YEARS=5.3 and
+    under-annualizes 4H rows by ~11×."""
+    from config import _MOMENTUM_PROMOTIONS
+    for name, _sym, _interval, stats in _MOMENTUM_PROMOTIONS:
+        assert "years" in stats, f"{name} stats dict missing years"
+        assert stats["years"] > 0, f"{name} has years <= 0"
+
+
+def test_4h_promotions_use_046_window():
+    from config import _MOMENTUM_PROMOTIONS
+    for name, _sym, interval, stats in _MOMENTUM_PROMOTIONS:
+        if interval == "4h":
+            assert stats["years"] == 0.46, (
+                f"{name} 4H window should be 0.46yr, got {stats['years']}")
+
+
+def test_1d_promotions_use_274_window():
+    from config import _MOMENTUM_PROMOTIONS
+    for name, _sym, interval, stats in _MOMENTUM_PROMOTIONS:
+        if interval == "1d":
+            assert stats["years"] == 2.74, (
+                f"{name} 1D window should be 2.74yr, got {stats['years']}")
+
+
+def test_legacy_assets_do_not_have_years_field():
+    """Critical peer-review correction: legacy ASSETS rows must NOT have
+    years added. Their pnl_pct was computed over 5.3yr TradingView
+    windows, so the BACKTEST_YEARS fallback is accidentally correct.
+    Adding years=0.46 to them would inflate by ~11× in the wrong
+    direction."""
+    from config import ASSETS, _MOMENTUM_PROMOTIONS
+    promoted_keys = {name for name, _s, _i, _bts in _MOMENTUM_PROMOTIONS}
+    for key, cfg in ASSETS.items():
+        if key in promoted_keys:
+            continue  # Phase K promotions are allowed to have years
+        stats = cfg.get("backtest_stats")
+        if stats is None:
+            continue
+        assert "years" not in stats, (
+            f"legacy asset {key} should NOT have a years field; "
+            f"removing breaks the BACKTEST_YEARS fallback")
+
+
+# L.1c — sqrt(n/20) sample-size discount
+
+def test_sample_size_discount_full_at_n_geq_20():
+    assert dashboard._sample_size_discount(20)  == 1.0
+    assert dashboard._sample_size_discount(50)  == 1.0
+    assert dashboard._sample_size_discount(100) == 1.0
+
+
+def test_sample_size_discount_sqrt_below_20():
+    import math
+    assert dashboard._sample_size_discount(5) == pytest.approx(math.sqrt(0.25), rel=0.01)
+    assert dashboard._sample_size_discount(10) == pytest.approx(math.sqrt(0.5), rel=0.01)
+    assert dashboard._sample_size_discount(15) == pytest.approx(math.sqrt(0.75), rel=0.01)
+
+
+def test_sample_size_discount_zero_when_no_trades():
+    assert dashboard._sample_size_discount(0) == 0.0
+    assert dashboard._sample_size_discount(-1) == 0.0
+
+
+def test_projection_row_carries_sample_chip_for_low_n():
+    p = dashboard._v2_projection()
+    low_n_rows = [r for r in p["rows"]
+                   if 0 < r.get("trades", 0) < 20 and not r.get("is_awaiting")]
+    if not low_n_rows:
+        pytest.skip("no low-n rows configured")
+    for r in low_n_rows:
+        assert r["sample_chip"], (
+            f"row {r['key']} has trades={r['trades']} but no sample_chip")
+        assert f"n={r['trades']}" in r["sample_chip"]
+
+
+# L.1d — Headline split (Directional + Pair-spread)
+
+def test_projection_splits_directional_and_pair():
+    p = dashboard._v2_projection()
+    assert "directional_annual" in p
+    assert "pair_annual" in p
+    assert "directional_annual_display" in p
+    assert "pair_annual_display" in p
+
+
+def test_projection_directional_excludes_pair_rows():
+    p = dashboard._v2_projection()
+    pair_total = sum(r["annual_pnl_live"] for r in p["rows"]
+                      if r.get("bot") == "Pair" and not r.get("is_awaiting"))
+    assert abs(p["pair_annual"] - pair_total) < 0.01
+    directional_total = sum(r["annual_pnl_live"] for r in p["rows"]
+                             if r.get("bot") != "Pair" and not r.get("is_awaiting"))
+    assert abs(p["directional_annual"] - directional_total) < 0.01
+
+
+# L.1e — Observed-vs-projected reality check
+
+def test_observed_annual_pnl_excludes_open_positions():
+    from datetime import datetime, timezone, timedelta
+    recent = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+    trades = [
+        {"date_closed": recent, "net_pnl": 10.0, "exit_reason": "TP1"},
+        {"date_closed": None,   "net_pnl": 0.0,  "exit_reason": ""},
+    ]
+    annual, n = dashboard._v2_observed_annual_pnl(trades, window_days=30)
+    assert n == 1
+    assert annual > 0
+
+
+def test_observed_annual_pnl_excludes_reconciler_zeros():
+    from datetime import datetime, timezone, timedelta
+    recent = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+    trades = [
+        {"date_closed": recent, "net_pnl": 10.0, "exit_reason": "TP1"},
+        {"date_closed": recent, "net_pnl":  0.0,
+            "exit_reason": "reconciled by tools/reconcile_journal.py"},
+    ]
+    annual, n = dashboard._v2_observed_annual_pnl(trades, window_days=30)
+    assert n == 1, "reconciler rows must not be counted as real activity"
+
+
+def test_observed_annual_pnl_annualizes_correctly():
+    from datetime import datetime, timezone, timedelta
+    recent = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+    trades = [{"date_closed": recent, "net_pnl": 100.0, "exit_reason": "TP1"}]
+    annual, _ = dashboard._v2_observed_annual_pnl(trades, window_days=30)
+    # $100 over 30 days × (365/30) = $1216.67
+    assert 1200 < annual < 1230
+
+
+def test_observed_annual_pnl_outside_window_excluded():
+    from datetime import datetime, timezone, timedelta
+    old = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat()
+    trades = [{"date_closed": old, "net_pnl": 100.0, "exit_reason": "TP1"}]
+    annual, n = dashboard._v2_observed_annual_pnl(trades, window_days=30)
+    assert annual == 0
+    assert n == 0
+
+
+def test_projection_surfaces_observed_when_trades_provided():
+    from datetime import datetime, timezone, timedelta
+    recent = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat()
+    trades = [{"date_closed": recent, "net_pnl": 50.0, "exit_reason": "TP1"}]
+    p = dashboard._v2_projection(trades=trades)
+    assert p["observed_n"] == 1
+    assert p["observed_annual"] > 0
+    assert p["observed_annual_display"]
