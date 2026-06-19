@@ -319,11 +319,25 @@ def register_entry(
     strategy: str,
     entry_reason: str = "",
     symbol: Optional[str] = None,
+    direction: str = "LONG",
+    **extra,
 ) -> None:
     """Register a new position in state.
 
     state_key: unique per-strategy dict key (e.g. "XRP", "XRP_4H")
-    symbol: exchange symbol (e.g. "XRPUSDT") — stored inside pos for executor calls
+    symbol:    exchange symbol (e.g. "XRPUSDT") — stored inside pos for
+               executor calls
+    direction: "LONG" or "SHORT". Default "LONG" preserves the original
+               momentum-only contract.
+    **extra:   bot-specific fields stored on the position dict (e.g.
+               pair's entry_ratio/entry_z, reversal's bars_held). This
+               is the structural fix for a long-standing bug — every
+               bot except momentum + funding has been passing extra
+               kwargs that crashed register_entry, so every breakout /
+               pair / reversal entry attempt silently raised inside its
+               except handler since Phase G. Live impact: Phase K
+               breakout entries never landed despite the bot logging
+               them as taken.
     """
     state["positions"][state_key] = {
         "entry_price": entry_price,
@@ -335,9 +349,12 @@ def register_entry(
         "strategy": strategy,
         "entry_reason": entry_reason,
         "symbol": symbol or state_key,  # exchange symbol for API calls
+        "direction": direction,
+        **extra,
     }
-    logger.info("Registered ENTRY %s (%s) @ %.4f, qty=%s, ATR=%.4f",
-                state_key, symbol or state_key, entry_price, quantity, atr_at_entry)
+    logger.info("Registered ENTRY %s (%s) %s @ %.4f, qty=%s, ATR=%.4f",
+                state_key, symbol or state_key, direction,
+                entry_price, quantity, atr_at_entry)
 
 
 def register_tp1_taken(state: dict, symbol: str, new_quantity: str) -> None:
