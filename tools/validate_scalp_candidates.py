@@ -11,11 +11,13 @@ Usage:
     venv/bin/python tools/validate_scalp_candidates.py --asset BTC_5M
     venv/bin/python tools/validate_scalp_candidates.py --bars 10000  # ~34 days
 
-Default: 5000 bars × Binance source = ~17 days of 5m history. Binance
-fetches in 1500-bar chunks chaining backward in time; top-10 perp prices
-on Binance are arbitraged tight enough to WEEX that they're a clean
-backtest proxy. Live trading still routes through WEEX — this is
-backtest-only.
+Default: 5000 bars × extended-source = ~17 days of 5m history. The
+extended-source helper (tools/_binance_klines.py — name retained,
+implementation underneath is Bybit V5) fetches in 1000-bar chunks
+chaining backward in time. Top-10 perp prices are arbitraged tight
+across venues on 5m closes — Bybit is a clean backtest proxy.
+
+Live trading still routes through WEEX — this is backtest-only.
 
 WEEX's kline API is hardcapped at 1000 bars per call with no
 startTime/endTime support, so --source=weex caps at 1000 bars regardless
@@ -89,9 +91,13 @@ def main() -> int:
                                 "WEEX is capped.)")
     parser.add_argument("--source", choices=["weex", "binance"],
                           default="binance",
-                          help="Data source for klines. binance allows "
-                                "chained windows up to any size; weex "
-                                "is hardcapped at 1000.")
+                          help="Data source for klines. `binance` "
+                                "actually uses Bybit V5 (the helper "
+                                "was renamed to Bybit after Binance "
+                                "geo-blocked DigitalOcean US with HTTP "
+                                "451; choice label retained for backward "
+                                "compat). `weex` is hardcapped at 1000 "
+                                "bars.")
     parser.add_argument("--asset", default=None,
                           help="Validate just one candidate asset name "
                                 "(e.g. BTC_5M)")
