@@ -114,16 +114,33 @@ class BacktestReport:
 
 # ─── Klines fetcher ────────────────────────────────────────────────────────
 
-def _fetch_klines(symbol: str, interval: str, count: int) -> pd.DataFrame:
-    """Pull klines via the real executor (works in DRY_RUN too — read-only call).
+def _fetch_klines(symbol: str, interval: str, count: int,
+                    source: str = "weex") -> pd.DataFrame:
+    """Pull klines for replay.
 
-    WEEX returns positional arrays, not dicts — delegates to the existing
-    signals.build_dataframe() helper which knows the WEEX layout.
+    source:
+      "weex"    — live exchange (default). Hardcapped at 1000 bars per
+                  call; if count > 1000 you'll only get the most recent
+                  1000 anyway.
+      "binance" — Binance USDT-M futures public klines, chained backward
+                  in 1500-bar chunks. Use for extended-window backtests
+                  on strategies whose signal is too sparse for the WEEX
+                  cap (e.g. 5m scalp needing ~5000 bars for n>=20).
+                  Top-10 perp prices are arbitraged tight enough that
+                  Binance klines are a clean proxy for WEEX backtests.
+
+    Both sources return positional kline rows (the first 6 columns —
+    open_time, open, high, low, close, volume — match), so
+    signals.build_dataframe handles either layout identically.
     """
-    from executor import Executor
     from signals import build_dataframe
-    ex = Executor()
-    raw = ex.get_klines(symbol, interval, count)
+    if source == "binance":
+        from tools._binance_klines import fetch_klines_chained
+        raw = fetch_klines_chained(symbol, interval, count)
+    else:
+        from executor import Executor
+        ex = Executor()
+        raw = ex.get_klines(symbol, interval, min(count, 1000))
     if not raw:
         return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
     df = build_dataframe(raw)
@@ -235,7 +252,8 @@ def replay_momentum(asset_name: str, cfg: dict, bars: int = 500) -> BacktestRepo
 
 # ─── Scalp replay ─────────────────────────────────────────────────────────
 
-def replay_scalp(asset_name: str, cfg: dict, bars: int = 1000) -> BacktestReport:
+def replay_scalp(asset_name: str, cfg: dict, bars: int = 1000,
+                   source: str = "weex") -> BacktestReport:
     """Phase M — replay the 5m vol-expansion + new-high scalp strategy.
 
     Exit is pure-pct bracket (no ATR scaling). Once a position opens, the
@@ -244,10 +262,13 @@ def replay_scalp(asset_name: str, cfg: dict, bars: int = 1000) -> BacktestReport
     (conservative: real fills can be better with limit orders or worse
     with market slippage). Cooldown logic from the live bot is mirrored
     so the replay matches live behavior.
+
+    source: "weex" (default, hardcapped at 1000 bars) or "binance"
+    (chained, any window). Use Binance for windows > 3.5 days on 5m.
     """
     from scalp_signals import analyze_scalp_entry, check_scalp_exit
 
-    df = _fetch_klines(cfg["symbol"], cfg["interval"], bars)
+    df = _fetch_klines(cfg["symbol"], cfg["interval"], bars, source=source)
     if df is None or len(df) == 0:
         return BacktestReport(bot="scalp", asset=asset_name, bars_seen=0)
 

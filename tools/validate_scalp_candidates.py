@@ -9,8 +9,17 @@ Usage:
     cd /home/bot/crypto-bot
     venv/bin/python tools/validate_scalp_candidates.py
     venv/bin/python tools/validate_scalp_candidates.py --asset BTC_5M
+    venv/bin/python tools/validate_scalp_candidates.py --bars 10000  # ~34 days
 
-Default bars: 1000 (~3.5 days on 5m). Pass --bars 2000 for ~7 days.
+Default: 5000 bars × Binance source = ~17 days of 5m history. Binance
+fetches in 1500-bar chunks chaining backward in time; top-10 perp prices
+on Binance are arbitraged tight enough to WEEX that they're a clean
+backtest proxy. Live trading still routes through WEEX — this is
+backtest-only.
+
+WEEX's kline API is hardcapped at 1000 bars per call with no
+startTime/endTime support, so --source=weex caps at 1000 bars regardless
+of --bars.
 """
 
 from __future__ import annotations
@@ -73,9 +82,16 @@ def main() -> int:
     logging.basicConfig(level=logging.WARNING,
                           format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--bars", type=int, default=1000,
-                          help="Historical bars per asset (default 1000; "
-                                "5m × 1000 = ~3.5 days, the WEEX kline cap)")
+    parser.add_argument("--bars", type=int, default=5000,
+                          help="Historical bars per asset (default 5000; "
+                                "5m × 5000 = ~17 days. Requires "
+                                "--source=binance for >1000 bars since "
+                                "WEEX is capped.)")
+    parser.add_argument("--source", choices=["weex", "binance"],
+                          default="binance",
+                          help="Data source for klines. binance allows "
+                                "chained windows up to any size; weex "
+                                "is hardcapped at 1000.")
     parser.add_argument("--asset", default=None,
                           help="Validate just one candidate asset name "
                                 "(e.g. BTC_5M)")
@@ -118,7 +134,8 @@ def main() -> int:
 
     for name, cfg in candidates.items():
         try:
-            report = replay_scalp(asset_name=name, cfg=cfg, bars=args.bars)
+            report = replay_scalp(asset_name=name, cfg=cfg,
+                                     bars=args.bars, source=args.source)
         except Exception as e:  # noqa: BLE001
             print(f"  {name:10s}  ERROR: {e}")
             failed.append((name, f"replay error: {e}"))
