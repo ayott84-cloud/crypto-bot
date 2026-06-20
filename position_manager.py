@@ -50,6 +50,7 @@ _FUNDING_PREFIX = "FUNDING_"
 _BREAKOUT_PREFIX = "BREAKOUT_"
 _PAIR_PREFIX = "PAIR_"
 _REVERSAL_PREFIX = "REVERSAL_"
+_SCALP_PREFIX = "SCALP_"
 
 # Ordered (prefix, bot) — first match wins. Add new bots here.
 BOT_PREFIXES = (
@@ -58,6 +59,7 @@ BOT_PREFIXES = (
     (_BREAKOUT_PREFIX, "breakout"),
     (_PAIR_PREFIX, "pair"),
     (_REVERSAL_PREFIX, "reversal"),
+    (_SCALP_PREFIX, "scalp"),
 )
 DEFAULT_BOT = "momentum"
 
@@ -69,6 +71,8 @@ _FUNDING_TOPLEVEL: set = set()
 _BREAKOUT_TOPLEVEL: set = set()
 _PAIR_TOPLEVEL: set = set()
 _REVERSAL_TOPLEVEL: set = set()
+# Phase M: scalp owns its own per-asset re-entry cooldown map
+_SCALP_TOPLEVEL = {"scalp_cooldowns"}
 
 # Per-bot top-level key sets — used by _merge_state to preserve other bots'
 # top-level state when one bot saves.
@@ -79,6 +83,7 @@ _TOPLEVEL_BY_BOT = {
     "breakout": _BREAKOUT_TOPLEVEL,
     "pair": _PAIR_TOPLEVEL,
     "reversal": _REVERSAL_TOPLEVEL,
+    "scalp": _SCALP_TOPLEVEL,
 }
 
 

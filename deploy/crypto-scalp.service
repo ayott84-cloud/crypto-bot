@@ -1,0 +1,39 @@
+[Unit]
+Description=Crypto Scalp Bot (scalp_main.py — 5-minute volatility-expansion breakouts)
+After=network-online.target crypto-momentum.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bot
+Group=bot
+WorkingDirectory=/home/bot/crypto-bot
+EnvironmentFile=-/home/bot/crypto-bot/.env
+ExecStart=/home/bot/crypto-bot/venv/bin/python /home/bot/crypto-bot/scalp_main.py
+
+# Restart on any exit — transient WEEX 5xx, network blips, etc.
+Restart=always
+RestartSec=30
+
+# Log to journald (view with: journalctl -u crypto-scalp -f)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=crypto-scalp
+
+# Resource caps — 5m TF iterates more often than 4h/1d bots but does
+# less indicator math (no MACD/PMO/EMA200), so the working-set is small.
+MemoryMax=300M
+MemoryHigh=200M
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/bot/crypto-bot
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

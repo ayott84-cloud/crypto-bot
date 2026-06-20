@@ -76,6 +76,7 @@ def _ctx():
         "breakout_meta": dashboard._v2_breakout_meta([]),
         "pair_meta":     dashboard._v2_pair_meta([]),
         "reversal_meta": dashboard._v2_reversal_meta([]),
+        "scalp_meta":    dashboard._v2_scalp_meta([]),
         "projection":   dashboard._v2_projection(),
         "bot_panels": {
             "momentum": dashboard._v2_build_bot_panels([], None, "momentum"),
@@ -84,6 +85,7 @@ def _ctx():
             "breakout": dashboard._v2_build_bot_panels([], None, "breakout"),
             "pair":     dashboard._v2_build_bot_panels([], None, "pair"),
             "reversal": dashboard._v2_build_bot_panels([], None, "reversal"),
+            "scalp":    dashboard._v2_build_bot_panels([], None, "scalp"),
         },
         "risk_metrics":      dashboard._v2_risk_metrics({}),
         "regime_expectancy": dashboard._v2_regime_expectancy({}),

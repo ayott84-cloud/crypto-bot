@@ -59,6 +59,10 @@
               aria-controls="tab-reversal"   data-tab="reversal"   class="sidebar__item">
         <span class="sidebar__icon monogram--reversal">R</span><span class="sidebar__label">Reversal</span>
       </button>
+      <button role="tab" aria-selected="false"
+              aria-controls="tab-scalp"      data-tab="scalp"      class="sidebar__item">
+        <span class="sidebar__icon monogram--scalp">S</span><span class="sidebar__label">Scalp</span>
+      </button>
     </div>
     <div class="sidebar__group">
       <span class="sidebar__group-label">ANALYSIS</span>
@@ -96,6 +100,9 @@
       </section>
       <section role="tabpanel" id="tab-reversal"   tabindex="0" hidden>
         {% include "tabs/reversal.html.j2" %}
+      </section>
+      <section role="tabpanel" id="tab-scalp"      tabindex="0" hidden>
+        {% include "tabs/scalp.html.j2" %}
       </section>
       <section role="tabpanel" id="tab-projection" tabindex="0" hidden>
         {% include "tabs/projection.html.j2" %}

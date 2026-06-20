@@ -786,6 +786,7 @@ def _build_v2_context(data: Dict[str, Any], state: dict | None = None,
     spark_breakout = _v2_sparkline_points(trades, "Breakout", days=30)
     spark_pair     = _v2_sparkline_points(trades, "Pair",     days=30)
     spark_reversal = _v2_sparkline_points(trades, "Reversal", days=30)
+    spark_scalp    = _v2_sparkline_points(trades, "Scalp",    days=30)
     spark_portfolio = _v2_sparkline_points(trades, None,      days=30)
 
     # Stash trades on the data dict so _v2_why_silent() can read them
@@ -842,6 +843,13 @@ def _build_v2_context(data: Dict[str, Any], state: dict | None = None,
                  stroke_class="spark__line spark__line--reversal",
                  label="Reversal 30-day cumulative PnL"),
              "why":       _v2_why_silent("reversal", data)},
+            {**_bot_card("scalp", "S", "Scalp", "Scalp",
+                         bot_status.get("scalp", {})),
+             "spark_svg": _v2_sparkline_svg(
+                 spark_scalp,
+                 stroke_class="spark__line spark__line--scalp",
+                 label="Scalp 30-day cumulative PnL"),
+             "why":       _v2_why_silent("scalp", data)},
         ],
         "portfolio": {
             "net_pnl":          portfolio_net,
@@ -868,8 +876,10 @@ def _build_v2_context(data: Dict[str, Any], state: dict | None = None,
             "breakout": _v2_build_bot_panels(trades, state, "breakout"),
             "pair":     _v2_build_bot_panels(trades, state, "pair"),
             "reversal": _v2_build_bot_panels(trades, state, "reversal"),
+            "scalp":    _v2_build_bot_panels(trades, state, "scalp"),
         },
         "reversal_meta": _v2_reversal_meta(trades),
+        "scalp_meta":    _v2_scalp_meta(trades),
         # J.5a: per-bot chart panels (asset dropdown + chart data per asset)
         "chart_panels_root": _v2_build_all_chart_panels(executor, trades),
         # J.10: per-bot recent activity log from journalctl
@@ -1035,6 +1045,16 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
                  stroke_class="spark__line spark__line--reversal",
                  label="Reversal 30-day cumulative PnL"),
              "why": _v2_why_silent("reversal", data_stub)},
+            {"class": "scalp", "monogram": "S", "name": "Scalp",
+             "state": "dormant", "seen_label": "paused",
+             "net_pnl": 0, "net_pnl_display": "$0.00",
+             "trade_count": 0, "win_rate_display": "—",
+             "pnl_trend": p_r, "wr_trend": w_r,
+             "spark_svg": _v2_sparkline_svg(
+                 _v2_sparkline_points(trades, "Scalp"),
+                 stroke_class="spark__line spark__line--scalp",
+                 label="Scalp 30-day cumulative PnL"),
+             "why": _v2_why_silent("scalp", data_stub)},
         ],
         "portfolio": {"net_pnl": 0, "net_pnl_display": "$0.00",
                       "closed_count": 0, "open_count": 0,
@@ -1055,14 +1075,16 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
             "breakout": _v2_build_bot_panels(trades, None, "breakout"),
             "pair":     _v2_build_bot_panels(trades, None, "pair"),
             "reversal": _v2_build_bot_panels(trades, None, "reversal"),
+            "scalp":    _v2_build_bot_panels(trades, None, "scalp"),
         },
         "pair_meta":     _v2_pair_meta(trades),
         "reversal_meta": _v2_reversal_meta(trades),
+        "scalp_meta":    _v2_scalp_meta(trades),
         # J.5a: chart panels (empty when no executor available in test context)
         "chart_panels_root": _v2_build_all_chart_panels(None, trades),
         # J.10: activity logs — test context returns empty lists per bot
         "activity_logs":  {b: [] for b in ("momentum", "whale", "funding",
-                                              "breakout", "pair", "reversal")},
+                                              "breakout", "pair", "reversal", "scalp")},
         "projection":    _v2_projection(trades=trades),
         "equity_curve_svg": _v2_equity_curve_svg(
             _v2_equity_series(trades, days=90)),
@@ -1140,6 +1162,31 @@ def _v2_why_silent(bot_class: str, data: Dict[str, Any]) -> dict | None:
             return {
                 "label":  "Awaiting z-score extreme",
                 "detail": "Live. ETH/BTC ratio hasn't hit |z|≥2 since launch.",
+                "kind":   "info",
+            }
+        return None
+
+    if bot_class == "scalp":
+        try:
+            from scalp_config import SCALP_PAUSED
+        except ImportError:
+            SCALP_PAUSED = True
+        if SCALP_PAUSED:
+            return {
+                "label":  "Paused — pending backtest validation",
+                "detail": "SCALP_PAUSED=true. Enable after "
+                          "tools/validate_scalp_candidates.py clears "
+                          "the gates on the initial 3 assets (BTC/ETH/SOL).",
+                "kind":   "dormant",
+            }
+        scalp_trades = [t for t in data.get("_trades_cache", [])
+                          if t.get("bot") == "Scalp"]
+        if not scalp_trades:
+            return {
+                "label":  "Awaiting vol-expansion + new-high signal",
+                "detail": "Live. No 5m bar has aligned vol-expansion + "
+                          "20-bar momentum + 20-bar new high/low + body color "
+                          "since launch.",
                 "kind":   "info",
             }
         return None
@@ -1983,6 +2030,7 @@ _BOT_CLASS_TO_LABEL = {
     "breakout": "Breakout",
     "pair":     "Pair",
     "reversal": "Reversal",
+    "scalp":    "Scalp",
 }
 
 
@@ -2519,7 +2567,7 @@ def _v2_build_activity_logs(executor=None) -> dict[str, list[dict]]:
     """Bundle activity logs for every bot tab. Per-bot failure is swallowed
     (returns [] for that bot) — one bot's missing service file must not
     block the whole dashboard render."""
-    bots = ("momentum", "whale", "funding", "breakout", "pair", "reversal")
+    bots = ("momentum", "whale", "funding", "breakout", "pair", "reversal", "scalp")
     return {b: _v2_bot_activity_log(b) for b in bots}
 
 
@@ -2550,6 +2598,9 @@ def _v2_assets_for_bot(bot_class: str) -> dict[str, dict]:
         if bot_class == "reversal":
             from reversal_config import REVERSAL_ASSETS
             return dict(REVERSAL_ASSETS)
+        if bot_class == "scalp":
+            from scalp_config import SCALP_ASSETS
+            return dict(SCALP_ASSETS)
         if bot_class == "pair":
             from pair_config import (
                 PAIR_LONG_SYMBOL, PAIR_SHORT_SYMBOL,
@@ -2647,6 +2698,8 @@ def _v2_build_all_chart_panels(executor, trades: list) -> dict:
                                                      "pair", max_assets=1),
         "reversal": _v2_build_chart_panels_for_bot(executor, trades,
                                                      "reversal"),
+        "scalp":    _v2_build_chart_panels_for_bot(executor, trades,
+                                                     "scalp", max_assets=3),
     }
 
 
@@ -2836,11 +2889,67 @@ def _v2_reversal_meta(trades: List[dict]) -> dict:
     }
 
 
+def _v2_scalp_meta(trades: List[dict]) -> dict:
+    """Phase M — Scalp-specific metadata for the Scalp tab."""
+    try:
+        from scalp_config import (
+            SCALP_PAUSED, SCALP_ASSETS, SCALP_CANDIDATE_ASSETS,
+            SCALP_MARGIN_PER_TRADE, SCALP_LEVERAGE,
+            MAX_SCALP_POSITIONS, SCALP_COOLDOWN_SECONDS,
+        )
+    except ImportError:
+        SCALP_PAUSED = True
+        SCALP_ASSETS = {}
+        SCALP_CANDIDATE_ASSETS = {}
+        SCALP_MARGIN_PER_TRADE = 10.0
+        SCALP_LEVERAGE = 10
+        MAX_SCALP_POSITIONS = 3
+        SCALP_COOLDOWN_SECONDS = 600
+
+    first_cfg = next(iter(SCALP_ASSETS.values()), {})
+    asset_rows = [
+        {"name": k, "symbol": v.get("symbol", ""),
+         "interval": v.get("interval", ""),
+         "allow_short": bool(v.get("allow_short", True))}
+        for k, v in SCALP_ASSETS.items()
+    ]
+    candidate_rows = [
+        {"name": k, "symbol": v.get("symbol", ""),
+         "interval": v.get("interval", "")}
+        for k, v in SCALP_CANDIDATE_ASSETS.items()
+    ]
+    scalp_trades = [t for t in trades if t.get("bot") == "Scalp"]
+    closed = [t for t in scalp_trades
+              if t.get("exit_price") not in (None, 0, "0", "")]
+    pnl_list = [float(t.get("net_pnl") or 0) for t in closed]
+    return {
+        "paused":              bool(SCALP_PAUSED),
+        "range_short_sma":     first_cfg.get("range_short_sma", 10),
+        "range_long_sma":      first_cfg.get("range_long_sma", 50),
+        "momentum_lookback":   first_cfg.get("momentum_lookback", 20),
+        "new_high_lookback":   first_cfg.get("new_high_lookback", 20),
+        "sl_pct":              first_cfg.get("sl_pct", 1.5),
+        "tp_pct":              first_cfg.get("tp_pct", 3.0),
+        "cooldown_seconds":    int(SCALP_COOLDOWN_SECONDS),
+        "margin_usd":          float(SCALP_MARGIN_PER_TRADE),
+        "leverage":            int(SCALP_LEVERAGE),
+        "notional_usd":        float(SCALP_MARGIN_PER_TRADE) * int(SCALP_LEVERAGE),
+        "max_positions":       int(MAX_SCALP_POSITIONS),
+        "assets":              asset_rows,
+        "candidate_assets":    candidate_rows,
+        "closed_count":        len(closed),
+        "win_rate_display":    (f"{sum(1 for p in pnl_list if p > 0) / len(pnl_list) * 100:.1f}%"
+                                if pnl_list else "—"),
+        "net_pnl_display":     _v2_pnl_display(sum(pnl_list)),
+    }
+
+
 _PAUSE_FLAGS = {
     "whale":    ("whale_config",    "WHALE_PAUSED"),
     "breakout": ("breakout_config", "BREAKOUT_PAUSED"),
     "pair":     ("pair_config",     "PAIR_PAUSED"),
     "reversal": ("reversal_config", "REVERSAL_PAUSED"),
+    "scalp":    ("scalp_config",    "SCALP_PAUSED"),
 }
 
 

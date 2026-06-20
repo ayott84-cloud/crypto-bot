@@ -1,0 +1,174 @@
+<h1 class="tab-heading">Scalp</h1>
+
+{% if scalp_meta.paused %}
+<div class="banner banner--paused" role="status">
+  <span class="banner__label">PAUSED</span>
+  <span class="banner__msg">
+    <code>SCALP_PAUSED=true</code> — 5m volatility-expansion breakout
+    awaiting backtest validation. Enable per Phase M.6 after
+    <code>tools/validate_scalp_candidates.py</code> clears the gates
+    on the initial 3 assets (BTC/ETH/SOL).
+  </span>
+</div>
+{% elif scalp_meta.closed_count == 0 %}
+<div class="banner banner--info" role="status">
+  <span class="banner__label">AWAITING SIGNAL</span>
+  <span class="banner__msg">
+    Bot is live. No 5m bar has printed vol-expansion + 20-bar momentum
+    + 20-bar new high/low + matching body color since launch.
+  </span>
+</div>
+{% endif %}
+
+<section class="config-grid" aria-label="Scalp bot configuration">
+  <h2 class="config-grid__heading">Strategy parameters</h2>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Volatility expansion</span>
+    <span class="kv-row__v">
+      <code>SMA(range, {{ scalp_meta.range_short_sma }}) &gt; SMA(range, {{ scalp_meta.range_long_sma }})</code>
+      <span class="kv-row__hint">recent range exceeds longer baseline</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Momentum lookback</span>
+    <span class="kv-row__v">
+      <code>{{ scalp_meta.momentum_lookback }} bars</code>
+      <span class="kv-row__hint">close vs. close-N-ago direction agreement</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">New high/low lookback</span>
+    <span class="kv-row__v">
+      <code>{{ scalp_meta.new_high_lookback }} bars</code>
+      <span class="kv-row__hint">close exceeds prior N-bar extreme</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Stop loss / Take profit</span>
+    <span class="kv-row__v">
+      <code>−{{ scalp_meta.sl_pct }}% / +{{ scalp_meta.tp_pct }}%</code>
+      <span class="kv-row__hint">2:1 R/R fixed bracket; breakeven WR = 33.3%</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Re-entry cooldown</span>
+    <span class="kv-row__v">
+      <code>{{ scalp_meta.cooldown_seconds }} s</code>
+      <span class="kv-row__hint">prevents whipsaw chains after exit</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Sizing</span>
+    <span class="kv-row__v">
+      <code>${{ scalp_meta.margin_usd|int }} margin × {{ scalp_meta.leverage }}x</code>
+      <span class="kv-row__hint">= ${{ scalp_meta.notional_usd|int }} notional per signal</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Slot cap</span>
+    <span class="kv-row__v">
+      <code>{{ scalp_meta.max_positions }} concurrent</code>
+    </span>
+  </div>
+</section>
+
+<section class="config-grid" aria-label="Configured assets">
+  <h2 class="config-grid__heading">Configured assets ({{ scalp_meta.assets|length }})</h2>
+  <table class="regime-table">
+    <thead>
+      <tr>
+        <th scope="col">Asset</th>
+        <th scope="col">Symbol</th>
+        <th scope="col">Timeframe</th>
+        <th scope="col">SHORT enabled</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in scalp_meta.assets %}
+      <tr>
+        <td>{{ a.name }}</td>
+        <td>{{ a.symbol }}</td>
+        <td>{{ a.interval }}</td>
+        <td>
+          {% if a.allow_short %}
+            <span class="dir dir--short">ON</span>
+          {% else %}
+            <span class="dir" style="opacity:0.3;">OFF</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if scalp_meta.candidate_assets and scalp_meta.candidate_assets|length > 0 %}
+<section class="config-grid" aria-label="Candidate assets awaiting validation">
+  <h2 class="config-grid__heading">
+    Candidate assets ({{ scalp_meta.candidate_assets|length }})
+    <span class="config-grid__hint">
+      — staged in <code>SCALP_CANDIDATE_ASSETS</code>; promoted at
+      day-14 review per Phase M.6 rubric
+    </span>
+  </h2>
+  <table class="regime-table">
+    <thead>
+      <tr>
+        <th scope="col">Asset</th>
+        <th scope="col">Symbol</th>
+        <th scope="col">Timeframe</th>
+        <th scope="col">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in scalp_meta.candidate_assets %}
+      <tr>
+        <td>{{ a.name }}</td>
+        <td>{{ a.symbol }}</td>
+        <td>{{ a.interval }}</td>
+        <td>
+          <span class="confidence-pill confidence-pill--none">
+            awaiting day-14 review
+          </span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="kv-grid" aria-label="Scalp performance">
+  <div class="kv-cell">
+    <span class="kv-cell__k">CLOSED TRADES</span>
+    <span class="kv-cell__v">{{ scalp_meta.closed_count }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">WIN RATE</span>
+    <span class="kv-cell__v">{{ scalp_meta.win_rate_display }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">NET PnL</span>
+    <span class="kv-cell__v
+                {% if scalp_meta.net_pnl_display.startswith('+') %}is-up
+                {% elif scalp_meta.net_pnl_display.startswith('−') %}is-down{% endif %}">
+      {{ scalp_meta.net_pnl_display }}
+    </span>
+  </div>
+</section>
+
+{% set bot_kpis = bot_panels.scalp.kpis %}
+{% include "components/bot_kpis_strip.html.j2" %}
+
+{% set chart_panels = chart_panels_root.scalp if chart_panels_root is defined else [] %}
+{% include "components/bot_chart_panel.html.j2" %}
+
+{% set positions = bot_panels.scalp.positions %}
+{% include "components/bot_positions_panel.html.j2" %}
+
+{% set bot_trades = bot_panels.scalp.trades %}
+{% include "components/bot_trades_panel.html.j2" %}
+
+{% set activity_rows = activity_logs.scalp if activity_logs is defined else [] %}
+{% include "components/bot_activity_log.html.j2" %}

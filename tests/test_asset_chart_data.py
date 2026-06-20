@@ -215,7 +215,7 @@ def test_build_all_chart_panels_keys():
     """The wrapper returns one key per bot — present in every context."""
     panels = dashboard._v2_build_all_chart_panels(None, [])
     assert set(panels.keys()) == {"momentum", "breakout", "whale",
-                                    "funding", "pair", "reversal"}
+                                    "funding", "pair", "reversal", "scalp"}
     assert panels["whale"] == []
     assert panels["funding"] == []
 

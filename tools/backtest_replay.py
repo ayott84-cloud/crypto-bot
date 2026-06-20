@@ -233,6 +233,72 @@ def replay_momentum(asset_name: str, cfg: dict, bars: int = 500) -> BacktestRepo
     return report
 
 
+# ─── Scalp replay ─────────────────────────────────────────────────────────
+
+def replay_scalp(asset_name: str, cfg: dict, bars: int = 1000) -> BacktestReport:
+    """Phase M — replay the 5m vol-expansion + new-high scalp strategy.
+
+    Exit is pure-pct bracket (no ATR scaling). Once a position opens, the
+    next bar's high/low (vs SL/TP thresholds) determines whether it
+    closes; for simplicity we use the bar CLOSE as the trigger price
+    (conservative: real fills can be better with limit orders or worse
+    with market slippage). Cooldown logic from the live bot is mirrored
+    so the replay matches live behavior.
+    """
+    from scalp_signals import analyze_scalp_entry, check_scalp_exit
+
+    df = _fetch_klines(cfg["symbol"], cfg["interval"], bars)
+    if df is None or len(df) == 0:
+        return BacktestReport(bot="scalp", asset=asset_name, bars_seen=0)
+
+    needed = max(cfg.get("range_long_sma", 50),
+                  cfg.get("momentum_lookback", 20),
+                  cfg.get("new_high_lookback", 20)) + 2
+    report = BacktestReport(bot="scalp", asset=asset_name, bars_seen=len(df))
+
+    position: dict | None = None
+    cooldown_until_bar = -1  # index up to which re-entry is blocked
+
+    for i in range(needed, len(df)):
+        window = df.iloc[: i + 1]
+        current_close = float(df.iloc[i]["close"])
+
+        if position is None:
+            if i < cooldown_until_bar:
+                continue
+            sig = analyze_scalp_entry(window, cfg)
+            if sig["would_enter"]:
+                position = {
+                    "direction":     sig["direction"],
+                    "entry_bar":     i,
+                    "entry_price":   current_close,
+                }
+            continue
+
+        # In a position — check pct-bracket exit
+        reason = check_scalp_exit(
+            entry_price=position["entry_price"],
+            current_price=current_close,
+            direction=position["direction"],
+            cfg=cfg,
+        )
+        if reason:
+            sign = 1.0 if position["direction"] == "LONG" else -1.0
+            pnl_pct = sign * (current_close - position["entry_price"]) \
+                        / position["entry_price"] * 100
+            report.trades.append(TradeResult(
+                direction=position["direction"],
+                entry_bar=position["entry_bar"], exit_bar=i,
+                entry_price=position["entry_price"],
+                exit_price=current_close,
+                exit_reason=reason, pnl_pct=pnl_pct,
+            ))
+            # Apply cooldown: SCALP_COOLDOWN_SECONDS / 5min ≈ 2 bars
+            cooldown_until_bar = i + 2
+            position = None
+    return report
+
+
 # ─── Breakout replay ───────────────────────────────────────────────────────
 
 def replay_breakout(asset_name: str, cfg: dict, bars: int = 500) -> BacktestReport:
@@ -432,6 +498,12 @@ def _run_momentum(bars: int) -> List[BacktestReport]:
             for name, cfg in ASSETS.items()]
 
 
+def _run_scalp(bars: int) -> List[BacktestReport]:
+    from scalp_config import SCALP_ASSETS
+    return [replay_scalp(name, cfg, bars=bars)
+            for name, cfg in SCALP_ASSETS.items()]
+
+
 def _run_breakout(bars: int) -> List[BacktestReport]:
     from breakout_config import BREAKOUT_ASSETS
     return [replay_breakout(name, cfg, bars=bars)
@@ -455,16 +527,19 @@ def main() -> None:
     )
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--bot",
-                        choices=["momentum", "breakout", "pair", "reversal", "all"],
+                        choices=["momentum", "breakout", "pair", "reversal",
+                                  "scalp", "all"],
                         default="all", help="Which strategy to replay")
     parser.add_argument("--bars", type=int, default=500,
                         help="How many historical bars to fetch per asset")
     args = parser.parse_args()
 
     runners = {
+        "momentum": _run_momentum,
         "breakout": _run_breakout,
         "pair":     _run_pair,
         "reversal": _run_reversal,
+        "scalp":    _run_scalp,
     }
     selected = list(runners) if args.bot == "all" else [args.bot]
 
