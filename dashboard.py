@@ -877,9 +877,11 @@ def _build_v2_context(data: Dict[str, Any], state: dict | None = None,
             "pair":     _v2_build_bot_panels(trades, state, "pair"),
             "reversal": _v2_build_bot_panels(trades, state, "reversal"),
             "scalp":    _v2_build_bot_panels(trades, state, "scalp"),
+            "crossover": _v2_build_bot_panels(trades, state, "crossover"),
         },
-        "reversal_meta": _v2_reversal_meta(trades),
-        "scalp_meta":    _v2_scalp_meta(trades),
+        "reversal_meta":  _v2_reversal_meta(trades),
+        "scalp_meta":     _v2_scalp_meta(trades),
+        "crossover_meta": _v2_crossover_meta(trades),
         # J.5a: per-bot chart panels (asset dropdown + chart data per asset)
         "chart_panels_root": _v2_build_all_chart_panels(executor, trades),
         # J.10: per-bot recent activity log from journalctl
@@ -1076,15 +1078,18 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
             "pair":     _v2_build_bot_panels(trades, None, "pair"),
             "reversal": _v2_build_bot_panels(trades, None, "reversal"),
             "scalp":    _v2_build_bot_panels(trades, None, "scalp"),
+            "crossover": _v2_build_bot_panels(trades, None, "crossover"),
         },
-        "pair_meta":     _v2_pair_meta(trades),
-        "reversal_meta": _v2_reversal_meta(trades),
-        "scalp_meta":    _v2_scalp_meta(trades),
+        "pair_meta":      _v2_pair_meta(trades),
+        "reversal_meta":  _v2_reversal_meta(trades),
+        "scalp_meta":     _v2_scalp_meta(trades),
+        "crossover_meta": _v2_crossover_meta(trades),
         # J.5a: chart panels (empty when no executor available in test context)
         "chart_panels_root": _v2_build_all_chart_panels(None, trades),
         # J.10: activity logs — test context returns empty lists per bot
         "activity_logs":  {b: [] for b in ("momentum", "whale", "funding",
-                                              "breakout", "pair", "reversal", "scalp")},
+                                              "breakout", "pair", "reversal",
+                                              "scalp", "crossover")},
         "projection":    _v2_projection(trades=trades),
         "equity_curve_svg": _v2_equity_curve_svg(
             _v2_equity_series(trades, days=90)),
@@ -1186,6 +1191,39 @@ def _v2_why_silent(bot_class: str, data: Dict[str, Any]) -> dict | None:
                 "label":  "Awaiting vol-expansion + new-high signal",
                 "detail": "Live. No 5m bar has aligned vol-expansion + "
                           "20-bar momentum + 20-bar new high/low + body color "
+                          "since launch.",
+                "kind":   "info",
+            }
+        return None
+
+    if bot_class == "crossover":
+        try:
+            from crossover_config import CROSSOVER_PAUSED, CROSSOVER_ASSETS
+        except ImportError:
+            CROSSOVER_PAUSED = True
+            CROSSOVER_ASSETS = {}
+        if CROSSOVER_PAUSED:
+            return {
+                "label":  "Paused — pending backtest validation",
+                "detail": "CROSSOVER_PAUSED=true. Enable after "
+                          "tools/validate_crossover_candidates.py clears "
+                          "the gates on the 8-asset candidate sweep.",
+                "kind":   "dormant",
+            }
+        if not CROSSOVER_ASSETS:
+            return {
+                "label":  "No live assets",
+                "detail": "Validator has not yet promoted any candidates "
+                          "to CROSSOVER_ASSETS.",
+                "kind":   "info",
+            }
+        cross_trades = [t for t in data.get("_trades_cache", [])
+                          if t.get("bot") == "Crossover"]
+        if not cross_trades:
+            return {
+                "label":  "Awaiting SMA50/SMA100 cross",
+                "detail": "Live. No 5m bar has produced a fresh "
+                          "golden/death cross on any tracked asset "
                           "since launch.",
                 "kind":   "info",
             }
@@ -2024,13 +2062,14 @@ def _v2_funding_meta(trades: List[dict]) -> dict:
 
 
 _BOT_CLASS_TO_LABEL = {
-    "momentum": "Momentum",
-    "whale":    "Whale",
-    "funding":  "Funding",
-    "breakout": "Breakout",
-    "pair":     "Pair",
-    "reversal": "Reversal",
-    "scalp":    "Scalp",
+    "momentum":  "Momentum",
+    "whale":     "Whale",
+    "funding":   "Funding",
+    "breakout":  "Breakout",
+    "pair":      "Pair",
+    "reversal":  "Reversal",
+    "scalp":     "Scalp",
+    "crossover": "Crossover",
 }
 
 
@@ -2567,7 +2606,7 @@ def _v2_build_activity_logs(executor=None) -> dict[str, list[dict]]:
     """Bundle activity logs for every bot tab. Per-bot failure is swallowed
     (returns [] for that bot) — one bot's missing service file must not
     block the whole dashboard render."""
-    bots = ("momentum", "whale", "funding", "breakout", "pair", "reversal", "scalp")
+    bots = ("momentum", "whale", "funding", "breakout", "pair", "reversal", "scalp", "crossover")
     return {b: _v2_bot_activity_log(b) for b in bots}
 
 
@@ -2601,6 +2640,9 @@ def _v2_assets_for_bot(bot_class: str) -> dict[str, dict]:
         if bot_class == "scalp":
             from scalp_config import SCALP_ASSETS
             return dict(SCALP_ASSETS)
+        if bot_class == "crossover":
+            from crossover_config import CROSSOVER_ASSETS
+            return dict(CROSSOVER_ASSETS)
         if bot_class == "pair":
             from pair_config import (
                 PAIR_LONG_SYMBOL, PAIR_SHORT_SYMBOL,
@@ -2700,6 +2742,8 @@ def _v2_build_all_chart_panels(executor, trades: list) -> dict:
                                                      "reversal"),
         "scalp":    _v2_build_chart_panels_for_bot(executor, trades,
                                                      "scalp", max_assets=3),
+        "crossover": _v2_build_chart_panels_for_bot(executor, trades,
+                                                      "crossover", max_assets=3),
     }
 
 
@@ -2944,12 +2988,67 @@ def _v2_scalp_meta(trades: List[dict]) -> dict:
     }
 
 
+def _v2_crossover_meta(trades: List[dict]) -> dict:
+    """Phase N — Crossover-specific metadata for the Crossover tab."""
+    try:
+        from crossover_config import (
+            CROSSOVER_PAUSED, CROSSOVER_ASSETS, CROSSOVER_CANDIDATE_ASSETS,
+            CROSSOVER_MARGIN_PER_TRADE, CROSSOVER_LEVERAGE,
+            MAX_CROSSOVER_POSITIONS, CROSSOVER_COOLDOWN_SECONDS,
+        )
+    except ImportError:
+        CROSSOVER_PAUSED = True
+        CROSSOVER_ASSETS = {}
+        CROSSOVER_CANDIDATE_ASSETS = {}
+        CROSSOVER_MARGIN_PER_TRADE = 10.0
+        CROSSOVER_LEVERAGE = 10
+        MAX_CROSSOVER_POSITIONS = 3
+        CROSSOVER_COOLDOWN_SECONDS = 600
+
+    first_cfg = next(iter(CROSSOVER_ASSETS.values()),
+                       next(iter(CROSSOVER_CANDIDATE_ASSETS.values()), {}))
+    asset_rows = [
+        {"name": k, "symbol": v.get("symbol", ""),
+         "interval": v.get("interval", ""),
+         "allow_short": bool(v.get("allow_short", True))}
+        for k, v in CROSSOVER_ASSETS.items()
+    ]
+    candidate_rows = [
+        {"name": k, "symbol": v.get("symbol", ""),
+         "interval": v.get("interval", "")}
+        for k, v in CROSSOVER_CANDIDATE_ASSETS.items()
+    ]
+    cross_trades = [t for t in trades if t.get("bot") == "Crossover"]
+    closed = [t for t in cross_trades
+              if t.get("exit_price") not in (None, 0, "0", "")]
+    pnl_list = [float(t.get("net_pnl") or 0) for t in closed]
+    return {
+        "paused":              bool(CROSSOVER_PAUSED),
+        "sma_fast":            first_cfg.get("sma_fast", 50),
+        "sma_slow":            first_cfg.get("sma_slow", 100),
+        "sl_pct":              first_cfg.get("sl_pct", 1.0),
+        "tp_pct":              first_cfg.get("tp_pct", 2.0),
+        "cooldown_seconds":    int(CROSSOVER_COOLDOWN_SECONDS),
+        "margin_usd":          float(CROSSOVER_MARGIN_PER_TRADE),
+        "leverage":            int(CROSSOVER_LEVERAGE),
+        "notional_usd":        float(CROSSOVER_MARGIN_PER_TRADE) * int(CROSSOVER_LEVERAGE),
+        "max_positions":       int(MAX_CROSSOVER_POSITIONS),
+        "assets":              asset_rows,
+        "candidate_assets":    candidate_rows,
+        "closed_count":        len(closed),
+        "win_rate_display":    (f"{sum(1 for p in pnl_list if p > 0) / len(pnl_list) * 100:.1f}%"
+                                if pnl_list else "—"),
+        "net_pnl_display":     _v2_pnl_display(sum(pnl_list)),
+    }
+
+
 _PAUSE_FLAGS = {
-    "whale":    ("whale_config",    "WHALE_PAUSED"),
-    "breakout": ("breakout_config", "BREAKOUT_PAUSED"),
-    "pair":     ("pair_config",     "PAIR_PAUSED"),
-    "reversal": ("reversal_config", "REVERSAL_PAUSED"),
-    "scalp":    ("scalp_config",    "SCALP_PAUSED"),
+    "whale":     ("whale_config",     "WHALE_PAUSED"),
+    "breakout":  ("breakout_config",  "BREAKOUT_PAUSED"),
+    "pair":      ("pair_config",      "PAIR_PAUSED"),
+    "reversal":  ("reversal_config",  "REVERSAL_PAUSED"),
+    "scalp":     ("scalp_config",     "SCALP_PAUSED"),
+    "crossover": ("crossover_config", "CROSSOVER_PAUSED"),
 }
 
 

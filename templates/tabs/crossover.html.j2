@@ -1,0 +1,162 @@
+<h1 class="tab-heading">Crossover</h1>
+
+{% if crossover_meta.paused %}
+<div class="banner banner--paused" role="status">
+  <span class="banner__label">PAUSED</span>
+  <span class="banner__msg">
+    <code>CROSSOVER_PAUSED=true</code> — 5m dual-SMA crossover
+    (SMA{{ crossover_meta.sma_fast }}/SMA{{ crossover_meta.sma_slow }})
+    awaiting backtest validation. Enable per Phase N rubric after
+    <code>tools/validate_crossover_candidates.py</code> clears the gates.
+  </span>
+</div>
+{% elif crossover_meta.closed_count == 0 %}
+<div class="banner banner--info" role="status">
+  <span class="banner__label">AWAITING SIGNAL</span>
+  <span class="banner__msg">
+    Bot is live. No 5m bar has produced a fresh SMA{{ crossover_meta.sma_fast }}/SMA{{ crossover_meta.sma_slow }}
+    crossover on any tracked asset since launch.
+  </span>
+</div>
+{% endif %}
+
+<section class="config-grid" aria-label="Crossover bot configuration">
+  <h2 class="config-grid__heading">Strategy parameters</h2>
+
+  <div class="kv-row">
+    <span class="kv-row__k">Crossover signal</span>
+    <span class="kv-row__v">
+      <code>SMA(close, {{ crossover_meta.sma_fast }}) × SMA(close, {{ crossover_meta.sma_slow }})</code>
+      <span class="kv-row__hint">enters ONLY on the bar where fast crosses slow</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Stop loss / Take profit</span>
+    <span class="kv-row__v">
+      <code>−{{ crossover_meta.sl_pct }}% / +{{ crossover_meta.tp_pct }}%</code>
+      <span class="kv-row__hint">1:2 R/R fixed bracket; breakeven WR = 33.3%</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Re-entry cooldown</span>
+    <span class="kv-row__v">
+      <code>{{ crossover_meta.cooldown_seconds }} s</code>
+      <span class="kv-row__hint">belt-and-suspenders against rapid whipsaw crosses</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Sizing</span>
+    <span class="kv-row__v">
+      <code>${{ crossover_meta.margin_usd|int }} margin × {{ crossover_meta.leverage }}x</code>
+      <span class="kv-row__hint">= ${{ crossover_meta.notional_usd|int }} notional per signal</span>
+    </span>
+  </div>
+  <div class="kv-row">
+    <span class="kv-row__k">Slot cap</span>
+    <span class="kv-row__v">
+      <code>{{ crossover_meta.max_positions }} concurrent</code>
+    </span>
+  </div>
+</section>
+
+{% if crossover_meta.assets and crossover_meta.assets|length > 0 %}
+<section class="config-grid" aria-label="Configured assets">
+  <h2 class="config-grid__heading">Configured assets ({{ crossover_meta.assets|length }})</h2>
+  <table class="regime-table">
+    <thead>
+      <tr>
+        <th scope="col">Asset</th>
+        <th scope="col">Symbol</th>
+        <th scope="col">Timeframe</th>
+        <th scope="col">SHORT enabled</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in crossover_meta.assets %}
+      <tr>
+        <td>{{ a.name }}</td>
+        <td>{{ a.symbol }}</td>
+        <td>{{ a.interval }}</td>
+        <td>
+          {% if a.allow_short %}
+            <span class="dir dir--short">ON</span>
+          {% else %}
+            <span class="dir" style="opacity:0.3;">OFF</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if crossover_meta.candidate_assets and crossover_meta.candidate_assets|length > 0 %}
+<section class="config-grid" aria-label="Candidate assets awaiting validation">
+  <h2 class="config-grid__heading">
+    Candidate assets ({{ crossover_meta.candidate_assets|length }})
+    <span class="config-grid__hint">
+      — staged in <code>CROSSOVER_CANDIDATE_ASSETS</code>; promoted after
+      validator clears gates on each
+    </span>
+  </h2>
+  <table class="regime-table">
+    <thead>
+      <tr>
+        <th scope="col">Asset</th>
+        <th scope="col">Symbol</th>
+        <th scope="col">Timeframe</th>
+        <th scope="col">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in crossover_meta.candidate_assets %}
+      <tr>
+        <td>{{ a.name }}</td>
+        <td>{{ a.symbol }}</td>
+        <td>{{ a.interval }}</td>
+        <td>
+          <span class="confidence-pill confidence-pill--none">
+            awaiting backtest
+          </span>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+<section class="kv-grid" aria-label="Crossover performance">
+  <div class="kv-cell">
+    <span class="kv-cell__k">CLOSED TRADES</span>
+    <span class="kv-cell__v">{{ crossover_meta.closed_count }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">WIN RATE</span>
+    <span class="kv-cell__v">{{ crossover_meta.win_rate_display }}</span>
+  </div>
+  <div class="kv-cell">
+    <span class="kv-cell__k">NET PnL</span>
+    <span class="kv-cell__v
+                {% if crossover_meta.net_pnl_display.startswith('+') %}is-up
+                {% elif crossover_meta.net_pnl_display.startswith('−') %}is-down{% endif %}">
+      {{ crossover_meta.net_pnl_display }}
+    </span>
+  </div>
+</section>
+
+{% set bot_kpis = bot_panels.crossover.kpis %}
+{% include "components/bot_kpis_strip.html.j2" %}
+
+{% set chart_panels = chart_panels_root.crossover if chart_panels_root is defined else [] %}
+{% include "components/bot_chart_panel.html.j2" %}
+
+{% set positions = bot_panels.crossover.positions %}
+{% include "components/bot_positions_panel.html.j2" %}
+
+{% set bot_trades = bot_panels.crossover.trades %}
+{% include "components/bot_trades_panel.html.j2" %}
+
+{% set activity_rows = activity_logs.crossover if activity_logs is defined else [] %}
+{% include "components/bot_activity_log.html.j2" %}

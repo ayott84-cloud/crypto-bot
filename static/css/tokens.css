@@ -38,6 +38,8 @@
   --b-breakout: #7ed4a6;       /* sage-green — trend follower */
   --b-pair:     #e89674;       /* warm peach — mean reversion */
   --b-reversal: #c97ad4;       /* magenta — counter-trend reversal */
+  --b-scalp:    #f0c674;       /* warm sand — 5m vol-expansion scalp */
+  --b-crossover: #6fcfd4;      /* teal — dual-SMA crossover */
 
   /* ── Spatial — 8px grid ────────────────────────────────────────────── */
   --space-1: 4px;

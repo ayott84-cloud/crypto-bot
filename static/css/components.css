@@ -122,6 +122,8 @@
 .monogram--breakout { color: var(--b-breakout); }
 .monogram--pair     { color: var(--b-pair); }
 .monogram--reversal { color: var(--b-reversal); }
+.monogram--scalp    { color: var(--b-scalp); }
+.monogram--crossover { color: var(--b-crossover); }
 
 /* ── Hero status board (6 bot cards: 3×2 grid at desktop) ──────────────── */
 

@@ -1,0 +1,38 @@
+[Unit]
+Description=Crypto Crossover Bot (crossover_main.py — 5-minute dual-SMA crossover)
+After=network-online.target crypto-momentum.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bot
+Group=bot
+WorkingDirectory=/home/bot/crypto-bot
+EnvironmentFile=-/home/bot/crypto-bot/.env
+ExecStart=/home/bot/crypto-bot/venv/bin/python /home/bot/crypto-bot/crossover_main.py
+
+# Restart on any exit — transient WEEX 5xx, network blips, etc.
+Restart=always
+RestartSec=30
+
+# Log to journald (view with: journalctl -u crypto-crossover -f)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=crypto-crossover
+
+# Resource caps — even simpler than scalp (only SMA computations).
+MemoryMax=250M
+MemoryHigh=180M
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/bot/crypto-bot
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

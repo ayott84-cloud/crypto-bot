@@ -345,6 +345,71 @@ def replay_scalp(asset_name: str, cfg: dict, bars: int = 1000,
     return report
 
 
+# ─── Crossover replay (Phase N) ─────────────────────────────────────────
+
+def replay_crossover(asset_name: str, cfg: dict, bars: int = 1000,
+                       source: str = "weex") -> BacktestReport:
+    """Phase N — replay the SMA(50)/SMA(100) crossover strategy on 5m bars.
+
+    Entry fires ONLY on the bar where the fast SMA crosses the slow SMA.
+    Exit is a pure -sl_pct% / +tp_pct% bracket (default 1% / 2%). Once
+    a position closes, no re-entry until the NEXT fresh cross — this
+    matches the live bot's crossover-trigger semantics.
+
+    A small bar-based cooldown is applied post-exit (≈ CROSSOVER_COOLDOWN
+    in 5m bars) as belt-and-suspenders against rapid whipsaw crosses.
+    """
+    from crossover_signals import analyze_crossover_entry, check_crossover_exit
+
+    df = _fetch_klines(cfg["symbol"], cfg["interval"], bars, source=source)
+    if df is None or len(df) == 0:
+        return BacktestReport(bot="crossover", asset=asset_name, bars_seen=0)
+
+    needed = int(cfg.get("sma_slow", 100)) + 2
+    report = BacktestReport(bot="crossover", asset=asset_name, bars_seen=len(df))
+
+    position: dict | None = None
+    cooldown_until_bar = -1
+
+    for i in range(needed, len(df)):
+        window = df.iloc[: i + 1]
+        current_close = float(df.iloc[i]["close"])
+
+        if position is None:
+            if i < cooldown_until_bar:
+                continue
+            sig = analyze_crossover_entry(window, cfg)
+            if sig["would_enter"]:
+                position = {
+                    "direction":     sig["direction"],
+                    "entry_bar":     i,
+                    "entry_price":   current_close,
+                }
+            continue
+
+        reason = check_crossover_exit(
+            entry_price=position["entry_price"],
+            current_price=current_close,
+            direction=position["direction"],
+            cfg=cfg,
+        )
+        if reason:
+            sign = 1.0 if position["direction"] == "LONG" else -1.0
+            pnl_pct = sign * (current_close - position["entry_price"]) \
+                        / position["entry_price"] * 100
+            report.trades.append(TradeResult(
+                direction=position["direction"],
+                entry_bar=position["entry_bar"], exit_bar=i,
+                entry_price=position["entry_price"],
+                exit_price=current_close,
+                exit_reason=reason, pnl_pct=pnl_pct,
+            ))
+            # 10 min / 5 min ≈ 2 bars cooldown (same as live)
+            cooldown_until_bar = i + 2
+            position = None
+    return report
+
+
 # ─── Breakout replay ───────────────────────────────────────────────────────
 
 def replay_breakout(asset_name: str, cfg: dict, bars: int = 500) -> BacktestReport:
@@ -550,6 +615,13 @@ def _run_scalp(bars: int) -> List[BacktestReport]:
             for name, cfg in SCALP_ASSETS.items()]
 
 
+def _run_crossover(bars: int) -> List[BacktestReport]:
+    from crossover_config import CROSSOVER_ASSETS, CROSSOVER_CANDIDATE_ASSETS
+    universe = {**CROSSOVER_ASSETS, **CROSSOVER_CANDIDATE_ASSETS}
+    return [replay_crossover(name, cfg, bars=bars)
+            for name, cfg in universe.items()]
+
+
 def _run_breakout(bars: int) -> List[BacktestReport]:
     from breakout_config import BREAKOUT_ASSETS
     return [replay_breakout(name, cfg, bars=bars)
@@ -574,18 +646,19 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--bot",
                         choices=["momentum", "breakout", "pair", "reversal",
-                                  "scalp", "all"],
+                                  "scalp", "crossover", "all"],
                         default="all", help="Which strategy to replay")
     parser.add_argument("--bars", type=int, default=500,
                         help="How many historical bars to fetch per asset")
     args = parser.parse_args()
 
     runners = {
-        "momentum": _run_momentum,
-        "breakout": _run_breakout,
-        "pair":     _run_pair,
-        "reversal": _run_reversal,
-        "scalp":    _run_scalp,
+        "momentum":  _run_momentum,
+        "breakout":  _run_breakout,
+        "pair":      _run_pair,
+        "reversal":  _run_reversal,
+        "scalp":     _run_scalp,
+        "crossover": _run_crossover,
     }
     selected = list(runners) if args.bot == "all" else [args.bot]
 
