@@ -33,21 +33,45 @@ def test_interval_ms_unknown_raises():
         _interval_ms("xyz")
 
 
+def test_weex_to_coinbase_symbol_mapping():
+    from tools._binance_klines import _weex_to_coinbase
+    assert _weex_to_coinbase("BTCUSDT")  == "BTC-USD"
+    assert _weex_to_coinbase("ETHUSDT")  == "ETH-USD"
+    assert _weex_to_coinbase("SOLUSDT")  == "SOL-USD"
+    assert _weex_to_coinbase("LINKUSDT") == "LINK-USD"
+
+
+def test_weex_to_coinbase_returns_none_for_unlisted():
+    """BNB and TRX aren't listed on Coinbase (US-licensed venue)."""
+    from tools._binance_klines import _weex_to_coinbase
+    assert _weex_to_coinbase("BNBUSDT") is None
+    assert _weex_to_coinbase("TRXUSDT") is None
+    assert _weex_to_coinbase("RANDOMUSDT") is None
+
+
+def test_one_call_returns_empty_for_unlisted_symbol():
+    """Coinbase doesn't list BNB or TRX — _one_call returns [] without
+    making an HTTP request."""
+    from tools._binance_klines import _one_call
+    rows = _one_call("BNBUSDT", "5m", None, 300)
+    assert rows == []
+
+
 def test_fetch_chained_returns_chronological_when_chunks_arrive_reverse():
     """The chained fetcher walks backward in time (end decreasing).
-    First call returns the MOST RECENT 1000 bars; second call walks
-    earlier. Final accumulated array must be chronological (oldest first).
+    First call returns the MOST RECENT chunk; second call walks earlier.
+    Final accumulated array must be chronological (oldest first).
 
-    Bybit V5 caps each call at 1000 bars (note: _one_call mocked here
+    Coinbase caps each call at 300 bars (note: the mocked _one_call here
     is the post-reversal chronological-within-chunk shape — the actual
     HTTP-level reversal is handled inside _one_call)."""
     from tools._binance_klines import fetch_klines_chained
-    # First call (no end → most recent): bars 1000-1999
+    # First call (no end → most recent): bars 300-599
     chunk_recent = [[t * 300_000, "1", "2", "0.5", "1.5", "100"]
-                     for t in range(1000, 2000)]
-    # Second call (end walks backward): bars 0-999
+                     for t in range(300, 600)]
+    # Second call (end walks backward): bars 0-299
     chunk_older  = [[t * 300_000, "1", "2", "0.5", "1.5", "100"]
-                     for t in range(0, 1000)]
+                     for t in range(0, 300)]
 
     def _mock_one_call(symbol, interval, end_time_ms, limit):
         if end_time_ms is None:
@@ -55,11 +79,11 @@ def test_fetch_chained_returns_chronological_when_chunks_arrive_reverse():
         return chunk_older
 
     with patch("tools._binance_klines._one_call", side_effect=_mock_one_call):
-        rows = fetch_klines_chained("BTCUSDT", "5m", 2000)
-    assert len(rows) == 2000
+        rows = fetch_klines_chained("BTCUSDT", "5m", 600)
+    assert len(rows) == 600
     # First row is oldest (open_time = 0); last row is newest
     assert rows[0][0]  == 0
-    assert rows[-1][0] == 1999 * 300_000
+    assert rows[-1][0] == 599 * 300_000
 
 
 def test_fetch_chained_returns_empty_on_first_failure():
@@ -76,14 +100,15 @@ def test_fetch_chained_invalid_interval_raises():
 
 
 def test_fetch_chained_handles_partial_history():
-    """If Bybit returns fewer bars than asked (symbol listed mid-window),
-    the helper stops chaining rather than infinite-looping."""
+    """If Coinbase returns fewer bars than asked (symbol listed mid-window
+    or not on the exchange), the helper stops chaining rather than
+    infinite-looping."""
     from tools._binance_klines import fetch_klines_chained
-    # First call returns only 800 bars (less than the 1000 asked for)
-    partial = [[t * 300_000, "1", "2", "0.5", "1.5", "100"] for t in range(800)]
+    # First call returns only 200 bars (less than the 300 asked for)
+    partial = [[t * 300_000, "1", "2", "0.5", "1.5", "100"] for t in range(200)]
     with patch("tools._binance_klines._one_call", return_value=partial):
-        rows = fetch_klines_chained("OBSCUREUSDT", "5m", 5000)
-    assert len(rows) == 800  # got what was available, stopped
+        rows = fetch_klines_chained("BTCUSDT", "5m", 5000)
+    assert len(rows) == 200  # got what was available, stopped
 
 
 def test_fetch_chained_trims_to_requested_size():
@@ -91,10 +116,10 @@ def test_fetch_chained_trims_to_requested_size():
     is trimmed to the exact requested size."""
     from tools._binance_klines import fetch_klines_chained
     full_chunk = [[t * 300_000, "1", "2", "0.5", "1.5", "100"]
-                   for t in range(1000)]
+                   for t in range(300)]
     with patch("tools._binance_klines._one_call", return_value=full_chunk):
-        rows = fetch_klines_chained("BTCUSDT", "5m", 700)
-    assert len(rows) == 700
+        rows = fetch_klines_chained("BTCUSDT", "5m", 200)
+    assert len(rows) == 200
 
 
 def test_backtest_replay_routes_to_binance_when_source_binance():

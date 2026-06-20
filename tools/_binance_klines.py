@@ -1,54 +1,71 @@
 """Phase M.5 extension — historical kline fetcher for extended-window backtests.
 
 WEEX's public kline endpoint is hardcapped at the most-recent 1000 bars
-per call with no startTime/endTime support — for a 5-minute strategy this
-is only ~3.5 days, too short for the scalp validator's n threshold.
+per call with no startTime/endTime support — for a 5-minute strategy
+this is only ~3.5 days, too short for the scalp validator's n threshold.
 
-This module fetches from Bybit V5 (linear perpetual klines) instead.
-Bybit:
+This module fetches from Coinbase Exchange (a US-licensed exchange whose
+public klines endpoint is NOT geo-blocked from DigitalOcean US IPs).
+Previous attempts: Binance returned HTTP 451 (terms-of-service
+eligibility check), Bybit returned HTTP 403 (CloudFront geo-block).
+Both block US datacenter IPs by policy.
+
+Coinbase notes:
   - Public endpoint, no auth required
-  - 1000 bars per call
-  - start/end parameters for chained pagination
-  - NOT geo-blocked from DigitalOcean US (unlike Binance, which returns
-    HTTP 451 to DO US IPs per their terms-of-service eligibility check)
-  - Same symbols as WEEX (BTCUSDT, ETHUSDT, etc.) on USDT perps
-  - Prices arbitraged tight to WEEX on 5m closes — clean backtest proxy
+  - 300 bars per call (smaller than Binance/Bybit's 1000-1500)
+  - start/end parameters (ISO 8601) for chained pagination
+  - Spot-pair prices (BTC-USD, ETH-USD, etc.) — arbitraged tight to
+    WEEX BTCUSDT perp on 5m closes; clean backtest proxy
+  - WEEX symbols map: BTCUSDT → BTC-USD, etc.
+  - BNB, TRX, ADA-PERP not Coinbase-listed; those symbols return empty
 
-Filename retained from the original Binance attempt to avoid churning
-all the import paths; the implementation underneath is now Bybit.
-
-This module is BACKTEST-ONLY. Live trading still routes through
-executor.get_klines (WEEX).
+Filename retained to avoid churning all import paths; implementation
+underneath is now Coinbase. Module is BACKTEST-ONLY — live trading
+still routes through executor.get_klines (WEEX).
 """
 
 from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import requests
 
 logger = logging.getLogger("crypto_bot.tools._binance_klines")
 
-_BYBIT_BASE = "https://api.bybit.com"
-_KLINES_PATH = "/v5/market/kline"
-_PER_CALL_LIMIT = 1000
-_RATE_LIMIT_SLEEP_S = 0.15  # well under Bybit's 600 req / 5s limit
+_COINBASE_BASE = "https://api.exchange.coinbase.com"
+_KLINES_PATH = "/products/{product_id}/candles"
+_PER_CALL_LIMIT = 300        # Coinbase's hard cap per call
+_RATE_LIMIT_SLEEP_S = 0.15   # Coinbase public 10 req/s — well under
 
-# Bybit's V5 API uses minutes for short intervals + letter codes for daily+
-_INTERVAL_BYBIT = {
-    "1m": "1", "3m": "3", "5m": "5", "15m": "15", "30m": "30",
-    "1h": "60", "2h": "120", "4h": "240", "6h": "360", "12h": "720",
-    "1d": "D", "3d": "D",  # 3d not native; D returned, caller dedups
-    "1w": "W",
+# Coinbase uses granularity in SECONDS. Allowed: 60, 300, 900, 3600, 21600, 86400
+_INTERVAL_GRANULARITY = {
+    "1m": 60, "5m": 300, "15m": 900,
+    "1h": 3600, "6h": 21600, "1d": 86400,
 }
 
+# Bar-duration in milliseconds (for chaining math)
 _INTERVAL_MS = {
     "1m": 60_000, "3m": 180_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000,
     "1h": 3_600_000, "2h": 7_200_000, "4h": 14_400_000, "6h": 21_600_000,
     "8h": 28_800_000, "12h": 43_200_000,
     "1d": 86_400_000, "3d": 259_200_000, "1w": 604_800_000,
+}
+
+# WEEX → Coinbase symbol map. Add new mappings here when expanding scalp
+# universe. Coinbase has no BNB, TRX, or some smaller alts (delisted from
+# US-licensed venues); those return empty and the validator will skip.
+_SYMBOL_MAP = {
+    "BTCUSDT":  "BTC-USD",
+    "ETHUSDT":  "ETH-USD",
+    "SOLUSDT":  "SOL-USD",
+    "XRPUSDT":  "XRP-USD",
+    "ADAUSDT":  "ADA-USD",
+    "DOGEUSDT": "DOGE-USD",
+    "AVAXUSDT": "AVAX-USD",
+    "LINKUSDT": "LINK-USD",
 }
 
 
@@ -59,78 +76,98 @@ def _interval_ms(interval: str) -> int:
     return ms
 
 
+def _weex_to_coinbase(symbol: str) -> Optional[str]:
+    """Translate a WEEX symbol to its Coinbase product_id. Returns None
+    when no Coinbase listing exists (BNB, TRX) — caller should treat as
+    "not available."""
+    return _SYMBOL_MAP.get(symbol.upper())
+
+
 def _one_call(symbol: str, interval: str, end_time_ms: Optional[int],
                 limit: int) -> list:
-    """One HTTP call to Bybit V5 linear kline endpoint.
+    """One HTTP call to Coinbase Exchange candles endpoint.
 
     Returns rows in WEEX-positional shape: [open_time_ms, open, high,
-    low, close, volume, ...]. Bybit returns NEWEST first within a single
-    call; we reverse here so the caller always sees chronological order
-    within each chunk.
+    low, close, volume]. Coinbase returns NEWEST first in each chunk;
+    we reverse here so the caller always sees chronological order.
     """
-    bybit_interval = _INTERVAL_BYBIT.get(interval.lower())
-    if bybit_interval is None:
-        raise ValueError(f"Unsupported interval for Bybit: {interval}")
+    product_id = _weex_to_coinbase(symbol)
+    if product_id is None:
+        logger.info("Symbol %s not on Coinbase; returning empty", symbol)
+        return []
+
+    granularity = _INTERVAL_GRANULARITY.get(interval.lower())
+    if granularity is None:
+        raise ValueError(f"Unsupported interval for Coinbase: {interval}")
+
+    # Coinbase wants ISO 8601 timestamps for start/end. Compute the
+    # `start` based on (end_time_ms minus `limit` × granularity).
+    if end_time_ms is None:
+        end_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    else:
+        end_ms = int(end_time_ms)
+    start_ms = end_ms - (limit * granularity * 1000)
+
     params = {
-        "category": "linear",
-        "symbol":   symbol,
-        "interval": bybit_interval,
-        "limit":    str(limit),
+        "granularity": str(granularity),
+        "start":       datetime.fromtimestamp(start_ms / 1000, tz=timezone.utc).isoformat(),
+        "end":         datetime.fromtimestamp(end_ms   / 1000, tz=timezone.utc).isoformat(),
     }
-    if end_time_ms is not None:
-        params["end"] = str(end_time_ms)
+
     try:
-        r = requests.get(_BYBIT_BASE + _KLINES_PATH,
-                          params=params, timeout=15.0)
+        r = requests.get(_COINBASE_BASE + _KLINES_PATH.format(product_id=product_id),
+                          params=params, timeout=15.0,
+                          headers={"User-Agent": "crypto-bot-backtest/1.0"})
         if r.status_code != 200:
-            logger.warning("Bybit klines HTTP %d for %s %s: %s",
+            logger.warning("Coinbase klines HTTP %d for %s %s: %s",
                               r.status_code, symbol, interval, r.text[:200])
             return []
-        payload = r.json() or {}
-        ret_code = payload.get("retCode", -1)
-        if ret_code != 0:
-            logger.warning("Bybit klines retCode=%s for %s %s: %s",
-                              ret_code, symbol, interval,
-                              payload.get("retMsg", "")[:200])
+        rows = r.json() or []
+        if not isinstance(rows, list):
+            logger.warning("Coinbase unexpected payload for %s %s: %s",
+                              symbol, interval, str(rows)[:200])
             return []
-        result = payload.get("result", {}) or {}
-        rows = result.get("list", []) or []
-        # Convert each row to numeric open_time + string OHLCV so the
-        # rest of the pipeline (which expects WEEX positional rows) works.
-        # Bybit row shape: [startTime, open, high, low, close, volume, turnover]
+        # Coinbase row: [time_seconds, low, high, open, close, volume]
+        # WEEX shape:   [open_time_ms, open, high, low, close, volume]
         converted = []
         for row in rows:
             try:
-                converted.append([int(row[0]), row[1], row[2], row[3],
-                                    row[4], row[5]])
+                ts_s = int(row[0])
+                converted.append([
+                    ts_s * 1000,        # open_time_ms
+                    str(row[3]),         # open
+                    str(row[2]),         # high
+                    str(row[1]),         # low
+                    str(row[4]),         # close
+                    str(row[5]),         # volume
+                ])
             except (IndexError, TypeError, ValueError):
                 continue
-        # Bybit returns newest-first within a single call. Reverse for
-        # chronological order within the chunk.
+        # Coinbase returns newest-first; reverse for chronological-within-chunk
         converted.reverse()
         return converted
     except (requests.RequestException, ValueError) as e:
-        logger.warning("Bybit klines request failed for %s %s: %s",
+        logger.warning("Coinbase klines request failed for %s %s: %s",
                           symbol, interval, e)
         return []
 
 
 def fetch_klines_chained(symbol: str, interval: str, total_bars: int) -> list:
     """Paginate backward in time to accumulate `total_bars` of historical
-    klines from Bybit V5. Returns rows in CHRONOLOGICAL order (oldest
+    klines from Coinbase. Returns rows in CHRONOLOGICAL order (oldest
     first) to match the WEEX shape signals.build_dataframe expects.
 
-    Implementation: walks BACKWARD from now in 1000-bar chunks. Each
+    Implementation: walks BACKWARD from now in 300-bar chunks. Each
     subsequent call's `end` parameter = previous call's earliest
-    open_time - 1ms, so we don't fetch the same bar twice.
+    open_time - 1ms.
     """
-    if interval.lower() not in _INTERVAL_BYBIT:
+    if interval.lower() not in _INTERVAL_GRANULARITY:
         raise ValueError(f"Unsupported interval: {interval}")
     if total_bars <= 0:
         return []
 
     accumulated: list = []
-    end_time_ms: Optional[int] = None  # first call: most recent bars
+    end_time_ms: Optional[int] = None
     remaining = total_bars
 
     while remaining > 0:
@@ -138,13 +175,11 @@ def fetch_klines_chained(symbol: str, interval: str, total_bars: int) -> list:
         chunk = _one_call(symbol, interval, end_time_ms, chunk_limit)
         if not chunk:
             break
-        # Prepend so the final array stays chronological after we stop
         accumulated = chunk + accumulated
         oldest_open_time = int(chunk[0][0])
         end_time_ms = oldest_open_time - 1
         remaining -= len(chunk)
         if len(chunk) < chunk_limit:
-            # API returned fewer than asked — no more history available
             break
         time.sleep(_RATE_LIMIT_SLEEP_S)
 
