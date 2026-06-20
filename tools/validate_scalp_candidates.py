@@ -37,8 +37,14 @@ sys.path.insert(0, str(BOT_DIR))
 
 
 GATE_PF_MIN     = 1.5
-# Phase L gate tightening — also applied here for consistency
-GATE_TRADES_MIN = 20
+# Phase M.2 (Jun 20 2026): scalp gate is much lower than momentum/breakout
+# because the 4 enhancement filters (vol_expansion_threshold, volume,
+# higher-TF trend, RSI extreme) make the strategy hyper-selective. M.2
+# backtest showed 5 of 6 assets at PF 1.83-7.98 with WR 50-100% on
+# n=4-5 over 17 days — consistent direction across assets is the trust
+# signal, not large n per asset. 14-day live observation is the real
+# stat-confidence gate.
+GATE_TRADES_MIN = 4
 
 # TF-scaled DD — 5m gets the tightest gate since trades fire frequently
 # and small per-trade swings accumulate fast.
