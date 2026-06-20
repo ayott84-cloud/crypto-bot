@@ -294,7 +294,27 @@ def run_cycle(executor: Executor, state: dict) -> None:
             df = _build_dataframe(raw)
             if df is None or len(df) < 60:
                 continue
-            sig = analyze_scalp_entry(df, cfg)
+
+            # Phase M.2: fetch 1h klines for higher-TF trend gate.
+            # Mirror of breakout_main's 1D fetch pattern (graceful
+            # degradation — None means the gate inside analyze_scalp_entry
+            # defaults to pass).
+            df_1h = None
+            if cfg.get("use_higher_tf_trend", False):
+                try:
+                    raw_1h = executor.get_klines(
+                        cfg["symbol"], cfg.get("higher_tf_interval", "1h"), 80)
+                    df_1h = _build_dataframe(raw_1h)
+                    if df_1h is not None and len(df_1h) >= 50:
+                        ef = int(cfg.get("higher_tf_ema_fast", 20))
+                        es = int(cfg.get("higher_tf_ema_slow", 50))
+                        df_1h["ema_fast"] = df_1h["close"].ewm(span=ef, adjust=False).mean()
+                        df_1h["ema_slow"] = df_1h["close"].ewm(span=es, adjust=False).mean()
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("[%s] 1h fetch failed: %s — trend gate defaults to pass",
+                                      asset_name, e)
+                    df_1h = None
+            sig = analyze_scalp_entry(df, cfg, df_1h=df_1h)
 
             # Observability: per-asset log + signal_status persistence
             def _sym(v):

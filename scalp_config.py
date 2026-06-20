@@ -60,7 +60,16 @@ SCALP_COOLDOWN_SECONDS = 600
 # ─── Per-asset baseline (factory) ──────────────────────────────────────
 
 def _scalp_default(symbol: str, name: str) -> dict:
-    """Build the baseline 5m scalp config for one asset."""
+    """Build the baseline 5m scalp config for one asset.
+
+    Phase M.2: this baseline now turns on 4 enhancement filters that
+    the M.1 backtest showed are needed for the strategy to have edge.
+    Per-asset overrides can still disable any of them. Defaults:
+      - vol_expansion_threshold = 1.5  (tightened from 1.0)
+      - use_volume_filter        = True (1.5× SMA(volume, 20))
+      - use_higher_tf_trend      = True (1h EMA20 vs EMA50 alignment)
+      - use_rsi_extreme_filter   = True (block LONG > 70 / SHORT < 30)
+    """
     return {
         "symbol":             symbol,
         "interval":           SCALP_INTERVAL,
@@ -77,6 +86,19 @@ def _scalp_default(symbol: str, name: str) -> dict:
         # strategy gets chopped in strong_down regimes.
         "use_regime_gate":    False,
         "use_btc_filter":     False,
+        # ── Phase M.2 enhancement filters (defaults ON) ──
+        "vol_expansion_threshold": 1.5,
+        "use_volume_filter":       True,
+        "vol_threshold_mult":      1.5,
+        "vol_sma_period":          20,
+        "use_higher_tf_trend":     True,
+        "higher_tf_interval":      "1h",
+        "higher_tf_ema_fast":      20,
+        "higher_tf_ema_slow":      50,
+        "use_rsi_extreme_filter":  True,
+        "rsi_period":              14,
+        "rsi_overbought":          70.0,
+        "rsi_oversold":            30.0,
         "strategy_name":      name,
     }
 

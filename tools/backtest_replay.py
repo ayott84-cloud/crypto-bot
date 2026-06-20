@@ -272,9 +272,26 @@ def replay_scalp(asset_name: str, cfg: dict, bars: int = 1000,
     if df is None or len(df) == 0:
         return BacktestReport(bot="scalp", asset=asset_name, bars_seen=0)
 
+    # Phase M.2: resample 5m → 1h for the higher-TF trend gate. Cheaper
+    # than chaining another Coinbase fetch + guarantees time alignment.
+    # On 5m data with ts index, "1h" rolling buckets aggregate cleanly.
+    df_1h_full = None
+    if cfg.get("use_higher_tf_trend", False) and cfg.get("interval") == "5m":
+        try:
+            df_1h_full = df["close"].resample("1h").last().to_frame()
+            df_1h_full["close"] = df_1h_full["close"].ffill()
+            ef = int(cfg.get("higher_tf_ema_fast", 20))
+            es = int(cfg.get("higher_tf_ema_slow", 50))
+            df_1h_full["ema_fast"] = df_1h_full["close"].ewm(span=ef, adjust=False).mean()
+            df_1h_full["ema_slow"] = df_1h_full["close"].ewm(span=es, adjust=False).mean()
+        except Exception:  # noqa: BLE001
+            df_1h_full = None
+
     needed = max(cfg.get("range_long_sma", 50),
                   cfg.get("momentum_lookback", 20),
-                  cfg.get("new_high_lookback", 20)) + 2
+                  cfg.get("new_high_lookback", 20),
+                  cfg.get("vol_sma_period", 20),
+                  cfg.get("rsi_period", 14)) + 2
     report = BacktestReport(bot="scalp", asset=asset_name, bars_seen=len(df))
 
     position: dict | None = None
@@ -287,7 +304,15 @@ def replay_scalp(asset_name: str, cfg: dict, bars: int = 1000,
         if position is None:
             if i < cooldown_until_bar:
                 continue
-            sig = analyze_scalp_entry(window, cfg)
+            # Slice the 1h DF to "as of this bar's timestamp" so we
+            # don't leak future trend info into past-bar entry decisions.
+            df_1h_slice = None
+            if df_1h_full is not None:
+                cutoff_ts = window.index[-2]  # last completed bar
+                df_1h_slice = df_1h_full.loc[df_1h_full.index <= cutoff_ts]
+                if len(df_1h_slice) < 50:
+                    df_1h_slice = None
+            sig = analyze_scalp_entry(window, cfg, df_1h=df_1h_slice)
             if sig["would_enter"]:
                 position = {
                     "direction":     sig["direction"],

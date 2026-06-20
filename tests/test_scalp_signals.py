@@ -237,3 +237,154 @@ def test_no_exit_when_between_bounds():
     from scalp_signals import check_scalp_exit
     assert check_scalp_exit(100.0, 101.0, "LONG", _scalp_cfg()) is None
     assert check_scalp_exit(100.0, 99.5,  "SHORT", _scalp_cfg()) is None
+
+
+# ─── Phase M.2 enhancement filters ─────────────────────────────────────
+
+
+def _long_signal_df(target_close: float = 112.0):
+    """A baseline LONG signal where vol expansion + momentum + new_high
+    + green body all align (the same fixture from test_long_entry_when_all_conditions_align).
+    Each filter test starts from this then perturbs one variable."""
+    closes = _rising_compressed_then_expanding(target_close=target_close)
+    n = len(closes)
+    highs = [c + (3.0 if i >= n - 12 else 0.5) for i, c in enumerate(closes)]
+    lows  = [c - (2.0 if i >= n - 12 else 0.5) for i, c in enumerate(closes)]
+    opens = [c for c in closes]
+    opens[-2] = closes[-2] - 1.0       # green
+    opens[-1] = closes[-1]
+    return _build_df(closes, highs, lows, opens)
+
+
+# ── Stronger vol expansion threshold ────────────────────────────────
+
+def test_vol_expansion_threshold_blocks_mild_expansion():
+    """At vol_expansion_threshold=1.5, range_sma_10 must be 1.5× sma_50.
+    The baseline fixture's mild expansion gets blocked."""
+    from scalp_signals import analyze_scalp_entry
+    df = _long_signal_df(target_close=110.0)
+    cfg = _scalp_cfg(vol_expansion_threshold=10.0)  # extreme — nothing passes
+    result = analyze_scalp_entry(df, cfg)
+    assert result["would_enter"] is False
+    assert result["blocked_by"] == "vol_expansion"
+
+
+def test_vol_expansion_threshold_default_unchanged():
+    """Default threshold = 1.0 preserves the original > comparison."""
+    from scalp_signals import analyze_scalp_entry
+    df = _long_signal_df(target_close=112.0)
+    cfg = _scalp_cfg()  # no threshold override
+    result = analyze_scalp_entry(df, cfg)
+    assert result["would_enter"] is True
+
+
+# ── Volume confirmation filter ──────────────────────────────────────
+
+def test_volume_filter_blocks_low_volume_breakout():
+    from scalp_signals import analyze_scalp_entry
+    closes = _rising_compressed_then_expanding(target_close=112.0)
+    n = len(closes)
+    highs = [c + (3.0 if i >= n - 12 else 0.5) for i, c in enumerate(closes)]
+    lows  = [c - (2.0 if i >= n - 12 else 0.5) for i, c in enumerate(closes)]
+    opens = [c - 1.0 if i == n - 2 else c for i, c in enumerate(closes)]
+    df = _build_df(closes, highs, lows, opens)
+    # Make the last completed bar's volume way below SMA
+    df.loc[df.index[-2], "volume"] = 100.0  # SMA of [1000]*n ≈ 1000
+
+    cfg = _scalp_cfg(use_volume_filter=True, vol_threshold_mult=1.5,
+                      vol_sma_period=20)
+    result = analyze_scalp_entry(df, cfg)
+    assert result["would_enter"] is False
+    assert result["blocked_by"] == "volume"
+
+
+def test_volume_filter_passes_when_volume_spikes():
+    from scalp_signals import analyze_scalp_entry
+    closes = _rising_compressed_then_expanding(target_close=112.0)
+    n = len(closes)
+    highs = [c + (3.0 if i >= n - 12 else 0.5) for i, c in enumerate(closes)]
+    lows  = [c - (2.0 if i >= n - 12 else 0.5) for i, c in enumerate(closes)]
+    opens = [c - 1.0 if i == n - 2 else c for i, c in enumerate(closes)]
+    df = _build_df(closes, highs, lows, opens)
+    # Last completed bar's volume is 2× SMA
+    df.loc[df.index[-2], "volume"] = 2500.0
+
+    cfg = _scalp_cfg(use_volume_filter=True, vol_threshold_mult=1.5,
+                      vol_sma_period=20)
+    result = analyze_scalp_entry(df, cfg)
+    assert result["would_enter"] is True
+
+
+# ── Higher-TF (1h) trend gate ───────────────────────────────────────
+
+def test_higher_tf_trend_blocks_long_in_1h_downtrend():
+    from scalp_signals import analyze_scalp_entry
+    df = _long_signal_df()
+    cfg = _scalp_cfg(use_higher_tf_trend=True)
+    # 1h DF where ema_fast < ema_slow → downtrend, LONG should be blocked
+    df_1h = pd.DataFrame({
+        "close":    [100.0] * 60,
+        "ema_fast": [95.0] * 60,   # below slow
+        "ema_slow": [100.0] * 60,
+    })
+    result = analyze_scalp_entry(df, cfg, df_1h=df_1h)
+    assert result["would_enter"] is False
+    assert result["blocked_by"] == "trend_1h"
+
+
+def test_higher_tf_trend_passes_when_aligned():
+    from scalp_signals import analyze_scalp_entry
+    df = _long_signal_df()
+    cfg = _scalp_cfg(use_higher_tf_trend=True)
+    df_1h = pd.DataFrame({
+        "close":    [100.0] * 60,
+        "ema_fast": [105.0] * 60,  # above slow → uptrend
+        "ema_slow": [100.0] * 60,
+    })
+    result = analyze_scalp_entry(df, cfg, df_1h=df_1h)
+    assert result["would_enter"] is True
+
+
+def test_higher_tf_trend_defaults_to_pass_when_df_1h_missing():
+    """Graceful degradation: when 1h data isn't available, the gate
+    must not block (matches breakout_main's 1D fallback pattern)."""
+    from scalp_signals import analyze_scalp_entry
+    df = _long_signal_df()
+    cfg = _scalp_cfg(use_higher_tf_trend=True)
+    result = analyze_scalp_entry(df, cfg, df_1h=None)
+    assert result["would_enter"] is True
+
+
+# ── RSI extreme filter ─────────────────────────────────────────────
+
+def _overbought_long_signal_df(n: int = 80):
+    """A monotonically rising series that ALSO has expanding range on
+    the recent bars (so vol_expansion passes) and a green completed
+    bar. RSI(14) on a 2-per-bar rising series sits >> 70."""
+    closes = [100.0 + i * 2.0 for i in range(n)]
+    # Expanding range on the last 12 bars (mirrors _long_signal_df)
+    highs = [c + (3.0 if i >= n - 12 else 0.5) for i, c in enumerate(closes)]
+    lows  = [c - (2.0 if i >= n - 12 else 0.5) for i, c in enumerate(closes)]
+    opens = [c for c in closes]
+    opens[-2] = closes[-2] - 1.0   # green
+    return _build_df(closes, highs, lows, opens)
+
+
+def test_rsi_filter_blocks_long_when_overbought():
+    """A sharply rising series will push RSI above 70 → blocks LONG."""
+    from scalp_signals import analyze_scalp_entry
+    df = _overbought_long_signal_df()
+    cfg = _scalp_cfg(use_rsi_extreme_filter=True, rsi_overbought=70.0)
+    result = analyze_scalp_entry(df, cfg)
+    assert result["would_enter"] is False
+    assert result["blocked_by"] == "rsi_overbought"
+
+
+def test_rsi_filter_off_lets_signal_through():
+    """The same overbought-RSI fixture passes when the filter is off
+    (default behavior — backwards-compat preserved)."""
+    from scalp_signals import analyze_scalp_entry
+    df = _overbought_long_signal_df()
+    cfg = _scalp_cfg()  # filter not enabled
+    result = analyze_scalp_entry(df, cfg)
+    assert result["would_enter"] is True
