@@ -146,12 +146,27 @@ def test_pair() -> bool:
     )
 
 
+def test_scalp() -> bool:
+    return _send_open_close(
+        "scalp",
+        symbol="BTCUSDT",
+        direction="LONG",
+        entry=68_500.0, exit_p=70_555.0, qty=0.014, leverage=10,
+        sl=67_472.5, tp1=70_555.0, tp2=70_555.0,
+        atr=180.0,
+        strategy="BTC 5m Scalp",
+        entry_reason="Vol-expansion + 20-bar new high LONG",
+        exit_reason="TP Hit",
+    )
+
+
 _BOTS = {
     "momentum": test_momentum,
     "whale":    test_whale,
     "funding":  test_funding,
     "breakout": test_breakout,
     "pair":     test_pair,
+    "scalp":    test_scalp,
 }
 
 
