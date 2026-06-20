@@ -57,6 +57,38 @@ def test_one_call_returns_empty_for_unlisted_symbol():
     assert rows == []
 
 
+def test_one_call_emits_11_column_rows_for_signals_build_dataframe():
+    """signals.build_dataframe() reads df['close_time'] unconditionally.
+    Coinbase rows MUST be padded to the 11-column WEEX shape, otherwise
+    replay_* crashes with KeyError: 'close_time'. Regression test for
+    that bug."""
+    from unittest.mock import patch, Mock
+    from tools._binance_klines import _one_call
+
+    # Coinbase row shape: [time_sec, low, high, open, close, volume]
+    # Distinct values for each so the column-swap is provable
+    fake_payload = [[1700000000, "99.0", "101.0", "99.5", "100.5", "1234.5"]]
+
+    mock_response = Mock()
+    mock_response.status_code = 200
+    mock_response.json = Mock(return_value=fake_payload)
+
+    with patch("tools._binance_klines.requests.get", return_value=mock_response):
+        rows = _one_call("BTCUSDT", "5m", None, 1)
+
+    assert len(rows) == 1
+    assert len(rows[0]) == 11, (
+        f"Expected WEEX-canonical 11-column shape, got {len(rows[0])}: {rows[0]}")
+    # Sanity: confirm column meaning (Coinbase → WEEX index swap)
+    assert rows[0][0] == 1700000000 * 1000          # open_time_ms
+    assert rows[0][1] == "99.5"                     # open (Coinbase idx 3)
+    assert rows[0][2] == "101.0"                    # high (Coinbase idx 2)
+    assert rows[0][3] == "99.0"                     # low (Coinbase idx 1)
+    assert rows[0][4] == "100.5"                    # close (Coinbase idx 4)
+    assert rows[0][5] == "1234.5"                   # volume (Coinbase idx 5)
+    assert rows[0][6] == 1700000000 * 1000 + 300_000 - 1  # close_time_ms
+
+
 def test_fetch_chained_returns_chronological_when_chunks_arrive_reverse():
     """The chained fetcher walks backward in time (end decreasing).
     First call returns the MOST RECENT chunk; second call walks earlier.

@@ -128,18 +128,31 @@ def _one_call(symbol: str, interval: str, end_time_ms: Optional[int],
                               symbol, interval, str(rows)[:200])
             return []
         # Coinbase row: [time_seconds, low, high, open, close, volume]
-        # WEEX shape:   [open_time_ms, open, high, low, close, volume]
+        # WEEX shape:   [open_time_ms, open, high, low, close, volume,
+        #                close_time_ms, quote_vol, num_trades, tbb, tbq]
+        # build_dataframe() in signals.py unconditionally reads
+        # df["close_time"], so we MUST emit the 11-column shape even
+        # when most fields are placeholders. Without this, replay_*
+        # crashes with KeyError: 'close_time'.
+        interval_ms = _interval_ms(interval)
         converted = []
         for row in rows:
             try:
                 ts_s = int(row[0])
+                open_time_ms = ts_s * 1000
+                close_time_ms = open_time_ms + interval_ms - 1
                 converted.append([
-                    ts_s * 1000,        # open_time_ms
-                    str(row[3]),         # open
-                    str(row[2]),         # high
-                    str(row[1]),         # low
-                    str(row[4]),         # close
-                    str(row[5]),         # volume
+                    open_time_ms,         # open_time_ms
+                    str(row[3]),           # open
+                    str(row[2]),           # high
+                    str(row[1]),           # low
+                    str(row[4]),           # close
+                    str(row[5]),           # volume
+                    close_time_ms,         # close_time_ms
+                    "0",                   # quote_volume (placeholder)
+                    "0",                   # num_trades (placeholder)
+                    "0",                   # taker_buy_volume (placeholder)
+                    "0",                   # taker_buy_quote_volume (placeholder)
                 ])
             except (IndexError, TypeError, ValueError):
                 continue
