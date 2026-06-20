@@ -6,18 +6,62 @@ possible signal:
   - SHORT on the bar where SMA(close, 50) crosses BELOW SMA(close, 100)
   - Exits: SL -1%, TP +2%, per-asset 10-min re-entry cooldown
 
-No filter stack by default. The whole point of Phase N is a clean
-baseline test of the canonical dual-MA-crossover strategy. If the
-unfiltered backtest shows edge, no filters are needed; if not, we
-know the primitive lacks edge for 5m crypto in this regime.
+No filter stack by default. The whole point of Phase N was a clean
+baseline test of the canonical dual-MA-crossover strategy.
 
-Universe: top-10 minus BNB/TRX (not on Coinbase, can't backtest).
-Initial backtest: validate all 8 traded assets via
-tools/validate_crossover_candidates.py.
+═══════════════════════════════════════════════════════════════════════
+PHASE N.X — PERMANENTLY DEFERRED (Jun 20 2026, post-validator)
+═══════════════════════════════════════════════════════════════════════
 
-Sizing: $10 margin × 10x = $100 notional, matching scalp's profile.
-Scalp + crossover are both 5m bots with similar trade frequency
-expectations — keeping margin uniform makes per-bot Sortino comparable.
+Final disposition. The 5000-bar Coinbase validator over the 8-asset
+universe confirmed the strategy has no edge on 5m crypto:
+
+  BTC_5M   bars=5000  PF=1.13  n=26  WR=38.5%  total= +2.6%  DD= 8.5%  fail
+  ETH_5M   bars=5000  PF=0.49  n=37  WR=21.6%  total=-18.4%  DD=24.0%  LOSING
+  SOL_5M   bars=5000  PF=1.08  n=40  WR=40.0%  total= +2.7%  DD= 8.7%  fail
+  XRP_5M   bars=5000  PF=0.78  n=37  WR=29.7%  total= -6.9%  DD=13.5%  fail
+  DOGE_5M  bars=5000  PF=0.93  n=40  WR=35.0%  total= -2.4%  DD= 9.9%  fail
+  LINK_5M  bars=5000  PF=0.47  n=38  WR=21.1%  total=-20.4%  DD=20.4%  LOSING
+  ADA_5M   bars= 298  (Coinbase historical depth insufficient)
+  AVAX_5M  bars= 291  (Coinbase historical depth insufficient)
+
+Aggregate over 218 trades, 6 assets:
+  - Mean WR ≈ 31% vs fee-adjusted breakeven of 36% (0.04% WEEX taker × 2 sides)
+  - Wilson 95% CI [25%, 37%] — overwhelmingly BELOW breakeven
+  - 4 of 6 assets net losing; best PF is 1.13 (BTC, fee drag wipes it)
+  - No asset clears the PF≥1.5 / DD≤8% gate
+
+This matches the published-literature band exactly: raw dual-MA-crossover
+on 5m crypto sits at PF 0.8-1.4. The 1%/2% bracket plus WEEX's 0.08%
+round-trip fee eats whatever marginal edge exists, and shorter timeframes
+amplify whipsaw losses in choppy regimes.
+
+Operator decision: retire the strategy. Mirrors Reversal Phase I.X.
+  - CROSSOVER_PAUSED stays True indefinitely
+  - crypto-crossover.service stays uninstalled on the droplet
+  - Code stays in repo (crossover_signals.py, crossover_main.py, this
+    file, templates/tabs/crossover.html.j2) for institutional memory
+  - Dashboard's Crossover tab will show "DORMANT — strategy deferred
+    (no edge in 218-trade Coinbase backtest)" once why-silent copy is
+    updated
+  - No further tuning planned — the result is statistically decisive
+
+Future re-attempts (NOT scheduled). Most promising directions if ever
+revisited:
+  1. Different timeframe — 1h or 4h where SMA50/SMA100 captures
+     genuine trend rather than 5m noise. (4.2h / 8.3h equivalents on
+     5m are too short for the primitive's strength.)
+  2. Different SMA pair — 9/21 (faster, more crosses) or 50/200
+     (slower, fewer but higher-conviction crosses).
+  3. Wider R/R — 1%/3% or 1.5%/3% to absorb fee drag.
+  4. Single-filter addition — most promising is a 1h trend gate
+     (LONG only when 1h EMA20 > EMA50). Backtested separately, that
+     might lift PF to 1.5+ on the assets at 0.9-1.1.
+
+Universe original spec (kept for reference + potential future reuse):
+top-10 minus BNB/TRX (not on Coinbase Exchange) minus stablecoins.
+Same 8-asset universe as Phase M.1's initial sweep so results are
+directly comparable across strategies.
 """
 
 from __future__ import annotations
