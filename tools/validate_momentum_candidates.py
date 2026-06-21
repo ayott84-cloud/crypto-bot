@@ -130,14 +130,17 @@ def main() -> int:
         dd      = report.max_drawdown_pct
         wr      = report.win_rate
         total   = report.total_return_pct
+        bars    = report.bars_seen
         cfg_iv  = cfg.get("interval", "")
         # Use ACTUAL bars seen (handles short Coinbase fetches correctly)
-        years   = _interval_to_years(cfg_iv, report.bars_seen)
+        years   = _interval_to_years(cfg_iv, bars)
         dd_gate = _dd_gate(cfg_iv)
         verdict = _format_verdict(pf, n, dd, dd_gate)
-        print(f"  {name:10s}  PF={pf:6.2f}  n={n:3d}  WR={wr:5.1f}%  "
+        data_tag = ("DATA-OK" if bars >= int(args.bars * 0.9)
+                     else f"DATA-SHORT({bars}/{args.bars})")
+        print(f"  {name:10s}  bars={bars:5d}  PF={pf:6.2f}  n={n:3d}  WR={wr:5.1f}%  "
                 f"total={total:+6.1f}%  maxDD={dd:5.1f}%  "
-                f"window={years:.2f}yr  → {verdict}")
+                f"window={years:.2f}yr  [{data_tag}]  → {verdict}")
 
         if verdict == "PASS":
             passed.append((name, pf, n, dd, wr, total, years))

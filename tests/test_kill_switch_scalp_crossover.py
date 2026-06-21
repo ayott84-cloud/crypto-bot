@@ -178,3 +178,66 @@ def test_status_summary_includes_scalp_and_crossover(mock_read):
     assert "momentum" in summary
     assert "whale" in summary
     assert "funding" in summary
+
+
+# ─── Latent classification fix: breakout / pair / reversal ────────────────
+# Pre-existing bug: their losses were silently classified as "momentum"
+# and counted toward momentum's streak instead of their own.
+
+def test_bot_of_classifies_breakout_strategy_name():
+    assert kill_switch._bot_of("BTC 4H Breakout") == "breakout"
+    assert kill_switch._bot_of("ETH 4H Breakout") == "breakout"
+    assert kill_switch._bot_of("SOL 1H Breakout") == "breakout"
+    assert kill_switch._bot_of("Breakout") == "breakout"  # bare tag fallback
+
+
+def test_bot_of_classifies_pair_strategy_name():
+    assert kill_switch._bot_of("ETHBTC Pair") == "pair"
+    assert kill_switch._bot_of("Pair") == "pair"  # bare tag fallback
+
+
+def test_bot_of_classifies_reversal_strategy_name():
+    assert kill_switch._bot_of("BTC 1D Reversal") == "reversal"
+    assert kill_switch._bot_of("Reversal") == "reversal"  # bare tag fallback
+
+
+def test_filter_to_owner_breakout():
+    trades = [
+        _trade("BTC 4H Breakout", "LOSS"),
+        _trade("ETH 1h Crossover", "LOSS"),
+        _trade("BTC 1D Momentum", "LOSS"),
+    ]
+    breakout_only = kill_switch._filter_to_owner(trades, "breakout")
+    assert len(breakout_only) == 1
+    assert breakout_only[0]["strategy"] == "BTC 4H Breakout"
+
+
+@patch("journal.read_trades")
+def test_should_pause_breakout_not_triggered_by_momentum_losses(mock_read):
+    """5 momentum losses must NOT pause breakout (pre-existing latent bug)."""
+    mock_read.return_value = [
+        _trade("BTC 1D Momentum", "LOSS", hours_ago=h)
+        for h in (10, 8, 6, 4, 2)
+    ]
+    status = kill_switch.should_pause("breakout")
+    assert status.paused is False
+
+
+@patch("journal.read_trades")
+def test_should_pause_breakout_triggers_after_5_consecutive_losses(mock_read):
+    mock_read.return_value = [
+        _trade("BTC 4H Breakout", "LOSS", hours_ago=h)
+        for h in (10, 8, 6, 4, 2)
+    ]
+    status = kill_switch.should_pause("breakout")
+    assert status.paused is True
+    assert "breakout" in status.reason
+
+
+@patch("journal.read_trades")
+def test_status_summary_includes_breakout_pair_reversal(mock_read):
+    mock_read.return_value = []
+    summary = kill_switch.status_summary()
+    assert "breakout" in summary
+    assert "pair" in summary
+    assert "reversal" in summary

@@ -66,21 +66,32 @@ def _bot_of(strategy: str) -> str:
         return "whale"
     if strategy.startswith("Funding Fade"):
         return "funding"
-    # Tier 0.1 — per-asset names are like "BTC 5m Scalp" / "ETH 1h Crossover";
-    # the bare strategy tag is "Scalp" / "Crossover" (used when strategy_name
-    # is missing). endswith covers both shapes without false-positiving
-    # against momentum names like "BTC 1D Momentum".
+    # Per-asset names are like "BTC 5m Scalp" / "ETH 1h Crossover" /
+    # "BTC 4H Breakout" / "ETHBTC Pair" / "BTC 1D Reversal". The bare
+    # tags ("Scalp", "Crossover", "Breakout", "Pair", "Reversal") are
+    # the fallback when strategy_name is missing. endswith covers both
+    # shapes without false-positiving against momentum names like
+    # "BTC 1D Momentum".
     if strategy.endswith("Scalp"):
         return "scalp"
     if strategy.endswith("Crossover"):
         return "crossover"
+    if strategy.endswith("Breakout"):
+        return "breakout"
+    if strategy.endswith("Pair"):
+        return "pair"
+    if strategy.endswith("Reversal"):
+        return "reversal"
     return "momentum"
 
 
 # Owners recognized by the per-owner consecutive-loss filter. Trades whose
 # _bot_of() classification falls outside this set are treated as 'global'
 # (return everything) when should_pause() is called with an unfamiliar owner.
-_RECOGNIZED_OWNERS = ("whale", "funding", "momentum", "scalp", "crossover")
+_RECOGNIZED_OWNERS = (
+    "whale", "funding", "momentum",
+    "scalp", "crossover", "breakout", "pair", "reversal",
+)
 
 
 def _filter_to_owner(trades: List[dict], owner: str) -> List[dict]:
@@ -200,7 +211,8 @@ def should_pause(owner: str, direction: str | None = None) -> KillSwitchStatus:
 def status_summary() -> dict:
     """Returns a dashboard-friendly snapshot for all bots + global state."""
     out = {}
-    for owner in ("momentum", "whale", "funding", "scalp", "crossover"):
+    for owner in ("momentum", "whale", "funding",
+                    "scalp", "crossover", "breakout", "pair", "reversal"):
         s = should_pause(owner)
         out[owner] = {"paused": s.paused, "reason": s.reason}
     return out
