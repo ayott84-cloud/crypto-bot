@@ -144,8 +144,14 @@ def _fetch_klines(symbol: str, interval: str, count: int,
     if not raw:
         return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
     df = build_dataframe(raw)
-    # Replay loops index by integer position, not by timestamp
-    return df.reset_index(drop=False).dropna(subset=["close"]).reset_index(drop=True)
+    # Keep the DateTimeIndex from build_dataframe — replay loops use
+    # df.iloc[i] (positional, works on any index type), but
+    # df["close"].resample("1h") for the higher-TF trend filter REQUIRES
+    # a DateTimeIndex. Phase N.2 debug found that an earlier reset_index
+    # here silently broke the resample → df_1h_full=None → filter no-op
+    # in BOTH replay_crossover AND replay_scalp. Dropping NaN closes via
+    # .dropna preserves the index.
+    return df.dropna(subset=["close"])
 
 
 # ─── Momentum replay ───────────────────────────────────────────────────────
