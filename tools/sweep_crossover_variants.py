@@ -118,7 +118,7 @@ SWEEP_ASSETS = [
 
 # ─── Sweep execution ─────────────────────────────────────────────────
 
-def _build_cfg(symbol: str, variant: Variant) -> dict:
+def _build_cfg(symbol: str, variant: Variant, debug_filter: bool = False) -> dict:
     return {
         "symbol":              symbol,
         "interval":            variant.interval,
@@ -133,6 +133,7 @@ def _build_cfg(symbol: str, variant: Variant) -> dict:
         "use_regime_gate":     False,
         "use_btc_filter":      False,
         "strategy_name":       f"{symbol} {variant.interval} Crossover",
+        "_debug_filter":       debug_filter,
     }
 
 
@@ -168,7 +169,7 @@ def _prefetch_klines(variants: list[Variant], bars: int) -> dict:
     return cache
 
 
-def _run_variant(variant: Variant, cache: dict) -> dict:
+def _run_variant(variant: Variant, cache: dict, debug_filter: bool = False) -> dict:
     """Run one variant across the 6 assets. Returns aggregate stats dict."""
     from tools.backtest_replay import replay_crossover
     results = []
@@ -177,7 +178,7 @@ def _run_variant(variant: Variant, cache: dict) -> dict:
         if df is None or len(df) < variant.sma_slow + 50:
             results.append({"asset": asset, "skipped": True})
             continue
-        cfg = _build_cfg(symbol, variant)
+        cfg = _build_cfg(symbol, variant, debug_filter=debug_filter)
         try:
             report = replay_crossover(
                 asset_name=asset, cfg=cfg, bars=len(df),
@@ -290,6 +291,10 @@ def main() -> int:
                               "comparable per-variant trade counts.")
     parser.add_argument("--variant", default=None,
                          help="Run only one variant by code (e.g. A1)")
+    parser.add_argument("--debug-filter", action="store_true",
+                         help="Print per-asset filter diagnostics for variants "
+                              "with use_higher_tf_trend=True. Use to debug the "
+                              "B1==A0 anomaly from the Jun 20 sweep.")
     args = parser.parse_args()
 
     variants = VARIANTS
@@ -314,7 +319,7 @@ def main() -> int:
 
     all_stats = []
     for variant in variants:
-        stats = _run_variant(variant, cache)
+        stats = _run_variant(variant, cache, debug_filter=args.debug_filter)
         _print_variant_detail(stats)
         all_stats.append(stats)
 

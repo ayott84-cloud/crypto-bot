@@ -381,6 +381,7 @@ def replay_crossover(asset_name: str, cfg: dict, bars: int = 1000,
     # Build df_1h_full by resampling, when filter is enabled + base TF < 1h
     df_1h_full = None
     sub_hour_intervals = {"1m", "3m", "5m", "15m", "30m"}
+    _filter_debug = bool(cfg.get("_debug_filter", False))
     if (cfg.get("use_higher_tf_trend", False)
             and cfg.get("interval") in sub_hour_intervals):
         try:
@@ -390,14 +391,28 @@ def replay_crossover(asset_name: str, cfg: dict, bars: int = 1000,
             es = int(cfg.get("higher_tf_ema_slow", 50))
             df_1h_full["ema_fast"] = df_1h_full["close"].ewm(span=ef, adjust=False).mean()
             df_1h_full["ema_slow"] = df_1h_full["close"].ewm(span=es, adjust=False).mean()
-        except Exception:  # noqa: BLE001
+            if _filter_debug:
+                print(f"    [{asset_name}] df_1h_full built: rows={len(df_1h_full)}  "
+                        f"index_type={type(df_1h_full.index).__name__}  "
+                        f"df_idx_type={type(df.index).__name__}")
+        except Exception as e:  # noqa: BLE001
+            if _filter_debug:
+                print(f"    [{asset_name}] RESAMPLE FAILED: {type(e).__name__}: {e}  "
+                        f"df_idx_type={type(df.index).__name__}")
             df_1h_full = None
+    elif _filter_debug and cfg.get("use_higher_tf_trend", False):
+        print(f"    [{asset_name}] resample SKIPPED: interval={cfg.get('interval')!r} "
+                f"not in sub_hour_intervals")
+    elif _filter_debug:
+        print(f"    [{asset_name}] resample SKIPPED: use_higher_tf_trend={cfg.get('use_higher_tf_trend', False)}")
 
     needed = int(cfg.get("sma_slow", 100)) + 2
     report = BacktestReport(bot="crossover", asset=asset_name, bars_seen=len(df))
 
     position: dict | None = None
     cooldown_until_bar = -1
+    _filter_stats = {"signals_checked": 0, "trend_1h_blocked": 0,
+                       "df_1h_slice_none": 0, "would_enter_pre_filter": 0}
 
     for i in range(needed, len(df)):
         window = df.iloc[: i + 1]
@@ -415,6 +430,17 @@ def replay_crossover(asset_name: str, cfg: dict, bars: int = 1000,
                 if len(df_1h_slice) < 50:
                     df_1h_slice = None
             sig = analyze_crossover_entry(window, cfg, df_1h=df_1h_slice)
+            if _filter_debug and cfg.get("use_higher_tf_trend", False):
+                _filter_stats["signals_checked"] += 1
+                if df_1h_slice is None:
+                    _filter_stats["df_1h_slice_none"] += 1
+                if sig.get("blocked_by") == "trend_1h":
+                    _filter_stats["trend_1h_blocked"] += 1
+                elif sig.get("would_enter") or sig.get("direction"):
+                    # crossover fired (would_enter=True OR direction set
+                    # which means it passed the crossover check)
+                    if sig.get("would_enter"):
+                        _filter_stats["would_enter_pre_filter"] += 1
             if sig["would_enter"]:
                 position = {
                     "direction":     sig["direction"],
@@ -443,6 +469,12 @@ def replay_crossover(asset_name: str, cfg: dict, bars: int = 1000,
             # 10 min / 5 min ≈ 2 bars cooldown (same as live)
             cooldown_until_bar = i + 2
             position = None
+    if _filter_debug and cfg.get("use_higher_tf_trend", False):
+        print(f"    [{asset_name}] filter stats: "
+                f"checked={_filter_stats['signals_checked']}  "
+                f"df_1h_slice_none={_filter_stats['df_1h_slice_none']}  "
+                f"trend_1h_blocked={_filter_stats['trend_1h_blocked']}  "
+                f"would_enter_after_filter={_filter_stats['would_enter_pre_filter']}")
     return report
 
 
