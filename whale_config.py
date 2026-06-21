@@ -23,6 +23,24 @@ WHALE_POLL_INTERVAL_SECONDS = 15 * 60       # 15 minutes
 WHALE_FETCH_COUNT = 20                        # top N and rekt N wallets to scan
 WHALE_RETRY_BACKOFF_SECONDS = [5, 10, 30]     # exponential retry on HL API failure
 
+# ─── Phase W.E.1 — Curated wallet whitelist ─────────────────────────────────
+# When this list is non-empty, fetch_cohorts() scans these wallets directly
+# as the smart cohort, BYPASSING the HL leaderboard rank entirely. Operator
+# hand-curates the list from wallets they trust (cross-referenced via
+# Arkham entity linking, hyperliquid-whale-tracker reviews, etc.). Trades
+# fewer wallets, but each with higher conviction — eliminates the survivor-
+# ship bias of leaderboard sort. Leave empty to use the U.3 composite-sorted
+# leaderboard.
+#
+# Operator may also override via WHALE_WALLET_WHITELIST env var: a
+# comma-separated list of 0x... addresses.
+_WHITELIST_ENV = os.getenv("WHALE_WALLET_WHITELIST", "").strip()
+WHALE_WALLET_WHITELIST: list[str] = (
+    [a.strip() for a in _WHITELIST_ENV.split(",") if a.strip()]
+    if _WHITELIST_ENV else []
+)
+
+
 # ─── Cohort quality gates (Phase W.U.3 — eliminate survivorship bias) ───
 # Raw HL leaderboard sorting by all-time PnL captures "lucky 3-month
 # winners" whose recent performance has decayed. Two gates kill that:

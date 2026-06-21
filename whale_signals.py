@@ -190,10 +190,12 @@ _COMPOSITE_W_ALLTIME = 0.01
 # Re-export for callers; resolve from config so tests can monkeypatch.
 try:
     from whale_config import (MIN_ACCOUNT_VALUE_USD,
-                                WHALE_COHORT_REQUIRE_POSITIVE_MONTH)
+                                WHALE_COHORT_REQUIRE_POSITIVE_MONTH,
+                                WHALE_WALLET_WHITELIST)
 except ImportError:
     MIN_ACCOUNT_VALUE_USD = 100_000.0
     WHALE_COHORT_REQUIRE_POSITIVE_MONTH = True
+    WHALE_WALLET_WHITELIST = []
 
 
 def _composite_score(wallet: dict) -> float:
@@ -244,19 +246,27 @@ def fetch_cohorts(n: int = WHALE_FETCH_COUNT) -> Tuple[List[dict], List[dict]]:
     raw = _retry(get_leaderboard, "leaderboard")
     parsed = [_parse_leaderboard_entry(e) for e in raw if e.get("ethAddress")]
 
-    # U.3 smart cohort: gate first, then sort by recent-weighted composite
-    qualified = _qualifying_wallets(parsed)
-    logger.info("Cohort gate: %d / %d wallets cleared min-account + "
-                 "positive-month filters", len(qualified), len(parsed))
-    smart_sorted = sorted(qualified, key=_composite_score, reverse=True)
+    # E.1 — if a curated whitelist is configured, use it for the smart
+    # cohort directly. Otherwise fall through to U.3 composite-sorted
+    # leaderboard. Rekt cohort always uses leaderboard (the worst
+    # month-PnL wallets are inherently leaderboard-defined).
+    if WHALE_WALLET_WHITELIST:
+        smart_pool = list(WHALE_WALLET_WHITELIST)
+        logger.info("E.1 whitelist mode: scanning %d curated wallets "
+                     "(skipping leaderboard sort)", len(smart_pool))
+    else:
+        # U.3 smart cohort: gate first, then sort by recent-weighted composite
+        qualified = _qualifying_wallets(parsed)
+        logger.info("Cohort gate: %d / %d wallets cleared min-account + "
+                     "positive-month filters", len(qualified), len(parsed))
+        smart_sorted = sorted(qualified, key=_composite_score, reverse=True)
+        # Scan more than N because some wallets may have no open positions
+        # (vaults, sub-accounts). Target N wallets WITH positions per cohort.
+        smart_pool = [w["address"] for w in smart_sorted[:n * 5]]
 
     # Rekt: sort by monthly PnL asc, keep only $1k+ account (avoid dust)
     rekt_candidates = [w for w in parsed if w["account_value"] >= 1000]
     rekt_sorted = sorted(rekt_candidates, key=lambda w: w["pnl_month"])
-
-    # Scan more than N because some wallets may have no open positions (vaults, sub-accounts).
-    # Target is to have N wallets with actual positions in each cohort.
-    smart_pool = [w["address"] for w in smart_sorted[:n * 5]]
     rekt_pool = [w["address"] for w in rekt_sorted[:n * 5]]
 
     logger.info("Fetching positions for %d smart + %d rekt wallet candidates...",
