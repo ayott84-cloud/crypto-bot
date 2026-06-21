@@ -293,7 +293,19 @@ def run_cycle(executor: Executor, state: dict) -> None:
     except Exception as e:  # noqa: BLE001
         logger.warning("Kill-switch check failed (allowing entries): %s", e)
 
-    # 5. New entries
+    # 5. Tier 0.2 — sample current bid-ask spreads (one batch API call)
+    # and update the rolling-spread tracker. Per-asset is_air_pocket
+    # check is applied just before opening, below.
+    try:
+        from microstructure import get_default_tracker, fetch_all_spreads_bps
+        spread_tracker = get_default_tracker()
+        for sym, bps in fetch_all_spreads_bps(executor).items():
+            spread_tracker.add_sample(sym, bps)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("Spread sample fetch failed (gate will degrade to allow): %s", e)
+        spread_tracker = None
+
+    # 6. New entries
     for asset_name, cfg in SCALP_ASSETS.items():
         state_key = f"{SCALP_STATE_KEY_PREFIX}{asset_name}"
         if state_key in state.get("positions", {}):
@@ -353,6 +365,20 @@ def run_cycle(executor: Executor, state: dict) -> None:
             }
 
             if sig["would_enter"]:
+                # Tier 0.2 — spread air-pocket gate. Skip entry if current
+                # spread is an outlier vs the symbol's rolling history.
+                air_pocket_mult = float(cfg.get("spread_air_pocket_mult", 3.0))
+                if (spread_tracker is not None
+                        and spread_tracker.is_air_pocket(
+                            cfg["symbol"], multiplier=air_pocket_mult)):
+                    cur = spread_tracker.current_bps(cfg["symbol"])
+                    mean = spread_tracker.rolling_mean_bps(cfg["symbol"])
+                    logger.warning(
+                        "[%s] spread air-pocket — skipping entry: "
+                        "current=%.2f bps, rolling_mean=%.2f bps, mult=%.1fx",
+                        asset_name, cur or 0.0, mean or 0.0, air_pocket_mult)
+                    state["signal_status"][asset_name]["blocked_by"] = "spread_air_pocket"
+                    continue
                 open_scalp_position(
                     executor, state, asset_name, cfg, df, sig["direction"])
                 # Stop after one new entry per cycle to respect MAX_SCALP_POSITIONS
