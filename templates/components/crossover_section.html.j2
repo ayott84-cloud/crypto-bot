@@ -1,12 +1,22 @@
-<h1 class="tab-heading">Crossover</h1>
+<section class="bot-section bot-section--crossover" aria-labelledby="crossover-section-heading">
+<header class="bot-section__header">
+  <span class="bot-section__monogram monogram--crossover">X</span>
+  <h2 id="crossover-section-heading" class="bot-section__heading">
+    Phase N.2 — 1-hour Dual-SMA Crossover
+  </h2>
+  <span class="bot-section__hint">
+    Fires ONLY on the bar where SMA(20) crosses SMA(50). No filter stack —
+    the primitive's own selectivity is the gate.
+  </span>
+</header>
 
 {% if crossover_meta.paused %}
 <div class="banner banner--paused" role="status">
   <span class="banner__label">PAUSED</span>
   <span class="banner__msg">
-    <code>CROSSOVER_PAUSED=true</code> — 5m dual-SMA crossover
+    <code>CROSSOVER_PAUSED=true</code> — 1h dual-SMA crossover
     (SMA{{ crossover_meta.sma_fast }}/SMA{{ crossover_meta.sma_slow }})
-    awaiting backtest validation. Enable per Phase N rubric after
+    awaiting backtest validation. Enable per Phase N.2 rubric after
     <code>tools/validate_crossover_candidates.py</code> clears the gates.
   </span>
 </div>
@@ -14,14 +24,14 @@
 <div class="banner banner--info" role="status">
   <span class="banner__label">AWAITING SIGNAL</span>
   <span class="banner__msg">
-    Bot is live. No 5m bar has produced a fresh SMA{{ crossover_meta.sma_fast }}/SMA{{ crossover_meta.sma_slow }}
-    crossover on any tracked asset since launch.
+    Bot is live. No fresh SMA{{ crossover_meta.sma_fast }}/SMA{{ crossover_meta.sma_slow }}
+    crossover has fired on any tracked asset since launch.
   </span>
 </div>
 {% endif %}
 
 <section class="config-grid" aria-label="Crossover bot configuration">
-  <h2 class="config-grid__heading">Strategy parameters</h2>
+  <h3 class="config-grid__heading">Strategy parameters</h3>
 
   <div class="kv-row">
     <span class="kv-row__k">Crossover signal</span>
@@ -61,7 +71,7 @@
 
 {% if crossover_meta.assets and crossover_meta.assets|length > 0 %}
 <section class="config-grid" aria-label="Configured assets">
-  <h2 class="config-grid__heading">Configured assets ({{ crossover_meta.assets|length }})</h2>
+  <h3 class="config-grid__heading">Configured assets ({{ crossover_meta.assets|length }})</h3>
   <table class="regime-table">
     <thead>
       <tr>
@@ -93,13 +103,13 @@
 
 {% if crossover_meta.candidate_assets and crossover_meta.candidate_assets|length > 0 %}
 <section class="config-grid" aria-label="Candidate assets awaiting validation">
-  <h2 class="config-grid__heading">
+  <h3 class="config-grid__heading">
     Candidate assets ({{ crossover_meta.candidate_assets|length }})
     <span class="config-grid__hint">
       — staged in <code>CROSSOVER_CANDIDATE_ASSETS</code>; promoted after
       validator clears gates on each
     </span>
-  </h2>
+  </h3>
   <table class="regime-table">
     <thead>
       <tr>
@@ -160,3 +170,4 @@
 
 {% set activity_rows = activity_logs.crossover if activity_logs is defined else [] %}
 {% include "components/bot_activity_log.html.j2" %}
+</section>

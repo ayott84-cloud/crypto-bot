@@ -672,6 +672,52 @@ def _compute_yearly_projection() -> dict:
     except ImportError:
         pass
 
+    # ─── Scalp (Phase M.2 — 5m vol-expansion) ─────────────────────────────
+    # SCALP_BACKTEST_STATS holds the M.2 promotion numbers (BTC PF=6.02 etc.).
+    # Audit caveat: those came from the pre-b656284 replay which silently
+    # ran the strategy WITHOUT the higher-TF filter. Live bot uses a different
+    # code path and IS filtering correctly. The sample-size discount (sqrt(n/4))
+    # will shrink display values for the small-n entries; consider refreshing
+    # the stats dict after the day-14 review when live data is available.
+    try:
+        from scalp_config import (SCALP_BACKTEST_STATS, SCALP_ASSETS,
+                                    SCALP_MARGIN_PER_TRADE, SCALP_LEVERAGE)
+        scalp_notional = SCALP_MARGIN_PER_TRADE * SCALP_LEVERAGE
+        for key, stats in SCALP_BACKTEST_STATS.items():
+            cfg = SCALP_ASSETS.get(key, {})
+            row = _project_row(
+                bot="Scalp", key=key, stats=stats,
+                name=cfg.get("strategy_name", f"Scalp {key}"),
+                symbol=cfg.get("symbol", ""),
+                interval=cfg.get("interval", ""),
+                live_notional=scalp_notional,
+                backtest_notional=backtest_notional)
+            rows.append(row)
+            total_annual += row["annual_pnl_live"]
+            total_trades_per_year += row["trades_per_year"]
+    except ImportError:
+        pass
+
+    # ─── Crossover (Phase N.2 — 1h dual-SMA) ──────────────────────────────
+    try:
+        from crossover_config import (CROSSOVER_BACKTEST_STATS, CROSSOVER_ASSETS,
+                                        CROSSOVER_MARGIN_PER_TRADE, CROSSOVER_LEVERAGE)
+        crossover_notional = CROSSOVER_MARGIN_PER_TRADE * CROSSOVER_LEVERAGE
+        for key, stats in CROSSOVER_BACKTEST_STATS.items():
+            cfg = CROSSOVER_ASSETS.get(key, {})
+            row = _project_row(
+                bot="Crossover", key=key, stats=stats,
+                name=cfg.get("strategy_name", f"Crossover {key}"),
+                symbol=cfg.get("symbol", ""),
+                interval=cfg.get("interval", ""),
+                live_notional=crossover_notional,
+                backtest_notional=backtest_notional)
+            rows.append(row)
+            total_annual += row["annual_pnl_live"]
+            total_trades_per_year += row["trades_per_year"]
+    except ImportError:
+        pass
+
     # ─── Funding (placeholder row — no stats yet) ─────────────────────────
     try:
         from funding_config import FUNDING_BACKTEST_STATS

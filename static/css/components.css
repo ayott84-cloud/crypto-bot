@@ -326,9 +326,62 @@
 .bot-tag--momentum { color: var(--b-momentum, #5fa8e5); }
 .bot-tag--whale    { color: var(--b-whale,    #b076e3); }
 .bot-tag--funding  { color: var(--b-funding,  #d4ad58); }
-.bot-tag--breakout { color: var(--b-breakout, #57cb95); }
-.bot-tag--pair     { color: var(--b-pair,     #e85a4c); }
-.bot-tag--reversal { color: var(--ink-2); }
+.bot-tag--breakout  { color: var(--b-breakout,  #57cb95); }
+.bot-tag--pair      { color: var(--b-pair,      #e85a4c); }
+.bot-tag--reversal  { color: var(--ink-2); }
+.bot-tag--scalp     { color: var(--b-scalp,     #d4ad58); }
+.bot-tag--crossover { color: var(--b-crossover, #4dc7c2); }
+
+/* ── Bot section partial (used inside the Scalping tab) ── */
+.bot-section {
+  border-top: 1px solid var(--rule-soft, #25262b);
+  padding-top: var(--space-3, 1rem);
+  margin-top: var(--space-3, 1rem);
+}
+.bot-section:first-of-type {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+.bot-section__header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  margin-bottom: var(--space-2, 0.5rem);
+}
+.bot-section__monogram {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: var(--radius-sm, 4px);
+  font-family: var(--font-mono, ui-monospace);
+  font-size: 0.8rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.bot-section__heading {
+  font-family: var(--font-display, var(--font-sans));
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 0;
+}
+.bot-section__hint {
+  color: var(--ink-3, #6c6d72);
+  font-size: 0.85rem;
+}
+.bot-section__divider {
+  border: 0;
+  border-top: 1px solid var(--rule-hard, #3a3b42);
+  margin: var(--space-4, 1.5rem) 0;
+}
+.tab-intro {
+  color: var(--ink-2, #a8a9ad);
+  margin: 0 0 var(--space-3, 1rem) 0;
+  font-size: 0.95rem;
+  max-width: 60ch;
+}
 
 .confidence-pill {
   display: inline-block;

@@ -1,4 +1,14 @@
-<h1 class="tab-heading">Scalp</h1>
+<section class="bot-section bot-section--scalp" aria-labelledby="scalp-section-heading">
+<header class="bot-section__header">
+  <span class="bot-section__monogram monogram--scalp">S</span>
+  <h2 id="scalp-section-heading" class="bot-section__heading">
+    Phase M — 5-minute Volatility-Expansion Scalp
+  </h2>
+  <span class="bot-section__hint">
+    Vol-expansion + momentum + new-N-bar-high + body color, with Phase M.2
+    higher-TF / volume / RSI filter stack.
+  </span>
+</header>
 
 {% if scalp_meta.paused %}
 <div class="banner banner--paused" role="status">
@@ -21,7 +31,7 @@
 {% endif %}
 
 <section class="config-grid" aria-label="Scalp bot configuration">
-  <h2 class="config-grid__heading">Strategy parameters</h2>
+  <h3 class="config-grid__heading">Strategy parameters</h3>
 
   <div class="kv-row">
     <span class="kv-row__k">Volatility expansion</span>
@@ -74,7 +84,7 @@
 </section>
 
 <section class="config-grid" aria-label="Configured assets">
-  <h2 class="config-grid__heading">Configured assets ({{ scalp_meta.assets|length }})</h2>
+  <h3 class="config-grid__heading">Configured assets ({{ scalp_meta.assets|length }})</h3>
   <table class="regime-table">
     <thead>
       <tr>
@@ -105,13 +115,13 @@
 
 {% if scalp_meta.candidate_assets and scalp_meta.candidate_assets|length > 0 %}
 <section class="config-grid" aria-label="Candidate assets awaiting validation">
-  <h2 class="config-grid__heading">
+  <h3 class="config-grid__heading">
     Candidate assets ({{ scalp_meta.candidate_assets|length }})
     <span class="config-grid__hint">
       — staged in <code>SCALP_CANDIDATE_ASSETS</code>; promoted at
       day-14 review per Phase M.6 rubric
     </span>
-  </h2>
+  </h3>
   <table class="regime-table">
     <thead>
       <tr>
@@ -172,3 +182,4 @@
 
 {% set activity_rows = activity_logs.scalp if activity_logs is defined else [] %}
 {% include "components/bot_activity_log.html.j2" %}
+</section>
