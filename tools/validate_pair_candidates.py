@@ -136,7 +136,8 @@ def main() -> int:
         dd      = report.max_drawdown_pct
         wr      = report.win_rate
         total   = report.total_return_pct
-        years   = _interval_to_years(pair_spec["interval"], args.bars)
+        # Use ACTUAL bars seen (handles short Coinbase fetches correctly)
+        years   = _interval_to_years(pair_spec["interval"], report.bars_seen)
         dd_gate = _dd_gate(pair_spec["interval"])
         verdict = _format_verdict(pf, n, dd, dd_gate)
         print(f"  {name:10s}  PF={pf:6.2f}  n={n:3d}  WR={wr:5.1f}%  "

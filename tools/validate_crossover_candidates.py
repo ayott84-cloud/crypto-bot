@@ -155,7 +155,11 @@ def main() -> int:
         total    = report.total_return_pct
         bars     = report.bars_seen
         cfg_iv   = cfg.get("interval", "")
-        years    = _interval_to_years(cfg_iv, args.bars)
+        # Years from ACTUAL bars seen, not requested — short fetches
+        # would otherwise over-state the window (Phase N.2 saw 1195
+        # bars fetched but `args.bars`=5000 reported as 0.57yr when
+        # the true window was 0.14yr).
+        years    = _interval_to_years(cfg_iv, bars)
         dd_gate  = _dd_gate(cfg_iv)
         verdict  = _format_verdict(pf, n, dd, dd_gate)
         # Show bars_seen so data-truncation issues are visible — Phase N

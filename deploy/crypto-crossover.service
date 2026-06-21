@@ -1,5 +1,5 @@
 [Unit]
-Description=Crypto Crossover Bot (crossover_main.py — 5-minute dual-SMA crossover)
+Description=Crypto Crossover Bot (crossover_main.py — 1-hour dual-SMA crossover, Phase N.2)
 After=network-online.target crypto-momentum.service
 Wants=network-online.target
 
