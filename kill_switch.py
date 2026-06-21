@@ -66,11 +66,25 @@ def _bot_of(strategy: str) -> str:
         return "whale"
     if strategy.startswith("Funding Fade"):
         return "funding"
+    # Tier 0.1 — per-asset names are like "BTC 5m Scalp" / "ETH 1h Crossover";
+    # the bare strategy tag is "Scalp" / "Crossover" (used when strategy_name
+    # is missing). endswith covers both shapes without false-positiving
+    # against momentum names like "BTC 1D Momentum".
+    if strategy.endswith("Scalp"):
+        return "scalp"
+    if strategy.endswith("Crossover"):
+        return "crossover"
     return "momentum"
 
 
+# Owners recognized by the per-owner consecutive-loss filter. Trades whose
+# _bot_of() classification falls outside this set are treated as 'global'
+# (return everything) when should_pause() is called with an unfamiliar owner.
+_RECOGNIZED_OWNERS = ("whale", "funding", "momentum", "scalp", "crossover")
+
+
 def _filter_to_owner(trades: List[dict], owner: str) -> List[dict]:
-    if owner in ("whale", "funding", "momentum"):
+    if owner in _RECOGNIZED_OWNERS:
         return [t for t in trades if _bot_of(t.get("strategy", "")) == owner]
     return trades  # 'global' / unknown owner — return everything
 
@@ -184,9 +198,9 @@ def should_pause(owner: str, direction: str | None = None) -> KillSwitchStatus:
 
 
 def status_summary() -> dict:
-    """Returns a dashboard-friendly snapshot for all three bots + global state."""
+    """Returns a dashboard-friendly snapshot for all bots + global state."""
     out = {}
-    for owner in ("momentum", "whale", "funding"):
+    for owner in ("momentum", "whale", "funding", "scalp", "crossover"):
         s = should_pause(owner)
         out[owner] = {"paused": s.paused, "reason": s.reason}
     return out

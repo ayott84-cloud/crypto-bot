@@ -276,7 +276,19 @@ def run_cycle(executor: Executor, state: dict) -> None:
         save_state(state, owner="crossover")
         return
 
-    # 4. New entries
+    # 4. Tier 0.1 — kill switch check (skip ALL new entries on streak/daily-DD trip)
+    try:
+        from kill_switch import should_pause
+        ks = should_pause("crossover")
+        if ks.paused:
+            logger.warning("Kill-switch active for crossover: %s — skipping all new entries",
+                            ks.reason)
+            save_state(state, owner="crossover")
+            return
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Kill-switch check failed (allowing entries): %s", e)
+
+    # 5. New entries
     for asset_name, cfg in CROSSOVER_ASSETS.items():
         state_key = f"{CROSSOVER_STATE_KEY_PREFIX}{asset_name}"
         if state_key in state.get("positions", {}):
