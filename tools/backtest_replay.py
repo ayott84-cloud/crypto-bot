@@ -348,8 +348,9 @@ def replay_scalp(asset_name: str, cfg: dict, bars: int = 1000,
 # ─── Crossover replay (Phase N) ─────────────────────────────────────────
 
 def replay_crossover(asset_name: str, cfg: dict, bars: int = 1000,
-                       source: str = "weex") -> BacktestReport:
-    """Phase N — replay the SMA(50)/SMA(100) crossover strategy on 5m bars.
+                       source: str = "weex",
+                       pre_fetched_df=None) -> BacktestReport:
+    """Phase N — replay the dual-SMA crossover strategy.
 
     Entry fires ONLY on the bar where the fast SMA crosses the slow SMA.
     Exit is a pure -sl_pct% / +tp_pct% bracket (default 1% / 2%). Once
@@ -358,12 +359,39 @@ def replay_crossover(asset_name: str, cfg: dict, bars: int = 1000,
 
     A small bar-based cooldown is applied post-exit (≈ CROSSOVER_COOLDOWN
     in 5m bars) as belt-and-suspenders against rapid whipsaw crosses.
+
+    Phase N.2 additions:
+    - pre_fetched_df: skip the API call and reuse a DataFrame passed in
+      by a sweep harness (lets one fetch be amortized across many variant
+      runs on the same asset/timeframe).
+    - When cfg["use_higher_tf_trend"] is True AND cfg["interval"] is a
+      sub-1h timeframe (5m, 15m, 30m), the 1h DataFrame is built by
+      resampling the base series (no extra API call needed). Identical
+      shortcut to replay_scalp.
     """
     from crossover_signals import analyze_crossover_entry, check_crossover_exit
 
-    df = _fetch_klines(cfg["symbol"], cfg["interval"], bars, source=source)
+    if pre_fetched_df is not None:
+        df = pre_fetched_df
+    else:
+        df = _fetch_klines(cfg["symbol"], cfg["interval"], bars, source=source)
     if df is None or len(df) == 0:
         return BacktestReport(bot="crossover", asset=asset_name, bars_seen=0)
+
+    # Build df_1h_full by resampling, when filter is enabled + base TF < 1h
+    df_1h_full = None
+    sub_hour_intervals = {"1m", "3m", "5m", "15m", "30m"}
+    if (cfg.get("use_higher_tf_trend", False)
+            and cfg.get("interval") in sub_hour_intervals):
+        try:
+            df_1h_full = df["close"].resample("1h").last().to_frame()
+            df_1h_full["close"] = df_1h_full["close"].ffill()
+            ef = int(cfg.get("higher_tf_ema_fast", 20))
+            es = int(cfg.get("higher_tf_ema_slow", 50))
+            df_1h_full["ema_fast"] = df_1h_full["close"].ewm(span=ef, adjust=False).mean()
+            df_1h_full["ema_slow"] = df_1h_full["close"].ewm(span=es, adjust=False).mean()
+        except Exception:  # noqa: BLE001
+            df_1h_full = None
 
     needed = int(cfg.get("sma_slow", 100)) + 2
     report = BacktestReport(bot="crossover", asset=asset_name, bars_seen=len(df))
@@ -378,7 +406,15 @@ def replay_crossover(asset_name: str, cfg: dict, bars: int = 1000,
         if position is None:
             if i < cooldown_until_bar:
                 continue
-            sig = analyze_crossover_entry(window, cfg)
+            # Slice the 1h DF to "as of this bar's timestamp" so we
+            # don't leak future trend info into past-bar entry decisions.
+            df_1h_slice = None
+            if df_1h_full is not None:
+                cutoff_ts = window.index[-2]
+                df_1h_slice = df_1h_full.loc[df_1h_full.index <= cutoff_ts]
+                if len(df_1h_slice) < 50:
+                    df_1h_slice = None
+            sig = analyze_crossover_entry(window, cfg, df_1h=df_1h_slice)
             if sig["would_enter"]:
                 position = {
                     "direction":     sig["direction"],

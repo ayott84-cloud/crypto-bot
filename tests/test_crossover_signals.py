@@ -171,3 +171,86 @@ def test_exit_none_when_in_band():
     assert check_crossover_exit(100.0, 101.5, "LONG", cfg) is None
     assert check_crossover_exit(100.0, 100.5, "SHORT", cfg) is None
     assert check_crossover_exit(100.0, 99.0, "SHORT", cfg) is None
+
+
+# ─── Phase N.2 — higher-TF trend filter ────────────────────────────────
+
+def _df_1h_trending(direction: str = "up", n: int = 60) -> "pd.DataFrame":
+    """Build a 1h DataFrame with ema_fast/ema_slow already aligned to a
+    clear trend. Mirrors the shape replay_crossover passes when the
+    higher-TF filter is enabled."""
+    if direction == "up":
+        closes = [100.0 + i * 0.5 for i in range(n)]
+    else:
+        closes = [100.0 - i * 0.5 for i in range(n)]
+    df = pd.DataFrame({"close": closes})
+    df["ema_fast"] = df["close"].ewm(span=20, adjust=False).mean()
+    df["ema_slow"] = df["close"].ewm(span=50, adjust=False).mean()
+    return df
+
+
+def test_higher_tf_trend_filter_off_by_default_long_still_fires():
+    """Without use_higher_tf_trend in cfg, a golden cross fires regardless of df_1h."""
+    from crossover_signals import analyze_crossover_entry
+    closes = _flat_then_step(100, 100.0, 2, 101.0)
+    df = _df_from_closes(closes)
+    # df_1h supplied but cfg doesn't enable the gate
+    df_1h = _df_1h_trending("down")
+    result = analyze_crossover_entry(df, _crossover_cfg(), df_1h=df_1h)
+    assert result["would_enter"] is True
+    assert result["direction"] == "LONG"
+
+
+def test_higher_tf_trend_filter_blocks_long_when_1h_downtrend():
+    from crossover_signals import analyze_crossover_entry
+    closes = _flat_then_step(100, 100.0, 2, 101.0)
+    df = _df_from_closes(closes)
+    df_1h = _df_1h_trending("down")
+    cfg = _crossover_cfg(use_higher_tf_trend=True)
+    result = analyze_crossover_entry(df, cfg, df_1h=df_1h)
+    assert result["would_enter"] is False
+    assert result["blocked_by"] == "trend_1h"
+
+
+def test_higher_tf_trend_filter_allows_long_when_1h_uptrend():
+    from crossover_signals import analyze_crossover_entry
+    closes = _flat_then_step(100, 100.0, 2, 101.0)
+    df = _df_from_closes(closes)
+    df_1h = _df_1h_trending("up")
+    cfg = _crossover_cfg(use_higher_tf_trend=True)
+    result = analyze_crossover_entry(df, cfg, df_1h=df_1h)
+    assert result["would_enter"] is True
+    assert result["direction"] == "LONG"
+
+
+def test_higher_tf_trend_filter_blocks_short_when_1h_uptrend():
+    from crossover_signals import analyze_crossover_entry
+    closes = _flat_then_step(100, 100.0, 2, 99.0)
+    df = _df_from_closes(closes)
+    df_1h = _df_1h_trending("up")
+    cfg = _crossover_cfg(use_higher_tf_trend=True)
+    result = analyze_crossover_entry(df, cfg, df_1h=df_1h)
+    assert result["would_enter"] is False
+    assert result["blocked_by"] == "trend_1h"
+
+
+def test_higher_tf_trend_filter_allows_short_when_1h_downtrend():
+    from crossover_signals import analyze_crossover_entry
+    closes = _flat_then_step(100, 100.0, 2, 99.0)
+    df = _df_from_closes(closes)
+    df_1h = _df_1h_trending("down")
+    cfg = _crossover_cfg(use_higher_tf_trend=True)
+    result = analyze_crossover_entry(df, cfg, df_1h=df_1h)
+    assert result["would_enter"] is True
+    assert result["direction"] == "SHORT"
+
+
+def test_higher_tf_trend_filter_passes_through_when_df_1h_none():
+    """Graceful degradation — if df_1h missing, filter defaults to pass."""
+    from crossover_signals import analyze_crossover_entry
+    closes = _flat_then_step(100, 100.0, 2, 101.0)
+    df = _df_from_closes(closes)
+    cfg = _crossover_cfg(use_higher_tf_trend=True)
+    result = analyze_crossover_entry(df, cfg, df_1h=None)
+    assert result["would_enter"] is True
+    assert result["direction"] == "LONG"

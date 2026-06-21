@@ -26,8 +26,12 @@ from __future__ import annotations
 from typing import Optional
 
 
-def analyze_crossover_entry(df, cfg: dict) -> dict:
+def analyze_crossover_entry(df, cfg: dict, df_1h=None) -> dict:
     """Verbose entry-signal analyzer.
+
+    df_1h is the 1-hour DataFrame for the higher-TF trend gate (Phase
+    N.2). Pass None when not available — the gate defaults to pass
+    (graceful degradation, mirrors scalp_signals/breakout_main patterns).
 
     Returns:
       {
@@ -42,7 +46,7 @@ def analyze_crossover_entry(df, cfg: dict) -> dict:
         "would_enter": False,
         "blocked_by":  None,
         "direction":   None,
-        "filters":     {"crossover": None},
+        "filters":     {"crossover": None, "trend_1h": None},
         "values":      {},
     }
 
@@ -93,6 +97,24 @@ def analyze_crossover_entry(df, cfg: dict) -> dict:
         return result
 
     result["filters"]["crossover"] = True
+
+    # ── Phase N.2: higher-TF trend gate (1h EMA20 vs EMA50) ──
+    # Mirrors scalp_signals.analyze_scalp_entry. Defaults OFF; flip ON
+    # via cfg["use_higher_tf_trend"]. When df_1h is missing or too short,
+    # the gate defaults to pass (graceful degradation).
+    if cfg.get("use_higher_tf_trend", False) and df_1h is not None and len(df_1h) >= 50:
+        if "ema_fast" in df_1h.columns and "ema_slow" in df_1h.columns:
+            last_1h = df_1h.iloc[-1]
+            ef = float(last_1h["ema_fast"])
+            es = float(last_1h["ema_slow"])
+            trend_ok = (ef > es) if direction == "LONG" else (ef < es)
+            result["filters"]["trend_1h"] = trend_ok
+            result["values"]["ema_fast_1h"] = ef
+            result["values"]["ema_slow_1h"] = es
+            if not trend_ok:
+                result["blocked_by"] = "trend_1h"
+                return result
+
     result["would_enter"] = True
     result["direction"] = direction
     return result
