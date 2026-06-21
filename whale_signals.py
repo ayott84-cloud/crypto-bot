@@ -178,18 +178,78 @@ def _parse_leaderboard_entry(entry: dict) -> dict:
     }
 
 
+# ─── U.3 — cohort quality gates ─────────────────────────────────────────────
+# Composite scoring weights. Recent month dominates (kills survivorship bias);
+# all-time PnL is a SOFT tiebreaker — weighted 1% of its dollar value so that
+# a spike-wallet (all-time $10M, recent $5k) can't outrank a fresh wallet
+# (all-time $500k, recent $200k). Track record matters but not enough to
+# resurrect a wallet whose edge has decayed.
+_COMPOSITE_W_MONTH = 1.0
+_COMPOSITE_W_ALLTIME = 0.01
+
+# Re-export for callers; resolve from config so tests can monkeypatch.
+try:
+    from whale_config import (MIN_ACCOUNT_VALUE_USD,
+                                WHALE_COHORT_REQUIRE_POSITIVE_MONTH)
+except ImportError:
+    MIN_ACCOUNT_VALUE_USD = 100_000.0
+    WHALE_COHORT_REQUIRE_POSITIVE_MONTH = True
+
+
+def _composite_score(wallet: dict) -> float:
+    """Recent-weighted composite. Higher = better cohort candidate.
+
+    Rationale: pnl_alltime captures "lucky 3-month winners" — wallets
+    where a single spike inflated all-time PnL but the trader's recent
+    edge has decayed. Weighting pnl_month heavily and treating pnl_alltime
+    as ~12-month-equivalent makes the sort respect current edge.
+    """
+    pnl_month   = float(wallet.get("pnl_month") or 0)
+    pnl_alltime = float(wallet.get("pnl_alltime") or 0)
+    return _COMPOSITE_W_MONTH * pnl_month \
+           + _COMPOSITE_W_ALLTIME * pnl_alltime
+
+
+def _qualifying_wallets(wallets: List[dict],
+                          min_account_value: float = MIN_ACCOUNT_VALUE_USD,
+                          require_positive_month: bool = WHALE_COHORT_REQUIRE_POSITIVE_MONTH,
+                          ) -> List[dict]:
+    """Apply the U.3 gates: account-size floor + (optional) positive-month.
+
+    Returns wallets that pass BOTH gates. Empty input → empty output.
+    """
+    out = []
+    for w in wallets:
+        if float(w.get("account_value") or 0) < min_account_value:
+            continue
+        if require_positive_month and float(w.get("pnl_month") or 0) <= 0:
+            continue
+        out.append(w)
+    return out
+
+
 def fetch_cohorts(n: int = WHALE_FETCH_COUNT) -> Tuple[List[dict], List[dict]]:
     """Fetch top-N smart money wallets and top-N rekt wallets, with their positions.
 
     Returns (smart_wallets, rekt_wallets), each a list of dicts with:
         address, display_name, pnl_alltime, pnl_month, positions=[...]
+
+    U.3 update: smart cohort is now filtered by MIN_ACCOUNT_VALUE_USD +
+    (optional) positive-month gate, then sorted by composite score
+    (pnl_month + pnl_alltime/12). Eliminates the "lucky 3-month winner"
+    survivorship bias Phase W.1 diagnosed without requiring new HL API
+    data (no Sharpe / longevity endpoints called).
     """
     logger.info("Fetching Hyperliquid leaderboard...")
     raw = _retry(get_leaderboard, "leaderboard")
     parsed = [_parse_leaderboard_entry(e) for e in raw if e.get("ethAddress")]
 
-    # Smart money: sort by all-time PnL desc
-    smart_sorted = sorted(parsed, key=lambda w: w["pnl_alltime"], reverse=True)
+    # U.3 smart cohort: gate first, then sort by recent-weighted composite
+    qualified = _qualifying_wallets(parsed)
+    logger.info("Cohort gate: %d / %d wallets cleared min-account + "
+                 "positive-month filters", len(qualified), len(parsed))
+    smart_sorted = sorted(qualified, key=_composite_score, reverse=True)
+
     # Rekt: sort by monthly PnL asc, keep only $1k+ account (avoid dust)
     rekt_candidates = [w for w in parsed if w["account_value"] >= 1000]
     rekt_sorted = sorted(rekt_candidates, key=lambda w: w["pnl_month"])

@@ -23,6 +23,21 @@ WHALE_POLL_INTERVAL_SECONDS = 15 * 60       # 15 minutes
 WHALE_FETCH_COUNT = 20                        # top N and rekt N wallets to scan
 WHALE_RETRY_BACKOFF_SECONDS = [5, 10, 30]     # exponential retry on HL API failure
 
+# ─── Cohort quality gates (Phase W.U.3 — eliminate survivorship bias) ───
+# Raw HL leaderboard sorting by all-time PnL captures "lucky 3-month
+# winners" whose recent performance has decayed. Two gates kill that:
+#   - MIN_ACCOUNT_VALUE_USD: drops dust accounts (vaults, sub-accounts,
+#     low-capital wallets whose "wins" don't move markets)
+#   - REQUIRE_POSITIVE_MONTH_PNL: forces last-30d-positive — if the
+#     wallet is currently bleeding, the all-time PnL is stale alpha
+# Both default ON. Toggle via WHALE_COHORT_REQUIRE_POSITIVE_MONTH=false
+# in .env to restore the legacy biased behavior.
+MIN_ACCOUNT_VALUE_USD = 100_000.0
+WHALE_COHORT_REQUIRE_POSITIVE_MONTH = (
+    os.getenv("WHALE_COHORT_REQUIRE_POSITIVE_MONTH", "true").lower()
+    in ("true", "1", "yes")
+)
+
 # ─── Capital / sizing ────────────────────────────────────────────────────────
 # Whale bot shares the global 8-slot cap with bot 1 (first-come-first-served).
 WHALE_MARGIN_CONSENSUS = 50.0       # $ margin for consensus trades

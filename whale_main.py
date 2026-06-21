@@ -87,6 +87,78 @@ _PERSIST_PATH = _BOT_DIR_PATH / ".whale_persistence.json"
 _DECAY_PATH = _BOT_DIR_PATH / ".whale_decay.json"
 
 
+# ─── Phase W.U.1 + U.2 — 1D data + regime fetch helper ────────────────────
+
+def _fetch_1d_context(executor, weex_symbol: str, n_bars: int = 250):
+    """Pull 1D klines, compute EMA20/50/200 + ATR + ADX, and run the L.2
+    regime classifier. Returns (df_with_indicators, regime_label) for use
+    by check_multi_tf_trend + check_regime_gate.
+
+    Graceful degradation:
+      - Network/API failure → (None, None) — filters default to PASS.
+      - Empty klines        → (None, None).
+      - < 200 bars          → DataFrame returned (multi-TF gate still
+                              works with EMA20/50 from 50+ bars) but
+                              regime label may be "unknown".
+    """
+    try:
+        raw = executor.get_klines(weex_symbol, "1d", n_bars)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[%s] 1D klines fetch failed: %s", weex_symbol, e)
+        return None, None
+
+    if not raw:
+        return None, None
+
+    try:
+        from signals import build_dataframe
+        df = build_dataframe(raw)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[%s] 1D build_dataframe failed: %s", weex_symbol, e)
+        return None, None
+
+    if df is None or len(df) == 0:
+        return None, None
+
+    # Need at least 50 bars for the EMA50 used by multi-TF gate. Below
+    # that, return None,None so both filters degrade to pass.
+    if len(df) < 50:
+        return None, None
+
+    df = df.copy()
+    try:
+        df["ema_fast"] = df["close"].ewm(span=20, adjust=False).mean()
+        df["ema_slow"] = df["close"].ewm(span=50, adjust=False).mean()
+    except Exception as e:  # noqa: BLE001
+        logger.debug("[%s] 1D EMA compute failed: %s", weex_symbol, e)
+        return None, None
+
+    # Regime classifier needs close + atr + atr_sma + adx + ema200.
+    # If we have < 200 bars or the compute fails, return df (so the
+    # multi-TF gate still works) with regime_label=None so that gate
+    # degrades to pass.
+    regime_label = None
+    if len(df) >= 200:
+        try:
+            import pandas_ta as ta
+            df["atr"] = ta.atr(df["high"], df["low"], df["close"], length=14)
+            df["atr_sma"] = df["atr"].rolling(50).mean()
+            adx_df = ta.adx(df["high"], df["low"], df["close"], length=14)
+            # pandas_ta.adx returns a DataFrame with ADX_14 / DMP_14 / DMN_14
+            if adx_df is not None and "ADX_14" in adx_df.columns:
+                df["adx"] = adx_df["ADX_14"]
+            else:
+                df["adx"] = None
+            from regime import classify_from_df
+            regime = classify_from_df(df, {})
+            regime_label = regime.get("label")
+        except Exception as e:  # noqa: BLE001
+            logger.debug("[%s] regime classify failed: %s", weex_symbol, e)
+            regime_label = None
+
+    return df, regime_label
+
+
 def _load_w_state() -> None:
     """Restore filter+decay state from disk on startup."""
     global _persistence_state, _decay_state
@@ -798,17 +870,19 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
             logger.info("%s on cooldown, skipping", sig.coin)
             continue
 
-        # Phase W.B filter stack
+        # Phase W.B filter stack — U.1+U.2 now source real 1D + regime
         if apply_filter_stack is not None:
             hl_ctx = hl_ctx_map.get(sig.coin)
             funding_rate_8h = float(hl_ctx.funding_rate) if hl_ctx else None
-            # df_1d=None and regime_label=None for now — those gates default
-            # to pass when data is unavailable. W.C will add real 1D + regime
-            # data sourcing.
+            # U.1+U.2: fetch 1D klines + classify regime. One extra API
+            # call per entry candidate (typically 0-2 per cycle after
+            # persistence + funding gates), so amortized cost is trivial.
+            # Returns (None, None) on any failure — both gates degrade to pass.
+            df_1d, regime_label = _fetch_1d_context(executor, sig.weex_symbol)
             ok, reasons = apply_filter_stack(
                 coin=sig.coin, direction=sig.direction,
-                df_1d=None, funding_rate_8h=funding_rate_8h,
-                regime_label=None,
+                df_1d=df_1d, funding_rate_8h=funding_rate_8h,
+                regime_label=regime_label,
                 persistence_state=_persistence_state,
                 current_cycle=getattr(run_cycle, "_cycle", 0),
             )
