@@ -520,9 +520,14 @@ def _heartbeat_and_regen(executor, state):
         logger.warning("Heartbeat write failed: %s", e)
     if build_dashboard is not None:
         try:
-            build_dashboard(executor, state)
-        except Exception as e:
-            logger.warning("Dashboard regen failed: %s", e)
+            from dashboard import build_dashboard_safely
+            build_dashboard_safely(executor, state, bot_owner="funding")
+        except ImportError:
+            # Pre-watchdog dashboard module — fall back to direct call
+            try:
+                build_dashboard(executor, state)
+            except Exception as e:
+                logger.warning("Dashboard regen failed: %s", e)
 
 
 # ─── Main loop ───────────────────────────────────────────────────────────────
@@ -558,6 +563,19 @@ def run():
     try:
         executor.load_contract_info(sorted(weex_whitelist))
     except SystemExit:
+        pass
+
+    # Startup self-check — see whale_main for rationale
+    try:
+        from dashboard import selfcheck_dashboard_render
+        ok, err = selfcheck_dashboard_render(state)
+        if not ok:
+            logger.error("[STARTUP] Dashboard render selfcheck FAILED — bot "
+                          "will trade but dashboard regen will fail every cycle "
+                          "until this is fixed. Error:\n%s", err)
+        else:
+            logger.info("[STARTUP] Dashboard render selfcheck OK")
+    except ImportError:
         pass
 
     cycle = 0

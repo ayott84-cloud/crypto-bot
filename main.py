@@ -175,6 +175,19 @@ def run():
         else:
             raise
 
+    # Startup self-check — see whale_main for rationale
+    try:
+        from dashboard import selfcheck_dashboard_render
+        ok, err = selfcheck_dashboard_render(state)
+        if not ok:
+            logger.error("[STARTUP] Dashboard render selfcheck FAILED — bot "
+                          "will trade but dashboard regen will fail every cycle "
+                          "until this is fixed. Error:\n%s", err)
+        else:
+            logger.info("[STARTUP] Dashboard render selfcheck OK")
+    except ImportError:
+        pass
+
     # Main loop
     cycle_count = 0
     logger.info("Entering main loop (Ctrl+C to stop)...")
@@ -582,13 +595,20 @@ def run():
 
         # Regenerate dashboard every cycle now (signal_status needs to stay fresh)
         # Was: every DASHBOARD_REGEN_CYCLES; now always so Entry Signal Diagnostics stays live
-        try:
-            if build_dashboard:
-                build_dashboard(executor, state)
-                if trade_occurred or (cycle_count % DASHBOARD_REGEN_CYCLES == 0):
+        if build_dashboard:
+            try:
+                from dashboard import build_dashboard_safely
+                ok = build_dashboard_safely(executor, state, bot_owner="momentum")
+                if ok and (trade_occurred or (cycle_count % DASHBOARD_REGEN_CYCLES == 0)):
                     logger.info("Dashboard regenerated (trade or periodic)")
-        except Exception as e:
-            logger.error("Dashboard generation failed: %s", e)
+            except ImportError:
+                # Pre-watchdog dashboard module — fall back to direct call
+                try:
+                    build_dashboard(executor, state)
+                    if trade_occurred or (cycle_count % DASHBOARD_REGEN_CYCLES == 0):
+                        logger.info("Dashboard regenerated (trade or periodic)")
+                except Exception as e:
+                    logger.error("Dashboard generation failed: %s", e)
 
         # Cycle summary
         pos_count = count_open_positions(state)

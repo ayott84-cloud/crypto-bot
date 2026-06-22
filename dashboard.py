@@ -3218,3 +3218,124 @@ def build_dashboard(executor, state: dict) -> None:
     html = render("base.html.j2", ctx)
     DASHBOARD_FILE.write_text(html, encoding="utf-8")
     logger.info("Dashboard written to %s", DASHBOARD_FILE)
+
+
+# ─── Dashboard build-failure watchdog ──────────────────────────────────────
+# Background: Jun 21 2026, a template consolidation commit shipped a
+# `scalping.html.j2` requiring new context keys. Bots running OLD Python
+# bytecode (from before the pull) silently raised
+# `'scalp_meta' is undefined` every cycle for 24 hours. The failure was
+# caught at WARN in each bot's `try/except`, never escalated, never
+# noticed. The watchdog below makes that class of regression IMPOSSIBLE
+# to miss.
+
+# Per-bot-owner consecutive-failure counter. Module-level so all bots
+# in one process share state; per-bot in production since each bot is
+# its own systemd process.
+_DASHBOARD_FAILURE_STREAK: dict[str, int] = {}
+_DASHBOARD_NOTIFIED_AT_STREAK: dict[str, int] = {}
+
+# Escalation thresholds. Tune via .env if needed.
+_FAILURE_ERROR_THRESHOLD = 3   # log ERROR with full traceback at this streak
+_FAILURE_NOTIFY_THRESHOLD = 5  # send Discord ping at this streak (one-shot)
+
+
+def _notify_dashboard_failure(bot_owner: str, streak: int, last_error: str) -> bool:
+    """Send a Discord notification when the dashboard build has been
+    failing for `streak` consecutive cycles. Returns True on send, False
+    otherwise. Failure is swallowed — notifier issues must never
+    compound the bot's run_cycle problem."""
+    try:
+        from notifier import _send_discord_embed
+    except ImportError:
+        return False
+    title = f"⚠️ Dashboard build failing — {bot_owner} bot"
+    description = (
+        f"`{bot_owner}` bot has failed to regenerate the dashboard for "
+        f"**{streak} consecutive cycles**. Most common cause: template "
+        f"context drift after a deploy (running Python bytecode is stale "
+        f"vs. new templates). Likely fix: restart the bot.\n\n"
+        f"Last error: `{last_error}`"
+    )
+    try:
+        return bool(_send_discord_embed(title=title, description=description,
+                                           color=0xE85A4C, fields=[]))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def build_dashboard_safely(executor, state: dict, bot_owner: str = "unknown") -> bool:
+    """Wrapper around build_dashboard with escalating failure handling.
+
+    Returns True on success, False on failure. NEVER raises — the bot's
+    run_cycle must keep running even when the dashboard is broken.
+
+    Failure escalation per bot_owner:
+      N=1 to N-1 (below ERROR threshold): WARN with brief error message
+      N=ERROR_THRESHOLD (default 3): ERROR with full traceback. Visible in
+                                       `journalctl -p err` so the operator
+                                       can't miss it.
+      N=NOTIFY_THRESHOLD (default 5): one-shot Discord notification. Won't
+                                        fire again until success → fresh streak.
+      Recovery (success after a ≥ERROR_THRESHOLD streak): INFO transition log.
+    """
+    global _DASHBOARD_FAILURE_STREAK, _DASHBOARD_NOTIFIED_AT_STREAK
+    try:
+        build_dashboard(executor, state)
+    except Exception as e:  # noqa: BLE001
+        streak = _DASHBOARD_FAILURE_STREAK.get(bot_owner, 0) + 1
+        _DASHBOARD_FAILURE_STREAK[bot_owner] = streak
+
+        if streak >= _FAILURE_ERROR_THRESHOLD:
+            import traceback
+            logger.error(
+                "[%s] Dashboard regen FAILING (%d consecutive cycles): %s\n%s",
+                bot_owner, streak, e, traceback.format_exc(),
+            )
+        else:
+            logger.warning(
+                "[%s] Dashboard regen failed (streak %d): %s",
+                bot_owner, streak, e,
+            )
+
+        # One-shot Discord notification at threshold crossing
+        if (streak >= _FAILURE_NOTIFY_THRESHOLD
+                and _DASHBOARD_NOTIFIED_AT_STREAK.get(bot_owner, 0) == 0):
+            try:
+                _notify_dashboard_failure(bot_owner, streak, str(e))
+                _DASHBOARD_NOTIFIED_AT_STREAK[bot_owner] = streak
+            except Exception:  # noqa: BLE001
+                pass  # notifier errors must NEVER compound
+        return False
+
+    # Success — log transition if we were in an escalated streak, then reset
+    prev_streak = _DASHBOARD_FAILURE_STREAK.get(bot_owner, 0)
+    if prev_streak >= _FAILURE_ERROR_THRESHOLD:
+        logger.info(
+            "[%s] Dashboard regen RECOVERED after %d consecutive failures",
+            bot_owner, prev_streak,
+        )
+    _DASHBOARD_FAILURE_STREAK[bot_owner] = 0
+    _DASHBOARD_NOTIFIED_AT_STREAK[bot_owner] = 0
+    return True
+
+
+def selfcheck_dashboard_render(state: dict | None = None) -> tuple[bool, str | None]:
+    """One-shot dashboard render at bot startup to catch template/context
+    drift IMMEDIATELY instead of waiting 3+ poll cycles.
+
+    Pass the bot's loaded state; defaults to a minimal stub if None.
+    Returns (ok, error_msg). NEVER raises.
+
+    Callers should log a loud ERROR if (ok is False) so deploys that
+    break the template surface fail fast and are obvious.
+    """
+    try:
+        from executor import Executor
+        ex = Executor()
+        check_state = state if state is not None else {"positions": {}}
+        build_dashboard(ex, check_state)
+        return True, None
+    except Exception as e:  # noqa: BLE001
+        import traceback
+        return False, f"{type(e).__name__}: {e}\n{traceback.format_exc()}"

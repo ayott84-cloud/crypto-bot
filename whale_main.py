@@ -938,9 +938,14 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
     #    (Heartbeat is written at the top of the cycle — see _write_heartbeat above.)
     if build_dashboard is not None:
         try:
-            build_dashboard(executor, state)
-        except Exception as e:
-            logger.warning("Dashboard regen failed: %s", e)
+            from dashboard import build_dashboard_safely
+            build_dashboard_safely(executor, state, bot_owner="whale")
+        except ImportError:
+            # Pre-watchdog dashboard module — fall back to direct call
+            try:
+                build_dashboard(executor, state)
+            except Exception as e:
+                logger.warning("Dashboard regen failed: %s", e)
 
 
 # ─── Main loop ───────────────────────────────────────────────────────────────
@@ -986,6 +991,22 @@ def run():
         executor.load_contract_info(sorted(weex_whitelist))
     except SystemExit:
         pass  # DRY_RUN, no creds — load_contract_info needs no auth, but fall through anyway
+
+    # Startup self-check: render the dashboard once with current state.
+    # Catches template/context drift IMMEDIATELY instead of waiting 3+
+    # poll cycles (up to 45 min on whale's 15-min cadence). Fails LOUD
+    # at startup so deploys that break the surface are obvious.
+    try:
+        from dashboard import selfcheck_dashboard_render
+        ok, err = selfcheck_dashboard_render(state)
+        if not ok:
+            logger.error("[STARTUP] Dashboard render selfcheck FAILED — bot "
+                          "will trade but dashboard regen will fail every cycle "
+                          "until this is fixed. Error:\n%s", err)
+        else:
+            logger.info("[STARTUP] Dashboard render selfcheck OK")
+    except ImportError:
+        pass  # pre-watchdog dashboard module — no selfcheck available
 
     cycle_count = 0
     logger.info("Entering whale-bot main loop (Ctrl+C to stop)...")
