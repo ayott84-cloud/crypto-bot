@@ -20,8 +20,11 @@ SyslogIdentifier=crypto-whale
 
 # HL leaderboard response is 28 MB JSON; parsing it expands to ~160 MB in Python.
 # Caps need headroom for that + per-wallet position fetches + retries.
-MemoryMax=500M
-MemoryHigh=400M
+# Jun 22 2026: bumped 500M→800M after OOM during leaderboard fetch — the
+# response has grown (more HL users) and bulk-position retries push the
+# peak past the old cap. New headroom = ~640M working set.
+MemoryMax=800M
+MemoryHigh=640M
 
 # Hardening
 NoNewPrivileges=true
