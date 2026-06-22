@@ -97,6 +97,40 @@ def check_regime_gate(direction: str,
     return True, ""
 
 
+def check_arkham_flow_gate(
+    direction: str,
+    net_flow_usd_24h: Optional[float],
+    threshold_usd: float = 1_000_000.0,
+) -> Tuple[bool, str]:
+    """Phase W.E.2 — Arkham CEX-flow gate.
+
+    Blocks LONG when top on-chain entities are NET DISTRIBUTORS (selling)
+    above the threshold over the trailing 24h — they're exiting the
+    position right as our cohort signal would have us enter.
+
+    Blocks SHORT when top entities are NET ACCUMULATORS above threshold —
+    we'd be shorting into a wave of on-chain buying.
+
+    Aligned flow (LONG + accumulation, SHORT + distribution) is treated
+    as confirmation: pass without comment.
+    Missing data (None net_flow) → pass.
+    """
+    if net_flow_usd_24h is None:
+        return True, ""
+
+    if direction == "LONG" and net_flow_usd_24h < -threshold_usd:
+        return False, (
+            f"Arkham 24h net DISTRIBUTION ${net_flow_usd_24h:+,.0f} "
+            f"< -${threshold_usd:,.0f} — top entities exiting position"
+        )
+    if direction == "SHORT" and net_flow_usd_24h > threshold_usd:
+        return False, (
+            f"Arkham 24h net ACCUMULATION ${net_flow_usd_24h:+,.0f} "
+            f"> +${threshold_usd:,.0f} — top entities accumulating"
+        )
+    return True, ""
+
+
 def check_persistence(coin: str, direction: str,
                        persistence_state: dict,
                        current_cycle: int,

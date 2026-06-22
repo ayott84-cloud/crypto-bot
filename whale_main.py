@@ -41,6 +41,7 @@ from whale_config import (
     WHALE_STATE_KEY_PREFIX, WHALE_STRATEGY_TAG,
     WHALE_SYMBOL_WHITELIST_CACHE, WHALE_SYMBOL_CACHE_TTL_HOURS,
     WHALE_SIGNAL_LOG,
+    WHALE_USE_ARKHAM_FLOW_GATE, WHALE_ARKHAM_FLOW_THRESHOLD_USD,
 )
 from executor import Executor
 from position_manager import (
@@ -890,6 +891,26 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
                 logger.info("[%s %s] filtered: %s",
                              sig.coin, sig.direction, " · ".join(reasons))
                 continue
+
+        # Phase W.E.2 — optional Arkham CEX-flow gate (opt-in via config
+        # flag + ARKHAM_API_KEY). Adds one ~50-100ms HTTP call per entry
+        # candidate; whale bot's 0-2 candidates/cycle make this cheap.
+        # Graceful degradation: any failure inside the helper → None,
+        # which the filter treats as "no signal → pass".
+        if WHALE_USE_ARKHAM_FLOW_GATE:
+            try:
+                from whale_arkham import fetch_token_net_flow_24h
+                from whale_filters import check_arkham_flow_gate
+                net_flow = fetch_token_net_flow_24h(sig.coin)
+                ok_flow, reason_flow = check_arkham_flow_gate(
+                    sig.direction, net_flow,
+                    threshold_usd=WHALE_ARKHAM_FLOW_THRESHOLD_USD)
+                if not ok_flow:
+                    logger.info("[%s %s] Arkham gate: %s",
+                                 sig.coin, sig.direction, reason_flow)
+                    continue
+            except Exception as e:  # noqa: BLE001
+                logger.debug("Arkham gate check failed (allowing entry): %s", e)
 
         # Fetch ATR on 4H klines for SL/TP
         klines = executor.get_klines(sig.weex_symbol, WHALE_ATR_INTERVAL, 100)

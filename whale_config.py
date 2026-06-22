@@ -23,6 +23,22 @@ WHALE_POLL_INTERVAL_SECONDS = 15 * 60       # 15 minutes
 WHALE_FETCH_COUNT = 20                        # top N and rekt N wallets to scan
 WHALE_RETRY_BACKOFF_SECONDS = [5, 10, 30]     # exponential retry on HL API failure
 
+# ─── Phase W.E.2 — Arkham CEX-flow gate ─────────────────────────────────────
+# When ON (and ARKHAM_API_KEY is set in .env), the whale entry path
+# queries Arkham's /token/top_flow/{chain} for the candidate coin's
+# 24h net entity flow. LONG entries blocked if top entities are
+# net DISTRIBUTORS > $1M; SHORT entries blocked on net ACCUMULATION.
+# Turns the lagging HL leaderboard signal into a leading-confirmation
+# flow at the cost of one Arkham API call per entry candidate.
+WHALE_USE_ARKHAM_FLOW_GATE = (
+    os.getenv("WHALE_USE_ARKHAM_FLOW_GATE", "false").lower()
+    in ("true", "1", "yes")
+)
+WHALE_ARKHAM_FLOW_THRESHOLD_USD = float(
+    os.getenv("WHALE_ARKHAM_FLOW_THRESHOLD_USD", "1000000")
+)
+
+
 # ─── Phase W.E.1 — Curated wallet whitelist ─────────────────────────────────
 # When this list is non-empty, fetch_cohorts() scans these wallets directly
 # as the smart cohort, BYPASSING the HL leaderboard rank entirely. Operator
