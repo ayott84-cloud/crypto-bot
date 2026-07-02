@@ -42,6 +42,7 @@ from whale_config import (
     WHALE_SYMBOL_WHITELIST_CACHE, WHALE_SYMBOL_CACHE_TTL_HOURS,
     WHALE_SIGNAL_LOG,
     WHALE_USE_ARKHAM_FLOW_GATE, WHALE_ARKHAM_FLOW_THRESHOLD_USD,
+    WHALE_USE_ENTRY_TRIGGER,
 )
 from executor import Executor
 from position_manager import (
@@ -293,6 +294,32 @@ def load_weex_whitelist(executor: Executor) -> set:
 
 
 # ─── ATR calculation for SL/TP ───────────────────────────────────────────────
+
+def _evaluate_entry_trigger(direction: str, klines: List) -> tuple:
+    """Phase W.2.13 adapter — extract the last completed + prior bar OHLC
+    from raw WEEX klines and run whale_filters.check_entry_trigger.
+
+    WEEX kline rows: [timestamp, open, high, low, close, volume, ...].
+    The LAST row is the still-forming bar; last completed = klines[-2],
+    prior = klines[-3]. Any parse problem → (True, "") so the gate
+    degrades to pass like the rest of the filter stack.
+    """
+    try:
+        from whale_filters import check_entry_trigger
+        if not klines or len(klines) < 3:
+            return True, ""
+        last = klines[-2]
+        prior = klines[-3]
+        last_open  = float(last[1])
+        last_close = float(last[4])
+        prior_high = float(prior[2])
+        prior_low  = float(prior[3])
+        return check_entry_trigger(direction, last_open, last_close,
+                                     prior_high, prior_low)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("entry-trigger evaluation failed (pass): %s", e)
+        return True, ""
+
 
 def compute_atr(klines: List, period: int = 14) -> Optional[float]:
     """Compute Wilder's ATR from WEEX klines. Stdlib-only (no pandas dependency).
@@ -918,6 +945,21 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
         if atr is None or atr <= 0:
             logger.warning("%s: could not compute ATR, skipping", sig.weex_symbol)
             continue
+
+        # Phase W.2.13 — price-action entry trigger. Whale consensus is
+        # context; the entry waits for the last completed 4h bar to
+        # confirm the direction (green close above prior high for LONG,
+        # red close below prior low for SHORT). Reuses the ATR klines —
+        # zero extra API cost. Signal stays in persistence state, so a
+        # trigger that fires 1-2 bars later still enters (consensus
+        # persists; entry just isn't chased).
+        if WHALE_USE_ENTRY_TRIGGER:
+            trigger_ok, trigger_reason = _evaluate_entry_trigger(
+                sig.direction, klines)
+            if not trigger_ok:
+                logger.info("[%s %s] %s — waiting for price confirmation",
+                             sig.coin, sig.direction, trigger_reason)
+                continue
 
         open_whale_position(executor, state, sig, atr)
 

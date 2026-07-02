@@ -97,6 +97,51 @@ def check_regime_gate(direction: str,
     return True, ""
 
 
+def check_entry_trigger(
+    direction: str,
+    last_open: Optional[float],
+    last_close: Optional[float],
+    prior_high: Optional[float],
+    prior_low: Optional[float],
+) -> Tuple[bool, str]:
+    """Phase W.2.13 — price-action entry trigger.
+
+    Whale consensus is CONTEXT; the actual ENTRY waits for the market to
+    confirm. Derived from the Phase W.1 staleness diagnosis (leaderboard
+    consensus forms AFTER the move starts — entering on consensus alone
+    bought tops/sold bottoms; 12/14 historical trades died by SL) and
+    the course module-09 pattern of combining whale flow with price action.
+
+    LONG passes only when the last COMPLETED 4h bar:
+      - closed green (close > open), and
+      - broke above the prior bar's high (close > prior_high)
+    SHORT mirrors (red close below prior low).
+
+    Missing data → pass, same graceful-degradation convention as the
+    rest of the whale filter stack.
+    """
+    if direction not in ("LONG", "SHORT"):
+        return True, ""
+    if any(v is None for v in (last_open, last_close)):
+        return True, ""
+    if direction == "LONG":
+        if prior_high is None:
+            return True, ""
+        if last_close > last_open and last_close > prior_high:
+            return True, ""
+        return False, (f"entry trigger: need green 4h close > prior high "
+                        f"{prior_high:.6g} (close {last_close:.6g}, "
+                        f"open {last_open:.6g})")
+    # SHORT
+    if prior_low is None:
+        return True, ""
+    if last_close < last_open and last_close < prior_low:
+        return True, ""
+    return False, (f"entry trigger: need red 4h close < prior low "
+                    f"{prior_low:.6g} (close {last_close:.6g}, "
+                    f"open {last_open:.6g})")
+
+
 def check_arkham_flow_gate(
     direction: str,
     net_flow_usd_24h: Optional[float],

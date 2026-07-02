@@ -23,6 +23,20 @@ WHALE_POLL_INTERVAL_SECONDS = 15 * 60       # 15 minutes
 WHALE_FETCH_COUNT = 20                        # top N and rekt N wallets to scan
 WHALE_RETRY_BACKOFF_SECONDS = [5, 10, 30]     # exponential retry on HL API failure
 
+# ─── Phase W.2.13 — Price-action entry trigger ──────────────────────────────
+# The structural fix for the 12/14-SL-hit failure mode. Whale consensus
+# is CONTEXT, not the trigger: after every other filter passes, the entry
+# waits until the last completed 4h bar CONFIRMS direction (green close
+# above prior high for LONG; red close below prior low for SHORT).
+# Persistence state keeps the signal alive across polls, so a confirmation
+# 1-2 bars later still enters — we stop buying tops the leaderboard
+# already bought. Default ON. Disable via WHALE_USE_ENTRY_TRIGGER=false.
+WHALE_USE_ENTRY_TRIGGER = (
+    os.getenv("WHALE_USE_ENTRY_TRIGGER", "true").lower()
+    in ("true", "1", "yes")
+)
+
+
 # ─── Phase W.E.2 — Arkham CEX-flow gate ─────────────────────────────────────
 # When ON (and ARKHAM_API_KEY is set in .env), the whale entry path
 # queries Arkham's /token/top_flow/{chain} for the candidate coin's
