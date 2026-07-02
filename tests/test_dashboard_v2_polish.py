@@ -20,6 +20,15 @@ import dashboard
 from dashboard_renderer import render
 
 
+def _days_ago(n: int) -> str:
+    """Relative date — fixtures must NOT hardcode dates. The sparkline
+    window filters to the last N days; hardcoded dates expire and the
+    tests time-bomb (this bit us on 2026-07-02 when '2026-05-30'
+    fixtures fell out of the 30-day window)."""
+    from datetime import datetime, timedelta
+    return (datetime.now() - timedelta(days=n)).strftime("%Y-%m-%d")
+
+
 def _trade(bot, date_opened, exit_price, net_pnl, result):
     return {
         "id": 1, "date_opened": date_opened, "symbol": "BTCUSDT",
@@ -39,15 +48,15 @@ def test_sparkline_points_empty_for_empty_trades():
 
 def test_sparkline_points_filters_to_closed_only():
     """An open position (exit_price=None) doesn't contribute to the curve."""
-    trades = [_trade("Momentum", "2026-05-30", None, 0.0, "OPEN")]
+    trades = [_trade("Momentum", _days_ago(3), None, 0.0, "OPEN")]
     assert dashboard._v2_sparkline_points(trades, "Momentum") == []
 
 
 def test_sparkline_points_aggregates_per_day():
     """Two same-day trades collapse to a single point."""
     trades = [
-        _trade("Momentum", "2026-05-30", 105, 5.0, "WIN"),
-        _trade("Momentum", "2026-05-30", 110, 10.0, "WIN"),
+        _trade("Momentum", _days_ago(3), 105, 5.0, "WIN"),
+        _trade("Momentum", _days_ago(3), 110, 10.0, "WIN"),
     ]
     pts = dashboard._v2_sparkline_points(trades, "Momentum", days=30)
     # The cumulative-PnL series ends at 15.0
@@ -57,8 +66,8 @@ def test_sparkline_points_aggregates_per_day():
 def test_sparkline_points_filters_by_bot_label():
     """Whale trades don't show up in the Momentum sparkline."""
     trades = [
-        _trade("Momentum", "2026-05-30", 105, 5.0,  "WIN"),
-        _trade("Whale",    "2026-05-30",  90, -10.0, "LOSS"),
+        _trade("Momentum", _days_ago(3), 105, 5.0,  "WIN"),
+        _trade("Whale",    _days_ago(3),  90, -10.0, "LOSS"),
     ]
     momentum = dashboard._v2_sparkline_points(trades, "Momentum")
     whale    = dashboard._v2_sparkline_points(trades, "Whale")
@@ -68,8 +77,8 @@ def test_sparkline_points_filters_by_bot_label():
 
 def test_sparkline_points_portfolio_sums_all_bots_when_label_none():
     trades = [
-        _trade("Momentum", "2026-05-30", 105, 5.0,  "WIN"),
-        _trade("Whale",    "2026-05-30",  90, -10.0, "LOSS"),
+        _trade("Momentum", _days_ago(3), 105, 5.0,  "WIN"),
+        _trade("Whale",    _days_ago(3),  90, -10.0, "LOSS"),
     ]
     portfolio = dashboard._v2_sparkline_points(trades, None)
     assert portfolio[-1] == -5.0
@@ -78,9 +87,9 @@ def test_sparkline_points_portfolio_sums_all_bots_when_label_none():
 def test_sparkline_points_cumulative_runs_chronologically():
     """Values should accumulate monotonically across the time axis."""
     trades = [
-        _trade("Momentum", "2026-05-01", 105, 5.0,  "WIN"),
-        _trade("Momentum", "2026-05-15", 110, 10.0, "WIN"),
-        _trade("Momentum", "2026-05-30",  95, -3.0, "LOSS"),
+        _trade("Momentum", _days_ago(32), 105, 5.0,  "WIN"),
+        _trade("Momentum", _days_ago(18), 110, 10.0, "WIN"),
+        _trade("Momentum", _days_ago(3),  95, -3.0, "LOSS"),
     ]
     pts = dashboard._v2_sparkline_points(trades, "Momentum", days=60)
     # End value = 5 + 10 - 3 = 12
@@ -154,8 +163,8 @@ def test_root_element_starts_with_dark_theme_data_attribute():
 
 def test_bot_card_renders_spark_svg_when_present():
     trades = [
-        _trade("Momentum", "2026-05-01", 105, 5.0,  "WIN"),
-        _trade("Momentum", "2026-05-15", 110, 10.0, "WIN"),
+        _trade("Momentum", _days_ago(32), 105, 5.0,  "WIN"),
+        _trade("Momentum", _days_ago(18), 110, 10.0, "WIN"),
     ]
     html = render("base.html.j2", dashboard._v2_test_context(trades))
     assert "bot-card__spark" in html
@@ -180,8 +189,8 @@ def test_bot_card_omits_spark_when_no_data():
 
 def test_portfolio_strip_renders_spark_when_data_present():
     trades = [
-        _trade("Momentum", "2026-05-01", 105, 5.0,  "WIN"),
-        _trade("Whale",    "2026-05-15",  90, -10.0, "LOSS"),
+        _trade("Momentum", _days_ago(32), 105, 5.0,  "WIN"),
+        _trade("Whale",    _days_ago(18),  90, -10.0, "LOSS"),
     ]
     html = render("base.html.j2", dashboard._v2_test_context(trades))
     assert "portfolio-strip__spark" in html

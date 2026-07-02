@@ -82,14 +82,65 @@ _initialized = False
 
 
 def _bot_tag(strategy: str) -> str:
-    """Classify a strategy string into Whale / Funding / Momentum bot."""
+    """Classify a strategy string into its owning bot's display name.
+
+    Mirrors kill_switch._bot_of (commit 961f1e6) — per-asset strategy
+    names end with the bot word ("BTC 5m Scalp", "ETH 1h Crossover",
+    "BTC 4H Breakout", "ETHBTC Pair", "BTC 1D Reversal"); Whale/Funding
+    use prefixes. Momentum is the default for legacy names like
+    "BTC 1D Momentum".
+
+    Jul 2 2026: extended from the original 3-way (Whale/Funding/
+    Momentum) split. Before this, every Scalp/Crossover/Breakout/Pair/
+    Reversal trade was stored with bot="Momentum", corrupting per-bot
+    review stats AND the dashboard's per-bot cards. Existing rows are
+    repaired via retag_bot_column() below.
+    """
     if not isinstance(strategy, str):
         return "Momentum"
     if strategy.startswith("Whale Track"):
         return "Whale"
     if strategy.startswith("Funding Fade"):
         return "Funding"
+    if strategy.endswith("Scalp"):
+        return "Scalp"
+    if strategy.endswith("Crossover"):
+        return "Crossover"
+    if strategy.endswith("Breakout"):
+        return "Breakout"
+    if strategy.endswith("Pair"):
+        return "Pair"
+    if strategy.endswith("Reversal"):
+        return "Reversal"
     return "Momentum"
+
+
+def retag_bot_column(db_path=None, apply: bool = False) -> int:
+    """Recompute the stored `bot` column from `strategy` for every row.
+
+    Backfill for the Jul 2 2026 _bot_tag extension — rows written before
+    the fix carry bot="Momentum" for scalp/crossover/breakout/pair/
+    reversal trades. Dry-run by default (counts mismatches, mutates
+    nothing); apply=True rewrites them. Idempotent.
+
+    Returns the number of rows whose stored tag differed from the
+    recomputed one.
+    """
+    path = str(db_path) if db_path is not None else str(DB_PATH)
+    conn = sqlite3.connect(path, timeout=10)
+    try:
+        rows = conn.execute("SELECT id, strategy, bot FROM trades").fetchall()
+        fixes = []
+        for row_id, strategy, stored_bot in rows:
+            correct = _bot_tag(strategy or "")
+            if correct != (stored_bot or ""):
+                fixes.append((correct, row_id))
+        if apply and fixes:
+            conn.executemany("UPDATE trades SET bot = ? WHERE id = ?", fixes)
+            conn.commit()
+        return len(fixes)
+    finally:
+        conn.close()
 
 
 @contextmanager
