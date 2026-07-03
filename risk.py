@@ -48,3 +48,40 @@ def vol_scaled_margin(base_margin: float, vol_regime: str | None) -> float:
 def is_high_vol(vol_regime: str | None) -> bool:
     """Convenience predicate for dashboard surfacing + logs."""
     return vol_regime == "high"
+
+
+def bracket_trigger_price(entry_price: float, direction: str, reason,
+                            cfg: dict,
+                            default_sl_pct: float = 1.0,
+                            default_tp_pct: float = 2.0) -> float | None:
+    """P1.1 — paper-fidelity fill price for bracket exits.
+
+    With exchange-resident TP/SL orders (attached at entry), a triggered
+    exit fills at approximately the TRIGGER price, not at whatever price
+    the bot's 60-second poll happens to observe afterwards. This helper
+    maps (entry, direction, exit reason) to that trigger so DRY_RUN paper
+    fills model the exchange-native architecture instead of the legacy
+    poll-lag fills (which overshot brackets by up to 2x — worst observed
+    -$2.02 on a 1% SL / $100 notional).
+
+    Returns None for non-bracket exit reasons (signal flip, stale, manual)
+    so callers fall back to the live polled price.
+    """
+    if not reason or not isinstance(reason, str):
+        return None
+    reason_l = reason.lower()
+    if "sl" in reason_l and "hit" in reason_l:
+        leg = "SL"
+    elif "tp" in reason_l and "hit" in reason_l:
+        leg = "TP"
+    else:
+        return None
+    sl_pct = float(cfg.get("sl_pct", default_sl_pct))
+    tp_pct = float(cfg.get("tp_pct", default_tp_pct))
+    if direction == "LONG":
+        return entry_price * (1 - sl_pct / 100.0) if leg == "SL" \
+            else entry_price * (1 + tp_pct / 100.0)
+    if direction == "SHORT":
+        return entry_price * (1 + sl_pct / 100.0) if leg == "SL" \
+            else entry_price * (1 - tp_pct / 100.0)
+    return None

@@ -120,11 +120,16 @@ def open_scalp_position(executor: Executor, state: dict, asset_name: str,
                   asset_name, direction, qty, current_price, sl_str,
                   tp_price, range_)
 
+    # P1.1 — attach BOTH bracket legs at entry so the exchange enforces
+    # exits continuously (poll loop is watchdog only).
+    tp_str = f"{tp_price:.6f}"
     try:
         if direction == "SHORT":
-            executor.open_short(symbol, qty, sl_trigger_price=sl_str)
+            executor.open_short(symbol, qty, sl_trigger_price=sl_str,
+                                  tp_trigger_price=tp_str)
         else:
-            executor.open_long(symbol, qty, sl_trigger_price=sl_str)
+            executor.open_long(symbol, qty, sl_trigger_price=sl_str,
+                                 tp_trigger_price=tp_str)
     except Exception as e:  # noqa: BLE001
         logger.error("[%s] exchange open failed: %s", asset_name, e)
         return
@@ -162,8 +167,15 @@ def open_scalp_position(executor: Executor, state: dict, asset_name: str,
 
 
 def close_scalp_position(executor: Executor, state: dict, state_key: str,
-                            reason: str) -> None:
-    """Close on exchange, strip state, write journal row, send notification."""
+                            reason: str,
+                            exit_price_override: float | None = None) -> None:
+    """Close on exchange, strip state, write journal row, send notification.
+
+    exit_price_override (P1.1): for bracket exits the caller passes the
+    TRIGGER price, modeling the exchange-resident order fill instead of
+    the up-to-60s-late polled price. None → legacy polled-price behavior
+    (non-bracket exits, manual closes).
+    """
     pos = state.get("positions", {}).get(state_key)
     if not pos:
         logger.warning("close_scalp_position called for missing key %s", state_key)
@@ -171,7 +183,9 @@ def close_scalp_position(executor: Executor, state: dict, state_key: str,
 
     symbol = pos.get("symbol", "")
     direction = pos.get("direction", "LONG")
-    exit_price = executor.get_symbol_price(symbol) or pos.get("entry_price")
+    exit_price = (exit_price_override
+                   if exit_price_override is not None
+                   else executor.get_symbol_price(symbol) or pos.get("entry_price"))
 
     try:
         if direction == "SHORT":
@@ -265,8 +279,17 @@ def run_cycle(executor: Executor, state: dict) -> None:
             reason = check_scalp_exit(entry_price, float(current_price),
                                          direction, cfg)
             if reason:
-                logger.info("[%s] exit %s — closing", asset_name, reason)
-                close_scalp_position(executor, state, state_key, reason)
+                # P1.1 — bracket exits fill at the exchange trigger price,
+                # not the (up to 60s late) polled price.
+                from risk import bracket_trigger_price
+                trigger = bracket_trigger_price(
+                    entry_price, direction, reason, cfg,
+                    default_sl_pct=1.5, default_tp_pct=3.0)
+                logger.info("[%s] exit %s — closing (fill=%s)",
+                             asset_name, reason,
+                             f"{trigger:.6f}" if trigger else "polled")
+                close_scalp_position(executor, state, state_key, reason,
+                                        exit_price_override=trigger)
         except Exception as e:  # noqa: BLE001
             logger.error("[%s] exit-management cycle errored: %s",
                           asset_name, e, exc_info=True)

@@ -243,8 +243,18 @@ class Executor:
     # ── Trading Operations ───────────────────────────────────────────────
 
     def open_long(self, symbol: str, quantity: str,
-                  sl_trigger_price: str = None) -> dict:
-        """Open a LONG position with a market order."""
+                  sl_trigger_price: str = None,
+                  tp_trigger_price: str = None) -> dict:
+        """Open a LONG position with a market order.
+
+        P1.1 (Jul 2026): both bracket legs attach at entry so the WEEX
+        matching engine enforces exits continuously — the 60s poll loop
+        is a watchdog, not the enforcement path. Working types per
+        practitioner consensus (freqtrade/Bybit/Binance patterns):
+          SL on MARK_PRICE      — index-derived, immune to single-print
+                                   wicks and thin-book stop hunts
+          TP on CONTRACT_PRICE  — real local prints can fill the target
+        """
         body: dict = {
             "symbol": symbol,
             "side": "BUY",
@@ -256,6 +266,9 @@ class Executor:
         if sl_trigger_price:
             body["slTriggerPrice"] = sl_trigger_price
             body["slWorkingType"] = "MARK_PRICE"
+        if tp_trigger_price:
+            body["tpTriggerPrice"] = tp_trigger_price
+            body["tpWorkingType"] = "CONTRACT_PRICE"
 
         return self._mutating_call(
             "transaction.place_order", body=body,
@@ -317,8 +330,12 @@ class Executor:
     # ── SHORT-side operations (used by whale bot) ────────────────────────
 
     def open_short(self, symbol: str, quantity: str,
-                   sl_trigger_price: str = None) -> dict:
-        """Open a SHORT position with a market order."""
+                   sl_trigger_price: str = None,
+                   tp_trigger_price: str = None) -> dict:
+        """Open a SHORT position with a market order.
+
+        See open_long for the P1.1 bracket-at-entry rationale.
+        """
         body: dict = {
             "symbol": symbol,
             "side": "SELL",
@@ -330,6 +347,9 @@ class Executor:
         if sl_trigger_price:
             body["slTriggerPrice"] = sl_trigger_price
             body["slWorkingType"] = "MARK_PRICE"
+        if tp_trigger_price:
+            body["tpTriggerPrice"] = tp_trigger_price
+            body["tpWorkingType"] = "CONTRACT_PRICE"
 
         return self._mutating_call(
             "transaction.place_order", body=body,
