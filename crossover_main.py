@@ -77,6 +77,24 @@ def _record_exit_for_cooldown(state: dict, symbol: str) -> None:
     _cooldown_map(state)[symbol] = datetime.now(timezone.utc).isoformat()
 
 
+def _compute_df_atr(df: pd.DataFrame, period: int = 14) -> float | None:
+    """Wilder-style ATR from an OHLC DataFrame. None on insufficient data."""
+    try:
+        if df is None or len(df) < period + 2:
+            return None
+        high, low, close = df["high"], df["low"], df["close"]
+        prev_close = close.shift(1)
+        tr = pd.concat([
+            high - low,
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ], axis=1).max(axis=1)
+        atr = tr.rolling(period).mean().iloc[-2]
+        return None if atr != atr else float(atr)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 # ─── Open / Close ──────────────────────────────────────────────────────
 
 def open_crossover_position(executor: Executor, state: dict, asset_name: str,
@@ -101,22 +119,41 @@ def open_crossover_position(executor: Executor, state: dict, asset_name: str,
         logger.warning("[%s] computed qty <= 0; skipping", asset_name)
         return
 
-    sl_pct = float(cfg.get("sl_pct", 1.0))
-    tp_pct = float(cfg.get("tp_pct", 2.0))
-    if direction == "LONG":
-        sl_price = current_price * (1 - sl_pct / 100)
-        tp_price = current_price * (1 + tp_pct / 100)
+    # N.3 — compute real ATR(14) at entry for the emergency stop (the
+    # bar range proxy is too noisy for a 3.5x multiple).
+    atr_at_entry = _compute_df_atr(df, period=14) or range_
+
+    invalidation_mode = cfg.get("exit_mode") == "invalidation"
+    if invalidation_mode:
+        # Primary exit is the SMA-recross (bot-side, close-confirmed).
+        # Exchange-resident SL sits at the wide EMERGENCY level only;
+        # no TP — the signal decides when the trend is done.
+        mult = float(cfg.get("emergency_atr_mult", 3.5))
+        if direction == "LONG":
+            sl_price = current_price - mult * atr_at_entry
+            tp_price = None
+        else:
+            sl_price = current_price + mult * atr_at_entry
+            tp_price = None
     else:
-        sl_price = current_price * (1 + sl_pct / 100)
-        tp_price = current_price * (1 - tp_pct / 100)
+        sl_pct = float(cfg.get("sl_pct", 1.0))
+        tp_pct = float(cfg.get("tp_pct", 2.0))
+        if direction == "LONG":
+            sl_price = current_price * (1 - sl_pct / 100)
+            tp_price = current_price * (1 + tp_pct / 100)
+        else:
+            sl_price = current_price * (1 + sl_pct / 100)
+            tp_price = current_price * (1 - tp_pct / 100)
     sl_str = f"{sl_price:.6f}"
 
     fast_n = int(cfg.get("sma_fast", 50))
     slow_n = int(cfg.get("sma_slow", 100))
-    logger.info("[%s] OPENING %s qty=%s price=%.4f SL=%s TP=%.6f "
-                  "(SMA%d/%d cross)",
+    logger.info("[%s] OPENING %s qty=%s price=%.4f SL=%s TP=%s "
+                  "(SMA%d/%d cross, exit=%s)",
                   asset_name, direction, qty, current_price, sl_str,
-                  tp_price, fast_n, slow_n)
+                  f"{tp_price:.6f}" if tp_price else "signal-invalidation",
+                  fast_n, slow_n,
+                  "invalidation" if invalidation_mode else "bracket")
 
     # P1.2 — OCO hygiene: cancel stale triggers before the new bracketed
     # entry so brackets never stack. Cancel failure must not block entry.
@@ -126,8 +163,9 @@ def open_crossover_position(executor: Executor, state: dict, asset_name: str,
         logger.warning("[%s] pre-entry trigger cancel failed (continuing): %s",
                         asset_name, e)
 
-    # P1.1 — attach BOTH bracket legs at entry (exchange-enforced exits)
-    tp_str = f"{tp_price:.6f}"
+    # P1.1 — attach bracket legs at entry (exchange-enforced). In
+    # invalidation mode only the emergency SL rides the entry (no TP).
+    tp_str = f"{tp_price:.6f}" if tp_price else None
     try:
         if direction == "SHORT":
             executor.open_short(symbol, qty, sl_trigger_price=sl_str,
@@ -144,7 +182,7 @@ def open_crossover_position(executor: Executor, state: dict, asset_name: str,
     register_entry(
         state, state_key,
         entry_price=current_price,
-        atr_at_entry=range_,
+        atr_at_entry=atr_at_entry,
         quantity=qty,
         strategy=cfg.get("strategy_name", CROSSOVER_STRATEGY_TAG),
         entry_reason=entry_reason,
@@ -160,9 +198,9 @@ def open_crossover_position(executor: Executor, state: dict, asset_name: str,
             quantity=str(qty),
             leverage=CROSSOVER_LEVERAGE,
             sl_price=sl_price,
-            tp1_price=tp_price,
-            tp2_price=tp_price,
-            atr_at_entry=range_,
+            tp1_price=tp_price or sl_price,
+            tp2_price=tp_price or sl_price,
+            atr_at_entry=atr_at_entry,
             strategy=cfg.get("strategy_name", CROSSOVER_STRATEGY_TAG),
             entry_reason=entry_reason,
             direction=direction,
@@ -276,6 +314,47 @@ def run_cycle(executor: Executor, state: dict) -> None:
             current_price = executor.get_symbol_price(symbol)
             if not current_price:
                 continue
+
+            if cfg.get("exit_mode") == "invalidation":
+                # N.3 — primary exit is signal invalidation (close crossed
+                # back through SMA-fast) + wide emergency ATR stop. Needs
+                # klines for the SMA; fetch is cheap at 1h cadence.
+                from crossover_signals import check_crossover_exit_v3
+                sma_fast_now = None
+                try:
+                    raw = executor.get_klines(symbol, cfg["interval"], 60)
+                    df_exit = _build_dataframe(raw)
+                    fast_n = int(cfg.get("sma_fast", 20))
+                    if df_exit is not None and len(df_exit) >= fast_n + 2:
+                        sma_fast_now = float(
+                            df_exit["close"].rolling(fast_n).mean().iloc[-2])
+                        # Exit decision uses the last COMPLETED close, not
+                        # the mid-bar tick — invalidation is close-confirmed
+                        current_price = float(df_exit["close"].iloc[-2])
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("[%s] exit klines fetch failed: %s",
+                                    asset_name, e)
+                atr_entry = float(pos.get("atr_at_entry") or 0)
+                reason = check_crossover_exit_v3(
+                    direction=direction, entry_price=entry_price,
+                    current_close=float(current_price),
+                    sma_fast_now=sma_fast_now,
+                    atr_at_entry=atr_entry, cfg=cfg)
+                if reason:
+                    # Emergency SL fills at its trigger; invalidation exits
+                    # fill at the close that confirmed the recross.
+                    override = None
+                    if reason == "Emergency SL" and atr_entry > 0:
+                        mult = float(cfg.get("emergency_atr_mult", 3.5))
+                        override = (entry_price - mult * atr_entry
+                                     if direction == "LONG"
+                                     else entry_price + mult * atr_entry)
+                    logger.info("[%s] exit %s — closing", asset_name, reason)
+                    close_crossover_position(executor, state, state_key,
+                                                reason,
+                                                exit_price_override=override)
+                continue
+
             reason = check_crossover_exit(entry_price, float(current_price),
                                             direction, cfg)
             if reason:
@@ -335,14 +414,32 @@ def run_cycle(executor: Executor, state: dict) -> None:
         if _on_cooldown(state, cfg["symbol"]):
             continue
         try:
-            # 102 bars minimum (SMA100 + prev/curr eval). 120 gives headroom.
-            raw = executor.get_klines(cfg["symbol"], cfg["interval"], 120)
+            # N.3: SMA200 slope gate needs 205+ bars; 260 gives headroom
+            # (WEEX kline cap is 1000). Without the flag, 120 sufficed.
+            n_bars = 260 if cfg.get("use_sma200_filter", False) else 120
+            raw = executor.get_klines(cfg["symbol"], cfg["interval"], n_bars)
             df = _build_dataframe(raw)
             slow_n = int(cfg.get("sma_slow", 100))
             if df is None or len(df) < slow_n + 2:
                 continue
 
             sig = analyze_crossover_entry(df, cfg)
+
+            # P2.3 — daily 9-MA regime gate (live parity with replay).
+            # Fetch failure → gate degrades to pass.
+            if sig["would_enter"] and cfg.get("use_daily_regime", False):
+                try:
+                    from regime import classify_daily_trend, daily_regime_allows
+                    raw_1d = executor.get_klines(cfg["symbol"], "1d", 20)
+                    df_1d = _build_dataframe(raw_1d)
+                    if df_1d is not None and len(df_1d) >= 12:
+                        regime_label = classify_daily_trend(df_1d["close"])
+                        if not daily_regime_allows(sig["direction"], regime_label):
+                            sig = {**sig, "would_enter": False,
+                                    "blocked_by": f"daily_regime_{regime_label}"}
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("[%s] daily regime fetch failed (pass): %s",
+                                    asset_name, e)
 
             def _sym(v):
                 return "✅" if v is True else "❌" if v is False else "➖"

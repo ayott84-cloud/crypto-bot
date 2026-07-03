@@ -482,6 +482,21 @@ def replay_crossover(asset_name: str, cfg: dict, bars: int = 1000,
         except Exception:  # noqa: BLE001
             daily_closes_full = None
 
+    # N.3 — precompute series for invalidation-mode exits
+    invalidation_mode = cfg.get("exit_mode") == "invalidation"
+    sma_fast_series = None
+    atr_series = None
+    if invalidation_mode:
+        fast_n = int(cfg.get("sma_fast", 20))
+        sma_fast_series = df["close"].rolling(fast_n).mean()
+        prev_close = df["close"].shift(1)
+        tr = pd.concat([
+            df["high"] - df["low"],
+            (df["high"] - prev_close).abs(),
+            (df["low"] - prev_close).abs(),
+        ], axis=1).max(axis=1)
+        atr_series = tr.rolling(14).mean()
+
     needed = int(cfg.get("sma_slow", 100)) + 2
     report = BacktestReport(bot="crossover", asset=asset_name, bars_seen=len(df))
 
@@ -532,7 +547,46 @@ def replay_crossover(asset_name: str, cfg: dict, bars: int = 1000,
                     "direction":     sig["direction"],
                     "entry_bar":     i,
                     "entry_price":   current_close,
+                    "atr_at_entry":  (float(atr_series.iloc[i])
+                                       if atr_series is not None
+                                       and atr_series.iloc[i] == atr_series.iloc[i]
+                                       else 0.0),
                 }
+            continue
+
+        # N.3 — invalidation-mode exits: emergency ATR stop (intra-bar)
+        # first, then close-confirmed SMA-recross invalidation.
+        if invalidation_mode:
+            entry = position["entry_price"]
+            atr_e = position.get("atr_at_entry") or 0.0
+            mult = float(cfg.get("emergency_atr_mult", 3.5))
+            bar_high = float(df.iloc[i]["high"])
+            bar_low = float(df.iloc[i]["low"])
+            reason, fill_price = None, None
+            if atr_e > 0:
+                if position["direction"] == "LONG" and bar_low <= entry - mult * atr_e:
+                    reason, fill_price = "Emergency SL", entry - mult * atr_e
+                elif position["direction"] == "SHORT" and bar_high >= entry + mult * atr_e:
+                    reason, fill_price = "Emergency SL", entry + mult * atr_e
+            if reason is None:
+                sf = sma_fast_series.iloc[i]
+                if sf == sf:  # not NaN
+                    if position["direction"] == "LONG" and current_close < float(sf):
+                        reason, fill_price = "Invalidation Exit", current_close
+                    elif position["direction"] == "SHORT" and current_close > float(sf):
+                        reason, fill_price = "Invalidation Exit", current_close
+            if reason:
+                sign = 1.0 if position["direction"] == "LONG" else -1.0
+                pnl_pct = sign * (fill_price - entry) / entry * 100
+                pnl_pct -= round_trip_cost_pct
+                report.trades.append(TradeResult(
+                    direction=position["direction"],
+                    entry_bar=position["entry_bar"], exit_bar=i,
+                    entry_price=entry, exit_price=fill_price,
+                    exit_reason=reason, pnl_pct=pnl_pct,
+                ))
+                cooldown_until_bar = i + 2
+                position = None
             continue
 
         # P2.1 — conservative intra-bar exit: SL vs bar low, TP vs bar

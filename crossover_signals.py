@@ -98,6 +98,38 @@ def analyze_crossover_entry(df, cfg: dict, df_1h=None) -> dict:
 
     result["filters"]["crossover"] = True
 
+    # ── Phase N.3: 200-SMA trend filter with slope gate ──
+    # TradingRush 100-trade template: losses cluster when the 200 SMA is
+    # flat/sideways. LONG only when price above a RISING SMA200; SHORT
+    # only below a FALLING one. Insufficient data → pass.
+    if cfg.get("use_sma200_filter", False) and len(df) >= 205:
+        sma200 = df["close"].rolling(200).mean()
+        s_now = sma200.iloc[-2]
+        s_then = sma200.iloc[-7]   # 5-bar slope lookback
+        close_now = float(df["close"].iloc[-2])
+        if not (_isnan(s_now) or _isnan(s_then)):
+            slope_ok = (s_now > s_then) if direction == "LONG" else (s_now < s_then)
+            side_ok = (close_now > s_now) if direction == "LONG" else (close_now < s_now)
+            result["values"]["sma200"] = float(s_now)
+            if not (slope_ok and side_ok):
+                result["filters"]["sma200"] = False
+                result["blocked_by"] = "sma200_filter"
+                return result
+            result["filters"]["sma200"] = True
+
+    # ── Phase N.3: ADX trend-strength gate ──
+    # Vanilla crossover has no edge in chop (40-57% false-signal rate);
+    # ADX > threshold restricts entries to trending conditions.
+    if cfg.get("use_adx_filter", False):
+        adx_val = _compute_adx(df, int(cfg.get("adx_period", 14)))
+        if adx_val is not None:
+            result["values"]["adx"] = adx_val
+            if adx_val < float(cfg.get("adx_threshold", 20.0)):
+                result["filters"]["adx"] = False
+                result["blocked_by"] = "adx"
+                return result
+            result["filters"]["adx"] = True
+
     # ── Phase N.2: higher-TF trend gate (1h EMA20 vs EMA50) ──
     # Mirrors scalp_signals.analyze_scalp_entry. Defaults OFF; flip ON
     # via cfg["use_higher_tf_trend"]. When df_1h is missing or too short,
@@ -139,6 +171,59 @@ def check_crossover_exit(entry_price: float, current_price: float,
         if current_price <= entry_price * (1.0 - tp_pct / 100.0):
             return "TP Hit"
     return None
+
+
+def check_crossover_exit_v3(direction: str, entry_price: float,
+                               current_close: float,
+                               sma_fast_now,
+                               atr_at_entry,
+                               cfg: dict) -> Optional[str]:
+    """Phase N.3 exit — signal invalidation, not a tight bracket.
+
+    A 1h SMA20/50 cross is a multi-day trend signal; a -1% stop exits it
+    on the first adverse hourly wick (the N.2 failure: ETH/XRP 0-for-10).
+    N.3 exits when the signal is no longer true:
+
+      Invalidation: close crosses back through SMA-fast against the
+                    position (LONG: close < sma_fast; SHORT: close > it)
+      Emergency SL: price moves emergency_atr_mult x ATR-at-entry against
+                    the position — pure gap protection, rarely touched
+
+    sma_fast_now=None (data hiccup) → only the emergency stop applies.
+    Returns "Invalidation Exit" / "Emergency SL" / None.
+    """
+    # Emergency stop first — must work even without SMA data
+    if atr_at_entry and atr_at_entry > 0:
+        mult = float(cfg.get("emergency_atr_mult", 3.5))
+        if direction == "LONG" and current_close <= entry_price - mult * atr_at_entry:
+            return "Emergency SL"
+        if direction == "SHORT" and current_close >= entry_price + mult * atr_at_entry:
+            return "Emergency SL"
+
+    if sma_fast_now is None or _isnan(sma_fast_now):
+        return None
+    if direction == "LONG" and current_close < float(sma_fast_now):
+        return "Invalidation Exit"
+    if direction == "SHORT" and current_close > float(sma_fast_now):
+        return "Invalidation Exit"
+    return None
+
+
+def _compute_adx(df, period: int = 14) -> Optional[float]:
+    """Wilder ADX on the last completed bar. None when insufficient data
+    or pandas_ta unavailable."""
+    if df is None or len(df) < period * 3:
+        return None
+    try:
+        import pandas_ta as ta
+        adx_df = ta.adx(df["high"], df["low"], df["close"], length=period)
+        col = f"ADX_{period}"
+        if adx_df is None or col not in adx_df.columns:
+            return None
+        val = adx_df[col].iloc[-2]
+        return None if _isnan(val) else float(val)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _isnan(v) -> bool:

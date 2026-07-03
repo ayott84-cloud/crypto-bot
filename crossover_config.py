@@ -116,9 +116,22 @@ def _crossover_default(symbol: str, name: str) -> dict:
         "interval":          CROSSOVER_INTERVAL,    # "1h"
         "sma_fast":          20,                     # Phase N.2: was 50
         "sma_slow":          50,                     # Phase N.2: was 100
+        # N.3: sl_pct/tp_pct retained for the legacy bracket path and the
+        # emergency notification math, but exit_mode="invalidation" makes
+        # the SMA-recross the primary exit (bracket contradiction was the
+        # N.2 failure: 1% stop on a multi-day trend signal → ETH/XRP
+        # 0-for-10 live).
         "sl_pct":            1.0,
         "tp_pct":            2.0,
         "allow_short":       True,
+        # ── Phase N.3 (Jul 2026 research redesign) ──
+        "use_sma200_filter": True,    # price above RISING SMA200 for LONG
+        "use_adx_filter":    True,    # ADX > 20 (no entries in chop)
+        "adx_period":        14,
+        "adx_threshold":     20.0,
+        "exit_mode":         "invalidation",  # SMA-recross exit + emergency ATR stop
+        "emergency_atr_mult": 3.5,
+        "use_daily_regime":  True,    # P2.3 daily 9-MA regime gate
         # L.2 regime gate OFF — Daily classifier hits don't match the
         # 1h signal cadence. Higher-TF trend filter also OFF — at 1h
         # base TF, the resample-to-1h is a no-op (Phase N.2 sweep
