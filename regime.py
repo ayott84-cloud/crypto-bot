@@ -206,3 +206,58 @@ def _safe_float(x) -> Optional[float]:
     except (TypeError, ValueError):
         return None
     return None if f != f else f  # NaN → None
+
+
+# ─── P2.3 — daily-MA trend regime (TradingRush protocol) ───────────────────
+# A 9-period MA on the DAILY chart classifies the tradeable regime for
+# trend-following entries. Evidence: identical strategy scored 76% WR in
+# the trending regime vs 42% in chop (200-trade protocol) — a 34-point
+# swing from regime alone. Our 17-50 day backtest windows were single
+# regime samples; this classifier makes the regime explicit.
+
+DAILY_REGIME_MA_PERIOD = 9
+DAILY_REGIME_SLOPE_LOOKBACK = 3
+
+
+def classify_daily_trend(daily_closes, ma_period: int = DAILY_REGIME_MA_PERIOD,
+                           slope_lookback: int = DAILY_REGIME_SLOPE_LOOKBACK) -> str:
+    """Classify the daily trend regime from a Series of daily closes.
+
+    Returns:
+      "up"      — price above a RISING MA(9): trend-following LONGs allowed
+      "down"    — price below a FALLING MA(9): SHORTs allowed
+      "flat"    — anything else: trend bots sit out
+      "unknown" — insufficient data (< ma_period + slope_lookback closes)
+    """
+    if daily_closes is None:
+        return "unknown"
+    try:
+        n = len(daily_closes)
+    except TypeError:
+        return "unknown"
+    if n < ma_period + slope_lookback:
+        return "unknown"
+    ma = daily_closes.rolling(ma_period).mean()
+    ma_now = float(ma.iloc[-1])
+    ma_then = float(ma.iloc[-1 - slope_lookback])
+    price = float(daily_closes.iloc[-1])
+    if ma_now != ma_now or ma_then != ma_then:  # NaN guard
+        return "unknown"
+    if price > ma_now and ma_now > ma_then:
+        return "up"
+    if price < ma_now and ma_now < ma_then:
+        return "down"
+    return "flat"
+
+
+def daily_regime_allows(direction: str, regime: str) -> bool:
+    """Direction gate for the daily regime. unknown → allow (graceful
+    degradation — absence of data must not block, same convention as
+    every other filter in the fleet)."""
+    if regime == "unknown":
+        return True
+    if direction == "LONG":
+        return regime == "up"
+    if direction == "SHORT":
+        return regime == "down"
+    return True

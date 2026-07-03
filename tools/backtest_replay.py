@@ -474,6 +474,14 @@ def replay_crossover(asset_name: str, cfg: dict, bars: int = 1000,
     elif _filter_debug:
         print(f"    [{asset_name}] resample SKIPPED: use_higher_tf_trend={cfg.get('use_higher_tf_trend', False)}")
 
+    # P2.3 — daily regime series (resampled from base TF, no extra fetch)
+    daily_closes_full = None
+    if cfg.get("use_daily_regime", False):
+        try:
+            daily_closes_full = df["close"].resample("1D").last().ffill()
+        except Exception:  # noqa: BLE001
+            daily_closes_full = None
+
     needed = int(cfg.get("sma_slow", 100)) + 2
     report = BacktestReport(bot="crossover", asset=asset_name, bars_seen=len(df))
 
@@ -510,6 +518,16 @@ def replay_crossover(asset_name: str, cfg: dict, bars: int = 1000,
                     if sig.get("would_enter"):
                         _filter_stats["would_enter_pre_filter"] += 1
             if sig["would_enter"]:
+                # P2.3 — daily regime gate: block counter-regime entries.
+                # Slice the daily series to "as of this bar" (no lookahead).
+                if daily_closes_full is not None:
+                    from regime import classify_daily_trend, daily_regime_allows
+                    cutoff_ts = window.index[-2]
+                    daily_slice = daily_closes_full.loc[
+                        daily_closes_full.index <= cutoff_ts]
+                    regime_label = classify_daily_trend(daily_slice)
+                    if not daily_regime_allows(sig["direction"], regime_label):
+                        continue
                 position = {
                     "direction":     sig["direction"],
                     "entry_bar":     i,
