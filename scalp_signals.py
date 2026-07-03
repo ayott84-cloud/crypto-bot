@@ -252,3 +252,74 @@ def _isnan(v) -> bool:
         return v != v
     except TypeError:
         return False
+
+
+# ─── Phase M.3 (Jul 2026) — ATR brackets + time-limit barrier ──────────────
+# Research basis: fixed 1.5% stops on 5m sat inside wick noise (11% live
+# WR); ATR-scaled stops move outside normal noise; TP at 1.5R is the
+# practitioner sweet spot (2:1 needs 42%+ WR); the time-limit third
+# barrier scratches trades whose entry edge decayed.
+
+_INTERVAL_MINUTES = {
+    "1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30,
+    "1h": 60, "2h": 120, "4h": 240, "1d": 1440,
+}
+
+
+def atr_bracket_prices(entry_price: float, direction: str, atr,
+                         cfg: dict):
+    """(sl_price, tp_price) for the M.3 ATR bracket.
+
+    SL = entry -/+ atr_sl_mult x ATR; TP = entry +/- tp_r_multiple x the
+    SL distance (R-multiple, so reward scales with realized risk).
+    ATR missing → legacy pct bracket fallback.
+    """
+    if atr and atr > 0 and cfg.get("use_atr_bracket", False):
+        sl_dist = float(cfg.get("atr_sl_mult", 2.5)) * float(atr)
+        tp_dist = float(cfg.get("tp_r_multiple", 1.5)) * sl_dist
+    else:
+        sl_dist = entry_price * float(cfg.get("sl_pct", 1.5)) / 100.0
+        tp_dist = entry_price * float(cfg.get("tp_pct", 3.0)) / 100.0
+    if direction == "LONG":
+        return entry_price - sl_dist, entry_price + tp_dist
+    return entry_price + sl_dist, entry_price - tp_dist
+
+
+def check_scalp_exit_atr(entry_price: float, current_price: float,
+                           direction: str, atr_at_entry,
+                           cfg: dict) -> Optional[str]:
+    """M.3 exit check against the ATR bracket. Same return contract as
+    check_scalp_exit ("SL Hit"/"TP Hit"/None)."""
+    sl_price, tp_price = atr_bracket_prices(entry_price, direction,
+                                              atr_at_entry, cfg)
+    if direction.upper() == "LONG":
+        if current_price <= sl_price:
+            return "SL Hit"
+        if current_price >= tp_price:
+            return "TP Hit"
+    else:
+        if current_price >= sl_price:
+            return "SL Hit"
+        if current_price <= tp_price:
+            return "TP Hit"
+    return None
+
+
+def time_limit_exceeded(date_opened, interval: str, limit_bars: int) -> bool:
+    """Triple-barrier time limit: True when the position has been open
+    longer than limit_bars x interval. Bad/missing timestamp → False
+    (never force-close on corrupt data)."""
+    if not date_opened or not isinstance(date_opened, str):
+        return False
+    try:
+        from datetime import datetime, timezone
+        opened = datetime.fromisoformat(date_opened)
+        if opened.tzinfo is None:
+            opened = opened.replace(tzinfo=timezone.utc)
+        mins = _INTERVAL_MINUTES.get(interval.lower())
+        if not mins or limit_bars <= 0:
+            return False
+        age_min = (datetime.now(timezone.utc) - opened).total_seconds() / 60.0
+        return age_min > mins * limit_bars
+    except (ValueError, TypeError):
+        return False

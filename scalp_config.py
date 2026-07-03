@@ -34,7 +34,11 @@ SCALP_PAUSED = os.getenv("SCALP_PAUSED", "true").lower() in ("true", "1", "yes")
 # active positions (price can blow through both within seconds in fast
 # moves), so the poll interval is much shorter than other bots' 5 min.
 SCALP_POLL_INTERVAL_SECONDS = 60
-SCALP_INTERVAL = "5m"
+# Phase M.3 (Jul 2026): moved 5m → 15m. Cost-floor research (arXiv MNQ
+# study + crypto TA cost-adjustment papers) says 5m tight-bracket OHLCV
+# strategies rarely clear round-trip fees; 15m keeps the vol-expansion
+# signal while the ATR bracket gets room to breathe outside wick noise.
+SCALP_INTERVAL = "15m"
 
 # ─── State + naming ────────────────────────────────────────────────────
 SCALP_STATE_KEY_PREFIX = "SCALP_"
@@ -99,6 +103,21 @@ def _scalp_default(symbol: str, name: str) -> dict:
         "rsi_period":              14,
         "rsi_overbought":          70.0,
         "rsi_oversold":            30.0,
+        # ── Phase M.3 (Jul 2026 research redesign) ──
+        # ATR-scaled bracket: SL = 2.5 x ATR(14) (outside wick noise),
+        # TP = 1.5R (practitioner sweet spot; 2:1 needs 42%+ WR).
+        "use_atr_bracket":         True,
+        "atr_period":              14,
+        "atr_sl_mult":             2.5,
+        "tp_r_multiple":           1.5,
+        # Fixed-dollar risk sizing: every stopped trade loses the same $.
+        # Notional still capped at margin x leverage.
+        "risk_usd_per_trade":      2.0,
+        # Triple-barrier time limit: 16 x 15m = 4h. A trade that hasn't
+        # resolved by then is no longer the trade we entered.
+        "time_limit_bars":         16,
+        # P2.3 daily 9-MA regime gate
+        "use_daily_regime":        True,
         "strategy_name":      name,
     }
 
@@ -112,12 +131,15 @@ def _scalp_default(symbol: str, name: str) -> dict:
 #   LINK_5M  PF=7.98  n=5  WR=80%   total=+10.9% DD=1.6%
 # 5 of 6 traded assets positive at PF≥1.5 with DD≤8%. SOL_5M failed
 # M.2 (PF=0.47, WR=25%) and stays as a candidate for revisit.
+# M.3 note: dict KEYS keep the legacy _5M suffix (they're position-state
+# keys — renaming would orphan journal/state history); display names and
+# the interval now say 15m.
 SCALP_ASSETS = {
-    "BTC_5M":  _scalp_default("BTCUSDT",  "BTC 5m Scalp"),
-    "ETH_5M":  _scalp_default("ETHUSDT",  "ETH 5m Scalp"),
-    "XRP_5M":  _scalp_default("XRPUSDT",  "XRP 5m Scalp"),
-    "DOGE_5M": _scalp_default("DOGEUSDT", "DOGE 5m Scalp"),
-    "LINK_5M": _scalp_default("LINKUSDT", "LINK 5m Scalp"),
+    "BTC_5M":  _scalp_default("BTCUSDT",  "BTC 15m Scalp"),
+    "ETH_5M":  _scalp_default("ETHUSDT",  "ETH 15m Scalp"),
+    "XRP_5M":  _scalp_default("XRPUSDT",  "XRP 15m Scalp"),
+    "DOGE_5M": _scalp_default("DOGEUSDT", "DOGE 15m Scalp"),
+    "LINK_5M": _scalp_default("LINKUSDT", "LINK 15m Scalp"),
 }
 
 # ─── Candidate universe — failed or unavailable ───────────────────────
@@ -133,11 +155,11 @@ SCALP_ASSETS = {
 # No historical 5m kline data accessible. Would require switching to a
 # different backtest source (paid data provider). Skipped for now.
 SCALP_CANDIDATE_ASSETS = {
-    "SOL_5M":  _scalp_default("SOLUSDT",  "SOL 5m Scalp"),
-    "ADA_5M":  _scalp_default("ADAUSDT",  "ADA 5m Scalp"),
-    "AVAX_5M": _scalp_default("AVAXUSDT", "AVAX 5m Scalp"),
-    "BNB_5M":  _scalp_default("BNBUSDT",  "BNB 5m Scalp"),
-    "TRX_5M":  _scalp_default("TRXUSDT",  "TRX 5m Scalp"),
+    "SOL_5M":  _scalp_default("SOLUSDT",  "SOL 15m Scalp"),
+    "ADA_5M":  _scalp_default("ADAUSDT",  "ADA 15m Scalp"),
+    "AVAX_5M": _scalp_default("AVAXUSDT", "AVAX 15m Scalp"),
+    "BNB_5M":  _scalp_default("BNBUSDT",  "BNB 15m Scalp"),
+    "TRX_5M":  _scalp_default("TRXUSDT",  "TRX 15m Scalp"),
 }
 
 # ─── Backtest stats for projection table (Phase M.2 promotion stats) ─

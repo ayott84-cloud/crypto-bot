@@ -85,3 +85,23 @@ def bracket_trigger_price(entry_price: float, direction: str, reason,
         return entry_price * (1 + sl_pct / 100.0) if leg == "SL" \
             else entry_price * (1 - tp_pct / 100.0)
     return None
+
+
+def risk_sized_qty(risk_usd: float, entry_price: float, stop_price: float,
+                     max_notional_usd: float) -> float:
+    """P3.2 — fixed-dollar risk sizing.
+
+    qty = risk_usd / |entry - stop| so every stopped trade loses the same
+    dollars regardless of volatility regime (community standard companion
+    to ATR stops). Capped at max_notional_usd / entry so a tight stop
+    can't balloon the position beyond the bot's margin x leverage budget.
+    Returns 0.0 on degenerate inputs.
+    """
+    if risk_usd <= 0 or entry_price <= 0 or max_notional_usd <= 0:
+        return 0.0
+    stop_distance = abs(entry_price - stop_price)
+    if stop_distance <= 0:
+        return 0.0
+    qty = risk_usd / stop_distance
+    max_qty = max_notional_usd / entry_price
+    return round(min(qty, max_qty), 4)

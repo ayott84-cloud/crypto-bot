@@ -53,6 +53,24 @@ def _build_dataframe(raw_klines: list) -> pd.DataFrame:
     return build_dataframe(raw_klines).reset_index(drop=True)
 
 
+def _compute_df_atr(df: pd.DataFrame, period: int = 14) -> float | None:
+    """Wilder-style ATR from an OHLC DataFrame. None on insufficient data."""
+    try:
+        if df is None or len(df) < period + 2:
+            return None
+        high, low, close = df["high"], df["low"], df["close"]
+        prev_close = close.shift(1)
+        tr = pd.concat([
+            high - low,
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ], axis=1).max(axis=1)
+        atr = tr.rolling(period).mean().iloc[-2]
+        return None if atr != atr else float(atr)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 # ─── Cooldown helpers ──────────────────────────────────────────────────
 
 def _cooldown_map(state: dict) -> dict:
@@ -85,40 +103,41 @@ def open_scalp_position(executor: Executor, state: dict, asset_name: str,
     """Place the order, register state, log + notify the entry."""
     symbol = cfg["symbol"]
     current_price = float(df.iloc[-1]["close"])
-    # Scalp uses pct brackets, not ATR; still capture ATR (range proxy)
-    # for the journal + dashboard parity with the other bots.
     range_ = float(df.iloc[-1]["high"] - df.iloc[-1]["low"])
 
-    # L.3.2: vol-adaptive sizing (same helper the other bots use)
+    # M.3 — real ATR(14) at entry (bar-range proxy retained as fallback)
+    atr_at_entry = _compute_df_atr(df, int(cfg.get("atr_period", 14))) or range_
+
+    # M.3 — ATR-scaled bracket (SL 2.5xATR, TP 1.5R); pct fallback inside
+    from scalp_signals import atr_bracket_prices
+    sl_price, tp_price = atr_bracket_prices(current_price, direction,
+                                              atr_at_entry, cfg)
+    sl_str = f"{sl_price:.6f}"
+
+    # L.3.2: vol-adaptive sizing → margin cap; M.3 layers fixed-$ risk
+    # sizing on top (qty = risk$/stop-distance, capped by margin x lev).
     from regime import classify_from_df
-    from risk import vol_scaled_margin
+    from risk import vol_scaled_margin, risk_sized_qty
     regime = classify_from_df(df, cfg)
     scaled_margin = vol_scaled_margin(SCALP_MARGIN_PER_TRADE, regime["vol"])
     if scaled_margin < SCALP_MARGIN_PER_TRADE:
         logger.info("[%s] high-vol throttle: margin $%.2f → $%.2f",
                       asset_name, SCALP_MARGIN_PER_TRADE, scaled_margin)
+    max_notional = scaled_margin * SCALP_LEVERAGE
 
-    notional = scaled_margin * SCALP_LEVERAGE
-    qty = round(notional / current_price, 4)
+    risk_usd = float(cfg.get("risk_usd_per_trade", 0) or 0)
+    if risk_usd > 0 and cfg.get("use_atr_bracket", False):
+        qty = risk_sized_qty(risk_usd, current_price, sl_price, max_notional)
+    else:
+        qty = round(max_notional / current_price, 4)
     if qty <= 0:
         logger.warning("[%s] computed qty <= 0; skipping", asset_name)
         return
 
-    # Pre-compute SL/TP prices for notification body (the actual exit
-    # decision lives in check_scalp_exit at every poll).
-    sl_pct = float(cfg.get("sl_pct", 1.5))
-    tp_pct = float(cfg.get("tp_pct", 3.0))
-    if direction == "LONG":
-        sl_price = current_price * (1 - sl_pct / 100)
-        tp_price = current_price * (1 + tp_pct / 100)
-    else:
-        sl_price = current_price * (1 + sl_pct / 100)
-        tp_price = current_price * (1 - tp_pct / 100)
-    sl_str = f"{sl_price:.6f}"
-
-    logger.info("[%s] OPENING %s qty=%s price=%.4f SL=%s TP=%.6f range=%.4f",
+    logger.info("[%s] OPENING %s qty=%s price=%.4f SL=%s TP=%.6f "
+                  "ATR=%.4f risk=$%.2f",
                   asset_name, direction, qty, current_price, sl_str,
-                  tp_price, range_)
+                  tp_price, atr_at_entry, risk_usd)
 
     # P1.2 — OCO hygiene: cancel any stale triggers on this symbol from a
     # previous trade BEFORE placing the new bracketed entry, so brackets
@@ -147,7 +166,7 @@ def open_scalp_position(executor: Executor, state: dict, asset_name: str,
     register_entry(
         state, state_key,
         entry_price=current_price,
-        atr_at_entry=range_,  # store range as ATR-proxy for dashboard parity
+        atr_at_entry=atr_at_entry,   # M.3: real ATR(14), drives exit bracket
         quantity=qty,
         strategy=cfg.get("strategy_name", SCALP_STRATEGY_TAG),
         entry_reason=f"vol-expand + 20-bar momentum + new {cfg.get('new_high_lookback', 20)}-bar {'high' if direction == 'LONG' else 'low'}",
@@ -285,15 +304,38 @@ def run_cycle(executor: Executor, state: dict) -> None:
             current_price = executor.get_symbol_price(symbol)
             if not current_price:
                 continue
-            reason = check_scalp_exit(entry_price, float(current_price),
-                                         direction, cfg)
+            # M.3 — time-limit barrier: scratch trades whose entry edge
+            # decayed (neither bracket resolved within N bars).
+            from scalp_signals import time_limit_exceeded, check_scalp_exit_atr, \
+                atr_bracket_prices
+            limit_bars = int(cfg.get("time_limit_bars", 0) or 0)
+            if limit_bars > 0 and time_limit_exceeded(
+                    pos.get("entry_time"),
+                    cfg.get("interval", "15m"), limit_bars):
+                logger.info("[%s] Time Limit — closing at market", asset_name)
+                close_scalp_position(executor, state, state_key, "Time Limit")
+                continue
+
+            atr_entry = float(pos.get("atr_at_entry") or 0)
+            if cfg.get("use_atr_bracket", False) and atr_entry > 0:
+                reason = check_scalp_exit_atr(entry_price, float(current_price),
+                                                 direction, atr_entry, cfg)
+                trigger = None
+                if reason:
+                    sl_p, tp_p = atr_bracket_prices(entry_price, direction,
+                                                       atr_entry, cfg)
+                    trigger = sl_p if reason == "SL Hit" else tp_p
+            else:
+                reason = check_scalp_exit(entry_price, float(current_price),
+                                             direction, cfg)
+                trigger = None
+                if reason:
+                    # P1.1 — bracket exits fill at the exchange trigger price
+                    from risk import bracket_trigger_price
+                    trigger = bracket_trigger_price(
+                        entry_price, direction, reason, cfg,
+                        default_sl_pct=1.5, default_tp_pct=3.0)
             if reason:
-                # P1.1 — bracket exits fill at the exchange trigger price,
-                # not the (up to 60s late) polled price.
-                from risk import bracket_trigger_price
-                trigger = bracket_trigger_price(
-                    entry_price, direction, reason, cfg,
-                    default_sl_pct=1.5, default_tp_pct=3.0)
                 logger.info("[%s] exit %s — closing (fill=%s)",
                              asset_name, reason,
                              f"{trigger:.6f}" if trigger else "polled")
@@ -371,6 +413,21 @@ def run_cycle(executor: Executor, state: dict) -> None:
                                       asset_name, e)
                     df_1h = None
             sig = analyze_scalp_entry(df, cfg, df_1h=df_1h)
+
+            # P2.3 — daily 9-MA regime gate. Fetch failure → pass.
+            if sig["would_enter"] and cfg.get("use_daily_regime", False):
+                try:
+                    from regime import classify_daily_trend, daily_regime_allows
+                    raw_1d = executor.get_klines(cfg["symbol"], "1d", 20)
+                    df_1d = _build_dataframe(raw_1d)
+                    if df_1d is not None and len(df_1d) >= 12:
+                        regime_label = classify_daily_trend(df_1d["close"])
+                        if not daily_regime_allows(sig["direction"], regime_label):
+                            sig = {**sig, "would_enter": False,
+                                    "blocked_by": f"daily_regime_{regime_label}"}
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("[%s] daily regime fetch failed (pass): %s",
+                                    asset_name, e)
 
             # Observability: per-asset log + signal_status persistence
             def _sym(v):
