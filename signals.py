@@ -507,6 +507,27 @@ def analyze_entry_signal(
         if not btc_ok and result["blocked_by"] is None:
             fail("btc_filter")
 
+    # 11. P3.4 — MACD zero-line-side gate (default OFF; TradingRush 62%
+    # WR template: LONG signals should fire BELOW the zero line — buying
+    # a pullback within an uptrend, not chasing an extended move)
+    if cfg.get("use_macd_zeroline_gate", False):
+        ml = None if pd.isna(curr.get("macd_line")) else float(curr["macd_line"])
+        zl_ok = macd_zeroline_ok("LONG", ml)
+        result["filters"]["macd_zeroline"] = zl_ok
+        if not zl_ok and result["blocked_by"] is None:
+            fail("macd_zeroline")
+
+    # 12. P3.4 — EMA200 alignment gate (default OFF)
+    if cfg.get("use_ema200_alignment", False):
+        df_gate = df
+        if "ema200" not in df.columns and len(df) >= 200:
+            df_gate = df.copy()
+            df_gate["ema200"] = df_gate["close"].ewm(span=200, adjust=False).mean()
+        al_ok = ema200_alignment_ok(df_gate, "LONG")
+        result["filters"]["ema200_alignment"] = al_ok
+        if not al_ok and result["blocked_by"] is None:
+            fail("ema200_alignment")
+
     # All filters passed?
     result["would_enter"] = result["blocked_by"] is None
     return result
@@ -696,3 +717,38 @@ def get_entry_reason(df: pd.DataFrame, cfg: dict) -> str:
     if cfg.get("use_adx_filter") and not pd.isna(curr.get("adx")):
         parts.append(f"ADX {curr['adx']:.1f}")
     return " + ".join(parts)
+
+
+# ─── P3.4 (Jul 2026) — momentum entry-quality gates ─────────────────────────
+# TradingRush 62% WR MACD template: the two details most MACD bots omit.
+# Both default OFF; enable per-asset via cfg after backtest validation.
+
+def ema200_alignment_ok(df, direction: str) -> bool:
+    """LONG only when the last completed close sits above the EMA200 of
+    the signal timeframe (SHORT mirrored). Missing column / short data →
+    pass (graceful degradation)."""
+    try:
+        if df is None or "ema200" not in df.columns or len(df) < 200:
+            return True
+        close = float(df["close"].iloc[-2])
+        ema = float(df["ema200"].iloc[-2])
+        if ema != ema:  # NaN
+            return True
+        return close > ema if direction == "LONG" else close < ema
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def macd_zeroline_ok(direction: str, macd_line) -> bool:
+    """Zero-line-side gate: LONG signal crosses should occur BELOW the
+    zero line (buying a pullback within an uptrend, not chasing an
+    extended move); SHORT above. Missing value → pass."""
+    if macd_line is None:
+        return True
+    try:
+        v = float(macd_line)
+    except (TypeError, ValueError):
+        return True
+    if v != v:  # NaN
+        return True
+    return v < 0 if direction == "LONG" else v > 0

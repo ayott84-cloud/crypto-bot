@@ -29,6 +29,7 @@ from breakout_config import (
 from breakout_signals import (
     compute_donchian_channels, analyze_breakout_entry, check_breakout_exit,
     check_breakeven_trigger, analyze_breakout_pyramid,
+    check_funding_veto, check_trailing_exit,
 )
 from executor import Executor
 from journal import log_trade
@@ -84,6 +85,45 @@ def _build_dataframe(raw_klines: list) -> pd.DataFrame:
     if not raw_klines:
         return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
     return build_dataframe(raw_klines).reset_index(drop=True)
+
+
+def _parse_funding_rate_8h(raw) -> Optional[float]:
+    """Extract the 8h funding rate from executor.get_funding_rate output.
+
+    WEEX returns a list of dicts; the rate key varies by API version, so
+    try the known spellings. None on any missing/garbage data — the
+    funding veto must degrade to PASS, never block on a fetch problem.
+    """
+    if not raw:
+        return None
+    first = raw[0] if isinstance(raw, list) else raw
+    if not isinstance(first, dict):
+        return None
+    for key in ("fundingRate", "funding_rate", "rate"):
+        if key in first:
+            try:
+                return float(first[key])
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _update_water_mark(pos: dict, direction: str,
+                       bar_high: float, bar_low: float) -> float:
+    """P3.3b — ratchet the position's water mark from the latest bar.
+
+    LONG tracks the highest high since entry; SHORT tracks the lowest
+    low (stored under the same "high_water_mark" key — check_trailing_exit
+    interprets it by direction). Monotonic: never moves against the trade.
+    """
+    entry = float(pos["entry_price"])
+    prev = float(pos.get("high_water_mark", entry))
+    if direction.upper() == "SHORT":
+        mark = min(prev, float(bar_low))
+    else:
+        mark = max(prev, float(bar_high))
+    pos["high_water_mark"] = mark
+    return mark
 
 
 def open_breakout_position(
@@ -358,6 +398,25 @@ def run_cycle(executor: Executor, state: dict) -> None:
                 close_breakout_position(executor, state, state_key, reason)
                 continue
 
+            # P3.3b: offset-armed trailing exit. Water mark ratchets from
+            # the latest bar's extreme; trail only arms after the trade
+            # has moved trail_arm_atr_mult × ATR in favor, then gives back
+            # at most trail_atr_mult × ATR from the mark.
+            if cfg.get("use_trailing_exit", False):
+                mark = _update_water_mark(
+                    pos, direction,
+                    bar_high=float(df.iloc[-1]["high"]),
+                    bar_low=float(df.iloc[-1]["low"]))
+                trail_reason = check_trailing_exit(
+                    direction, entry_price, mark, current_close,
+                    atr_at_entry, cfg)
+                if trail_reason:
+                    logger.info("[%s] exit %s (mark=%.6f close=%.6f) — closing",
+                                asset_name, trail_reason, mark, current_close)
+                    close_breakout_position(
+                        executor, state, state_key, trail_reason)
+                    continue
+
             # L.3.3: Pyramid leg consideration (only when not exiting).
             # Pyramiding is per-asset and gated by cfg["allow_pyramiding"]
             # which defaults False — wired ON in Phase L.3.3 config edits.
@@ -411,6 +470,26 @@ def run_cycle(executor: Executor, state: dict) -> None:
                 if gate_blocks_direction(regime["label"], sig.get("direction", "LONG")):
                     sig["would_enter"] = False
                     sig["blocked_by"] = "regime_misalign"
+
+            # ── P3.3a: Funding veto — don't join the crowded side ──
+            # Fetched only when a trade would actually fire (one extra
+            # API call per real signal, not per cycle). Fetch failure or
+            # missing data degrades to PASS inside check_funding_veto.
+            if sig.get("would_enter") and cfg.get("use_funding_veto", False):
+                funding_8h = None
+                try:
+                    funding_8h = _parse_funding_rate_8h(
+                        executor.get_funding_rate(cfg["symbol"]))
+                except Exception as e:
+                    logger.warning("[%s] funding fetch failed: %s — veto passes",
+                                    asset_name, e)
+                ok, veto_reason = check_funding_veto(
+                    sig.get("direction", "LONG"), funding_8h,
+                    threshold=cfg.get("funding_veto_threshold", 0.0005))
+                if not ok:
+                    logger.info("[%s] funding veto: %s", asset_name, veto_reason)
+                    sig["would_enter"] = False
+                    sig["blocked_by"] = "funding_crowded"
 
             # Observability: log + persist per-asset signal evaluation so
             # the operator can see why each asset is silent. Mirrors the

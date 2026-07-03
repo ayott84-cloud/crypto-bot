@@ -317,3 +317,60 @@ def check_breakout_exit(
         return "ADX Exit", "full"
 
     return None, None
+
+
+# ─── P3.3 (Jul 2026) — funding veto + offset-armed trailing exit ───────────
+# Research: (a) sustained funding > +0.05%/8h marks a crowded long that
+# is statistically vulnerable to liquidation-cascade reversals — the
+# breakout's 11% live WR suggests many entries were exhaustion breaks;
+# (b) breakout PF rests on runners (one +$34 winner carried the 14-day
+# book) — fixed TPs amputate them; an offset-armed trail keeps the tail.
+
+FUNDING_VETO_THRESHOLD = 0.0005    # 0.05% per 8h
+
+
+def check_funding_veto(direction: str, funding_rate_8h,
+                         threshold: float = FUNDING_VETO_THRESHOLD):
+    """Block entries INTO a crowded side. Missing data → pass.
+
+    Returns (ok, reason)."""
+    if funding_rate_8h is None:
+        return True, ""
+    try:
+        rate = float(funding_rate_8h)
+    except (TypeError, ValueError):
+        return True, ""
+    if direction == "LONG" and rate >= threshold:
+        return False, (f"funding veto: crowded long "
+                        f"({rate*100:.4f}%/8h >= {threshold*100:.3f}%)")
+    if direction == "SHORT" and rate <= -threshold:
+        return False, (f"funding veto: crowded short "
+                        f"({rate*100:.4f}%/8h <= -{threshold*100:.3f}%)")
+    return True, ""
+
+
+def check_trailing_exit(direction: str, entry_price: float,
+                          high_water_mark, current_price: float,
+                          atr_at_entry, cfg: dict):
+    """Offset-armed trailing exit (freqtrade trailing_only_offset_is_reached
+    pattern). The trail arms only after the trade reaches
+    trail_arm_atr_mult x ATR of favorable movement; it then exits when
+    price retraces trail_atr_mult x ATR from the high-water mark (LONG;
+    low-water mark for SHORT). Missing ATR/hwm → None (no trail).
+
+    Returns "Trailing Exit" or None. Caller tracks high_water_mark on
+    the position dict.
+    """
+    if not atr_at_entry or atr_at_entry <= 0 or high_water_mark is None:
+        return None
+    arm_mult = float(cfg.get("trail_arm_atr_mult", 1.5))
+    trail_mult = float(cfg.get("trail_atr_mult", 1.0))
+    if direction == "LONG":
+        armed = high_water_mark >= entry_price + arm_mult * atr_at_entry
+        if armed and current_price <= high_water_mark - trail_mult * atr_at_entry:
+            return "Trailing Exit"
+    else:  # SHORT — high_water_mark carries the LOW-water mark
+        armed = high_water_mark <= entry_price - arm_mult * atr_at_entry
+        if armed and current_price >= high_water_mark + trail_mult * atr_at_entry:
+            return "Trailing Exit"
+    return None

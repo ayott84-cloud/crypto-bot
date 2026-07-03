@@ -175,6 +175,12 @@ def _parse_leaderboard_entry(entry: dict) -> dict:
         "account_value": float(entry.get("accountValue", 0)),
         "pnl_alltime": float(perfs.get("allTime", {}).get("pnl", 0)),
         "pnl_month": float(perfs.get("month", {}).get("pnl", 0)),
+        # P3.5 — week window for multi-window persistence (None when the
+        # leaderboard payload doesn't carry it; the gate then passes)
+        "pnl_week": (float(perfs["week"]["pnl"])
+                      if isinstance(perfs.get("week"), dict)
+                      and perfs["week"].get("pnl") is not None
+                      else None),
     }
 
 
@@ -215,10 +221,19 @@ def _composite_score(wallet: dict) -> float:
 def _qualifying_wallets(wallets: List[dict],
                           min_account_value: float = MIN_ACCOUNT_VALUE_USD,
                           require_positive_month: bool = WHALE_COHORT_REQUIRE_POSITIVE_MONTH,
+                          require_positive_week: bool = True,
                           ) -> List[dict]:
-    """Apply the U.3 gates: account-size floor + (optional) positive-month.
+    """Apply the cohort quality gates: account-size floor + positive-month
+    + (P3.5) positive-week multi-window persistence.
 
-    Returns wallets that pass BOTH gates. Empty input → empty output.
+    P3.5 rationale: <15% of monthly top-10 leaderboard finishers repeat;
+    single-window winners are risk-takers whose edge mean-reverts. A
+    wallet must be positive across BOTH the week and month windows to
+    qualify — 'consistently positive across horizons' is the only cohort
+    with repeat probability per the persistence literature.
+
+    pnl_week=None (payload didn't carry the window) → week gate passes;
+    absence of data must not block.
     """
     out = []
     for w in wallets:
@@ -226,6 +241,10 @@ def _qualifying_wallets(wallets: List[dict],
             continue
         if require_positive_month and float(w.get("pnl_month") or 0) <= 0:
             continue
+        if require_positive_week:
+            week = w.get("pnl_week")
+            if week is not None and float(week) <= 0:
+                continue
         out.append(w)
     return out
 

@@ -301,6 +301,17 @@ def _breakout_default(symbol: str, interval: str, name: str) -> dict:
         "max_pyramid_legs":        2,
         "pyramid_trigger_atr":     1.0,
         "pyramid_size_fraction":   0.5,
+        # ── P3.3 (Jul 2026 research upgrades) ──
+        # Funding veto: skip entries INTO the crowded side (funding
+        # ≥ +0.05%/8h blocks LONG; ≤ -0.05%/8h blocks SHORT).
+        "use_funding_veto":        True,
+        "funding_veto_threshold":  0.0005,
+        # Offset-armed trailing exit: arms at 1.5×ATR favorable move,
+        # then trails 1×ATR off the water mark — protects the runners
+        # that pay for a low-WR breakout strategy.
+        "use_trailing_exit":       True,
+        "trail_arm_atr_mult":      1.5,
+        "trail_atr_mult":          1.0,
         "allow_short":           True,
         "sl_atr_mult_short":     1.0,
         "strategy_name":         name,
