@@ -118,6 +118,14 @@ def open_crossover_position(executor: Executor, state: dict, asset_name: str,
                   asset_name, direction, qty, current_price, sl_str,
                   tp_price, fast_n, slow_n)
 
+    # P1.2 — OCO hygiene: cancel stale triggers before the new bracketed
+    # entry so brackets never stack. Cancel failure must not block entry.
+    try:
+        executor.cancel_pending_orders(symbol)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[%s] pre-entry trigger cancel failed (continuing): %s",
+                        asset_name, e)
+
     # P1.1 — attach BOTH bracket legs at entry (exchange-enforced exits)
     tp_str = f"{tp_price:.6f}"
     try:

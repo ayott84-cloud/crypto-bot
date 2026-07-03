@@ -101,6 +101,16 @@ class BacktestReport:
             dd = min(dd, equity - peak)
         return abs(dd)
 
+    @property
+    def avg_win_pct(self) -> float:
+        """P2.2 hurdle metric — mean pnl of winning trades. Configs whose
+        avg win is below ~0.5% after costs have no real edge margin over
+        fees + slippage (freqtrade community rule / brookmiles traps)."""
+        wins = [t.pnl_pct for t in self.trades if t.pnl_pct > 0]
+        if not wins:
+            return 0.0
+        return sum(wins) / len(wins)
+
     def summary_line(self) -> str:
         return (
             f"{self.bot:9s} {self.asset:10s}  "
@@ -110,6 +120,43 @@ class BacktestReport:
             f"maxDD={self.max_drawdown_pct:5.1f}%  "
             f"E[trade]={self.expectancy_pct:+5.2f}%"
         )
+
+
+# ─── P2.1 — conservative intra-bar exit evaluator ──────────────────────────
+# Root cause 3 (Jul 2 research): close-only exit checks are 'liberal
+# fills' — a bar that wicks through the SL and recovers scored as a WIN
+# in backtest but is a LOSS live. Conservative conventions per vectorbt
+# (#188), NinjaTrader conservative mode, QuantConnect forum consensus:
+#   - LONG: SL vs bar LOW, TP vs bar HIGH (SHORT mirrored)
+#   - both legs inside one bar's range → SL-first (score the LOSS)
+#   - fills AT the trigger price (matches P1.1 exchange-resident orders)
+
+# Default round-trip cost charged per closed trade in replays: taker fee
+# both sides (~0.04-0.06%/side on WEEX) + slippage buffer. Override per
+# call; set 0.0 to reproduce legacy gross numbers.
+DEFAULT_ROUND_TRIP_COST_PCT = 0.15
+
+
+def check_intrabar_exit(entry_price: float, direction: str,
+                          bar_high: float, bar_low: float,
+                          sl_price: float, tp_price: float):
+    """Evaluate bracket exits against the bar's full range.
+
+    Returns (reason, fill_price) — ("SL Hit"|"TP Hit", trigger price) or
+    (None, None) when neither leg was touched.
+    """
+    if direction == "LONG":
+        sl_touched = bar_low <= sl_price
+        tp_touched = bar_high >= tp_price
+    else:  # SHORT
+        sl_touched = bar_high >= sl_price
+        tp_touched = bar_low <= tp_price
+
+    if sl_touched:          # SL-first on ambiguous bars (conservative)
+        return "SL Hit", sl_price
+    if tp_touched:
+        return "TP Hit", tp_price
+    return None, None
 
 
 # ─── Klines fetcher ────────────────────────────────────────────────────────
@@ -259,7 +306,9 @@ def replay_momentum(asset_name: str, cfg: dict, bars: int = 500) -> BacktestRepo
 # ─── Scalp replay ─────────────────────────────────────────────────────────
 
 def replay_scalp(asset_name: str, cfg: dict, bars: int = 1000,
-                   source: str = "weex") -> BacktestReport:
+                   source: str = "weex",
+                   round_trip_cost_pct: float = DEFAULT_ROUND_TRIP_COST_PCT,
+                   ) -> BacktestReport:
     """Phase M — replay the 5m vol-expansion + new-high scalp strategy.
 
     Exit is pure-pct bracket (no ATR scaling). Once a position opens, the
@@ -327,22 +376,33 @@ def replay_scalp(asset_name: str, cfg: dict, bars: int = 1000,
                 }
             continue
 
-        # In a position — check pct-bracket exit
-        reason = check_scalp_exit(
-            entry_price=position["entry_price"],
-            current_price=current_close,
-            direction=position["direction"],
-            cfg=cfg,
+        # P2.1 — conservative intra-bar bracket exit (SL vs low/TP vs
+        # high for LONG, mirrored SHORT, SL-first, fill at trigger).
+        sl_pct = float(cfg.get("sl_pct", 1.5))
+        tp_pct = float(cfg.get("tp_pct", 3.0))
+        entry = position["entry_price"]
+        if position["direction"] == "LONG":
+            sl_price = entry * (1 - sl_pct / 100)
+            tp_price = entry * (1 + tp_pct / 100)
+        else:
+            sl_price = entry * (1 + sl_pct / 100)
+            tp_price = entry * (1 - tp_pct / 100)
+        reason, fill_price = check_intrabar_exit(
+            entry_price=entry, direction=position["direction"],
+            bar_high=float(df.iloc[i]["high"]),
+            bar_low=float(df.iloc[i]["low"]),
+            sl_price=sl_price, tp_price=tp_price,
         )
         if reason:
             sign = 1.0 if position["direction"] == "LONG" else -1.0
-            pnl_pct = sign * (current_close - position["entry_price"]) \
-                        / position["entry_price"] * 100
+            pnl_pct = sign * (fill_price - entry) / entry * 100
+            # P2.2 — cost model
+            pnl_pct -= round_trip_cost_pct
             report.trades.append(TradeResult(
                 direction=position["direction"],
                 entry_bar=position["entry_bar"], exit_bar=i,
-                entry_price=position["entry_price"],
-                exit_price=current_close,
+                entry_price=entry,
+                exit_price=fill_price,
                 exit_reason=reason, pnl_pct=pnl_pct,
             ))
             # Apply cooldown: SCALP_COOLDOWN_SECONDS / 5min ≈ 2 bars
@@ -355,7 +415,9 @@ def replay_scalp(asset_name: str, cfg: dict, bars: int = 1000,
 
 def replay_crossover(asset_name: str, cfg: dict, bars: int = 1000,
                        source: str = "weex",
-                       pre_fetched_df=None) -> BacktestReport:
+                       pre_fetched_df=None,
+                       round_trip_cost_pct: float = DEFAULT_ROUND_TRIP_COST_PCT,
+                       ) -> BacktestReport:
     """Phase N — replay the dual-SMA crossover strategy.
 
     Entry fires ONLY on the bar where the fast SMA crosses the slow SMA.
@@ -455,21 +517,35 @@ def replay_crossover(asset_name: str, cfg: dict, bars: int = 1000,
                 }
             continue
 
-        reason = check_crossover_exit(
-            entry_price=position["entry_price"],
-            current_price=current_close,
-            direction=position["direction"],
-            cfg=cfg,
+        # P2.1 — conservative intra-bar exit: SL vs bar low, TP vs bar
+        # high (LONG; mirrored SHORT), SL-first on ambiguous bars, fill
+        # at the trigger price. Replaces the close-only 'liberal fill'
+        # check that inflated WR 50-100% vs 11-18% live.
+        sl_pct = float(cfg.get("sl_pct", 1.0))
+        tp_pct = float(cfg.get("tp_pct", 2.0))
+        entry = position["entry_price"]
+        if position["direction"] == "LONG":
+            sl_price = entry * (1 - sl_pct / 100)
+            tp_price = entry * (1 + tp_pct / 100)
+        else:
+            sl_price = entry * (1 + sl_pct / 100)
+            tp_price = entry * (1 - tp_pct / 100)
+        reason, fill_price = check_intrabar_exit(
+            entry_price=entry, direction=position["direction"],
+            bar_high=float(df.iloc[i]["high"]),
+            bar_low=float(df.iloc[i]["low"]),
+            sl_price=sl_price, tp_price=tp_price,
         )
         if reason:
             sign = 1.0 if position["direction"] == "LONG" else -1.0
-            pnl_pct = sign * (current_close - position["entry_price"]) \
-                        / position["entry_price"] * 100
+            pnl_pct = sign * (fill_price - entry) / entry * 100
+            # P2.2 — cost model: every closed trade pays the round trip
+            pnl_pct -= round_trip_cost_pct
             report.trades.append(TradeResult(
                 direction=position["direction"],
                 entry_bar=position["entry_bar"], exit_bar=i,
-                entry_price=position["entry_price"],
-                exit_price=current_close,
+                entry_price=entry,
+                exit_price=fill_price,
                 exit_reason=reason, pnl_pct=pnl_pct,
             ))
             # 10 min / 5 min ≈ 2 bars cooldown (same as live)

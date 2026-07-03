@@ -120,6 +120,15 @@ def open_scalp_position(executor: Executor, state: dict, asset_name: str,
                   asset_name, direction, qty, current_price, sl_str,
                   tp_price, range_)
 
+    # P1.2 — OCO hygiene: cancel any stale triggers on this symbol from a
+    # previous trade BEFORE placing the new bracketed entry, so brackets
+    # never stack. Cancel failure must not block the entry.
+    try:
+        executor.cancel_pending_orders(symbol)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[%s] pre-entry trigger cancel failed (continuing): %s",
+                        asset_name, e)
+
     # P1.1 — attach BOTH bracket legs at entry so the exchange enforces
     # exits continuously (poll loop is watchdog only).
     tp_str = f"{tp_price:.6f}"
