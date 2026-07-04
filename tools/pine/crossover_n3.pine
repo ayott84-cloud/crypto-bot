@@ -1,0 +1,99 @@
+//@version=6
+// ─────────────────────────────────────────────────────────────────────────
+// Crossover N.3 — 1h SMA20/50 cross with SMA200-slope + ADX + daily-regime
+// gates and signal-invalidation exits. Pine port of crypto_bot's
+// crossover_signals.py / crossover_main.py (Jul 2026, P2.4).
+//
+// Purpose: LONG-WINDOW validation. Our WEEX/Coinbase replay windows are
+// 17-50 days (n=2-10 per asset). TradingView provides years of 1h data;
+// run this on ETH/SOL/XRP/LINK USDT-perp charts, 2022→present, and
+// compare PF/WR/DD to tools/backtest_replay.py output on the overlapping
+// window before trusting either.
+//
+// Chart: 1h. Enable "Use bar magnifier" in Properties (Premium) so
+// intra-bar SL fills are modeled from lower-TF data — this mirrors the
+// bot's conservative intra-bar fill model (P2.1).
+// ─────────────────────────────────────────────────────────────────────────
+strategy("Crossover N.3 (1h SMA20/50)",
+     overlay = true,
+     initial_capital = 10000,
+     default_qty_type = strategy.percent_of_equity,
+     default_qty_value = 10,
+     commission_type = strategy.commission.percent,
+     commission_value = 0.075,          // 0.075%/side ≈ 0.15% round trip (bot cost model)
+     slippage = 2,
+     use_bar_magnifier = true,
+     calc_on_every_tick = false)
+
+// ── Inputs (mirror crossover_config._crossover_default N.3 values) ──────
+smaFastLen   = input.int(20,   "SMA fast",                minval = 2)
+smaSlowLen   = input.int(50,   "SMA slow",                minval = 5)
+useSma200    = input.bool(true,  "SMA200 rising/falling filter")
+sma200Slope  = input.int(5,    "SMA200 slope lookback (bars)")
+useAdx       = input.bool(true,  "ADX filter")
+adxLen       = input.int(14,   "ADX length")
+adxThresh    = input.float(20.0, "ADX threshold")
+useDailyReg  = input.bool(true,  "Daily 9-MA regime gate")
+dRegMaLen    = input.int(9,    "Daily regime MA")
+dRegSlope    = input.int(3,    "Daily regime slope lookback")
+emergAtrMult = input.float(3.5, "Emergency SL (x ATR at entry)")
+atrLen       = input.int(14,   "ATR length")
+allowShort   = input.bool(true,  "Allow SHORT")
+
+// ── Indicators ───────────────────────────────────────────────────────────
+smaFast = ta.sma(close, smaFastLen)
+smaSlow = ta.sma(close, smaSlowLen)
+sma200  = ta.sma(close, 200)
+atrVal  = ta.atr(atrLen)
+[diPlus, diMinus, adxVal] = ta.dmi(adxLen, adxLen)
+
+// Daily 9-MA regime, no-repaint ([1] on the daily series). Mirrors
+// regime.classify_daily_trend: up = close above RISING MA9; down = below
+// falling; else flat (trend entries sit out).
+[dClose, dMaNow, dMaThen] = request.security(syminfo.tickerid, "D",
+     [close[1], ta.sma(close, dRegMaLen)[1], ta.sma(close, dRegMaLen)[1 + dRegSlope]],
+     lookahead = barmerge.lookahead_off)
+regimeUp   = dClose > dMaNow and dMaNow > dMaThen
+regimeDown = dClose < dMaNow and dMaNow < dMaThen
+
+// ── Entry filters ────────────────────────────────────────────────────────
+crossUp   = ta.crossover(smaFast, smaSlow)
+crossDown = ta.crossunder(smaFast, smaSlow)
+
+sma200OkLong  = not useSma200 or (close > sma200 and sma200 > sma200[sma200Slope])
+sma200OkShort = not useSma200 or (close < sma200 and sma200 < sma200[sma200Slope])
+adxOk         = not useAdx or adxVal > adxThresh
+regimeOkLong  = not useDailyReg or regimeUp
+regimeOkShort = not useDailyReg or regimeDown
+
+longSignal  = crossUp   and sma200OkLong  and adxOk and regimeOkLong
+shortSignal = crossDown and sma200OkShort and adxOk and regimeOkShort and allowShort
+
+// ── Entries + emergency stop anchored to ATR at entry ───────────────────
+var float entryAtr = na
+if longSignal and strategy.position_size == 0
+    entryAtr := atrVal
+    strategy.entry("L", strategy.long)
+if shortSignal and strategy.position_size == 0
+    entryAtr := atrVal
+    strategy.entry("S", strategy.short)
+
+// Emergency SL — pure gap protection, intra-bar (stop order). No TP:
+// the invalidation exit below is the profit-taking mechanism.
+if strategy.position_size > 0
+    strategy.exit("L-emerg", "L", stop = strategy.position_avg_price - emergAtrMult * entryAtr)
+if strategy.position_size < 0
+    strategy.exit("S-emerg", "S", stop = strategy.position_avg_price + emergAtrMult * entryAtr)
+
+// Invalidation exit — close-confirmed cross back through SMA-fast
+// against the position (check_crossover_exit_v3 semantics).
+if strategy.position_size > 0 and close < smaFast
+    strategy.close("L", comment = "Invalidation Exit")
+if strategy.position_size < 0 and close > smaFast
+    strategy.close("S", comment = "Invalidation Exit")
+
+// ── Plots ────────────────────────────────────────────────────────────────
+plot(smaFast, "SMA fast", color = color.new(color.aqua, 0))
+plot(smaSlow, "SMA slow", color = color.new(color.orange, 0))
+plot(useSma200 ? sma200 : na, "SMA200", color = color.new(color.gray, 40))
+bgcolor(useDailyReg ? (regimeUp ? color.new(color.green, 94) : regimeDown ? color.new(color.red, 94) : na) : na)

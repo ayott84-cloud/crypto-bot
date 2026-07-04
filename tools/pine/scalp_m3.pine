@@ -1,0 +1,119 @@
+//@version=6
+// ─────────────────────────────────────────────────────────────────────────
+// Scalp M.3 — 15m volatility-expansion breakout with ATR brackets,
+// triple-barrier time limit, volume / higher-TF trend / RSI-extreme
+// filters and daily-regime gate. Pine port of crypto_bot's
+// scalp_signals.py / scalp_main.py (Jul 2026, P2.4).
+//
+// Purpose: LONG-WINDOW validation of the M.3 redesign (5m→15m,
+// pct-brackets→ATR brackets). Run on BTC/ETH/XRP/DOGE/LINK USDT-perp
+// 15m charts, 12+ months, and compare PF/WR/DD to the honest replay
+// (tools/backtest_replay.py) on the overlapping window.
+//
+// Chart: 15m. Enable "Use bar magnifier" (Premium) — the ATR bracket
+// fills intra-bar, matching the bot's conservative SL-first fill model.
+// ─────────────────────────────────────────────────────────────────────────
+strategy("Scalp M.3 (15m vol-expansion breakout)",
+     overlay = true,
+     initial_capital = 10000,
+     default_qty_type = strategy.percent_of_equity,
+     default_qty_value = 10,
+     commission_type = strategy.commission.percent,
+     commission_value = 0.075,          // 0.075%/side ≈ 0.15% round trip (bot cost model)
+     slippage = 2,
+     use_bar_magnifier = true,
+     calc_on_every_tick = false)
+
+// ── Inputs (mirror scalp_config._scalp_default M.3 values) ──────────────
+rangeShortLen = input.int(10,    "Range SMA short")
+rangeLongLen  = input.int(50,    "Range SMA long")
+expThresh     = input.float(1.5, "Vol-expansion threshold (short > k x long)")
+momoLen       = input.int(20,    "Momentum lookback")
+highLen       = input.int(20,    "New-high lookback")
+useVolume     = input.bool(true,  "Volume filter")
+volMult       = input.float(1.5, "Volume threshold (x SMA)")
+volSmaLen     = input.int(20,    "Volume SMA length")
+useHtfTrend   = input.bool(true,  "1h EMA20/50 trend gate")
+useRsiExtreme = input.bool(true,  "RSI extreme filter")
+rsiLen        = input.int(14,    "RSI length")
+rsiOb         = input.float(70.0, "RSI overbought (blocks LONG)")
+rsiOs         = input.float(30.0, "RSI oversold (blocks SHORT)")
+useDailyReg   = input.bool(true,  "Daily 9-MA regime gate")
+dRegMaLen     = input.int(9,     "Daily regime MA")
+dRegSlope     = input.int(3,     "Daily regime slope lookback")
+atrLen        = input.int(14,    "ATR length")
+atrSlMult     = input.float(2.5, "SL (x ATR at entry)")
+tpRMultiple   = input.float(1.5, "TP (R multiple of SL distance)")
+timeLimitBars = input.int(16,    "Time limit (bars; 16 x 15m = 4h)")
+allowShort    = input.bool(true,  "Allow SHORT")
+
+// ── Indicators ───────────────────────────────────────────────────────────
+barRange     = high - low
+rangeSmaS    = ta.sma(barRange, rangeShortLen)
+rangeSmaL    = ta.sma(barRange, rangeLongLen)
+volSma       = ta.sma(volume, volSmaLen)
+rsiVal       = ta.rsi(close, rsiLen)
+atrVal       = ta.atr(atrLen)
+priorMax     = ta.highest(close[1], highLen)   // max of prior N closes (excl. current)
+priorMin     = ta.lowest(close[1], highLen)
+
+// 1h EMA20/50 trend, no-repaint
+[htfEmaFast, htfEmaSlow] = request.security(syminfo.tickerid, "60",
+     [ta.ema(close, 20)[1], ta.ema(close, 50)[1]],
+     lookahead = barmerge.lookahead_off)
+
+// Daily 9-MA regime, no-repaint (regime.classify_daily_trend semantics)
+[dClose, dMaNow, dMaThen] = request.security(syminfo.tickerid, "D",
+     [close[1], ta.sma(close, dRegMaLen)[1], ta.sma(close, dRegMaLen)[1 + dRegSlope]],
+     lookahead = barmerge.lookahead_off)
+regimeUp   = dClose > dMaNow and dMaNow > dMaThen
+regimeDown = dClose < dMaNow and dMaNow < dMaThen
+
+// ── Entry filters (analyze_scalp_entry order) ───────────────────────────
+volExpanding = rangeSmaS > expThresh * rangeSmaL
+momoUp       = close > close[momoLen]
+momoDown     = close < close[momoLen]
+newHigh      = close > priorMax
+newLow       = close < priorMin
+greenBar     = close > open
+redBar       = close < open
+volumeOk     = not useVolume or volume > volMult * volSma
+htfUp        = not useHtfTrend or htfEmaFast > htfEmaSlow
+htfDown      = not useHtfTrend or htfEmaFast < htfEmaSlow
+rsiOkLong    = not useRsiExtreme or rsiVal < rsiOb
+rsiOkShort   = not useRsiExtreme or rsiVal > rsiOs
+regimeOkLong  = not useDailyReg or regimeUp
+regimeOkShort = not useDailyReg or regimeDown
+
+longSignal  = volExpanding and momoUp   and newHigh and greenBar and volumeOk and htfUp   and rsiOkLong  and regimeOkLong
+shortSignal = volExpanding and momoDown and newLow  and redBar   and volumeOk and htfDown and rsiOkShort and regimeOkShort and allowShort
+
+// ── Entries + ATR bracket anchored to fill price ─────────────────────────
+var float entryAtr = na
+if longSignal and strategy.position_size == 0
+    entryAtr := atrVal
+    strategy.entry("L", strategy.long)
+if shortSignal and strategy.position_size == 0
+    entryAtr := atrVal
+    strategy.entry("S", strategy.short)
+
+slDist = atrSlMult * entryAtr
+if strategy.position_size > 0
+    strategy.exit("L-x", "L",
+         stop  = strategy.position_avg_price - slDist,
+         limit = strategy.position_avg_price + tpRMultiple * slDist)
+if strategy.position_size < 0
+    strategy.exit("S-x", "S",
+         stop  = strategy.position_avg_price + slDist,
+         limit = strategy.position_avg_price - tpRMultiple * slDist)
+
+// Triple-barrier time limit: a trade that hasn't resolved in N bars is
+// no longer the trade we entered (time_limit_exceeded semantics).
+if strategy.opentrades > 0
+    if bar_index - strategy.opentrades.entry_bar_index(0) >= timeLimitBars
+        strategy.close_all(comment = "Time Limit")
+
+// ── Plots ────────────────────────────────────────────────────────────────
+plotshape(longSignal,  "long setup",  shape.triangleup,   location.belowbar, color.new(color.green, 30), size = size.tiny)
+plotshape(shortSignal, "short setup", shape.triangledown, location.abovebar, color.new(color.red, 30),   size = size.tiny)
+bgcolor(useDailyReg ? (regimeUp ? color.new(color.green, 94) : regimeDown ? color.new(color.red, 94) : na) : na)
