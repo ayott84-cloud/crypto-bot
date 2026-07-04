@@ -64,6 +64,16 @@ DRY_RUN = True                     # master kill switch — set False for live
 # Set TRADING_ENABLED=false in .env to pause all new trades without editing code.
 TRADING_ENABLED = os.getenv("TRADING_ENABLED", "true").lower() in ("true", "1", "yes")
 
+# P3.6 — BTC-ETH 30d rolling-returns correlation gate (fleet-level).
+# When ON, momentum alt entries are blocked while correlation < min:
+# correlation breakdown precedes rotational chop where trend signals bleed
+# (practitioner research, Jul 2026 sweep: PF roughly doubled with gate).
+# Default OFF until validated through the honest replay pipeline (P4).
+USE_BTC_ETH_CORR_GATE = os.getenv(
+    "USE_BTC_ETH_CORR_GATE", "false").lower() in ("true", "1", "yes")
+BTC_ETH_CORR_WINDOW = 30
+BTC_ETH_CORR_MIN = 0.6
+
 # Backtest reference for yearly projection math
 BACKTEST_YEARS = 5.3               # Dec 2020 → Apr 2026 window used in TradingView
 BACKTEST_CAPITAL = 10000.0         # default Strategy Tester capital

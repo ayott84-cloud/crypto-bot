@@ -49,6 +49,26 @@ CONSECUTIVE_LOSS_LIMIT_SHORT = 2
 # below (more negative than) this threshold.
 MAX_DAILY_DRAWDOWN_USD = -500.0
 
+# P3.6: percent-of-capital daily breaker. 3% of INITIAL_CAPITAL ($5000 →
+# -$150) is far tighter than the legacy fixed floor; the effective
+# threshold is whichever of the two is TIGHTER (less negative). Set to
+# None to disable and fall back to the fixed-USD floor alone.
+MAX_DAILY_DRAWDOWN_PCT = 3.0
+
+
+def _daily_dd_threshold_usd() -> float:
+    """Effective daily-drawdown threshold: tighter of fixed-USD and
+    percent-of-capital. Degrades to the fixed floor if config import
+    fails or the percent knob is disabled."""
+    if MAX_DAILY_DRAWDOWN_PCT is None:
+        return MAX_DAILY_DRAWDOWN_USD
+    try:
+        from config import INITIAL_CAPITAL
+    except ImportError:
+        return MAX_DAILY_DRAWDOWN_USD
+    pct_threshold = -(MAX_DAILY_DRAWDOWN_PCT / 100.0) * float(INITIAL_CAPITAL)
+    return max(MAX_DAILY_DRAWDOWN_USD, pct_threshold)
+
 
 @dataclass
 class KillSwitchStatus:
@@ -169,12 +189,13 @@ def should_pause(owner: str, direction: str | None = None) -> KillSwitchStatus:
 
     closed = [t for t in all_trades if t.get("result") in ("WIN", "LOSS")]
 
-    # 1. Global daily drawdown
+    # 1. Global daily drawdown — tighter of fixed-USD and %-of-capital (P3.6)
     daily_pnl = _trailing_pnl(closed, hours=24)
-    if daily_pnl <= MAX_DAILY_DRAWDOWN_USD:
+    dd_threshold = _daily_dd_threshold_usd()
+    if daily_pnl <= dd_threshold:
         return KillSwitchStatus(
             True,
-            f"daily drawdown ${daily_pnl:+.2f} <= ${MAX_DAILY_DRAWDOWN_USD:.2f} threshold (24h trailing)",
+            f"daily drawdown ${daily_pnl:+.2f} <= ${dd_threshold:.2f} threshold (24h trailing)",
         )
 
     # 2. Per-bot consecutive losses (optionally direction-filtered)

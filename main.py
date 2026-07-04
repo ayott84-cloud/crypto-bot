@@ -25,8 +25,23 @@ from config import (
     ASSETS, DRY_RUN, POLL_INTERVAL_SECONDS, CANDLE_FETCH_COUNT,
     DEFAULT_LEVERAGE, LOG_FILE, DASHBOARD_REGEN_CYCLES, MAX_POSITIONS,
     MARGIN_PER_TRADE,
+    USE_BTC_ETH_CORR_GATE, BTC_ETH_CORR_WINDOW, BTC_ETH_CORR_MIN,
 )
 from btc_context import _build_btc_context
+
+
+def _fetch_btc_eth_corr(executor, window: int = 30):
+    """P3.6 — 30d BTC-ETH rolling-returns correlation, computed once per
+    cycle. Any fetch/parse failure returns None (gate degrades to ALLOW)."""
+    try:
+        raw_btc = executor.get_klines("BTCUSDT", "1d", window + 10)
+        raw_eth = executor.get_klines("ETHUSDT", "1d", window + 10)
+        btc_closes = [float(r[4]) for r in raw_btc]
+        eth_closes = [float(r[4]) for r in raw_eth]
+    except Exception:
+        return None
+    from regime import rolling_returns_correlation
+    return rolling_returns_correlation(btc_closes, eth_closes, window=window)
 from signals import (
     build_dataframe, compute_indicators, check_entry_signal,
     check_exit_conditions, get_entry_reason, analyze_entry_signal,
@@ -202,6 +217,16 @@ def run():
         # previous version silently forced 50 for all of them.
         btc_context = _build_btc_context(executor, ASSETS)
 
+        # P3.6: BTC-ETH correlation, fetched once per cycle (2 extra API
+        # calls) only while the gate is enabled. None = no data = allow.
+        btc_eth_corr = None
+        if USE_BTC_ETH_CORR_GATE:
+            btc_eth_corr = _fetch_btc_eth_corr(executor,
+                                                window=BTC_ETH_CORR_WINDOW)
+            logger.info("BTC-ETH %dd corr: %s", BTC_ETH_CORR_WINDOW,
+                          "n/a" if btc_eth_corr is None
+                          else f"{btc_eth_corr:.3f}")
+
         for asset_name, cfg in ASSETS.items():
             symbol = cfg["symbol"]       # exchange symbol (XRPUSDT) — for API calls
             state_key = asset_name        # unique per strategy (XRP, XRP_4H) — for state
@@ -248,6 +273,21 @@ def run():
                             analysis["would_enter"] = False
                             analysis["blocked_by"] = "regime_misalign"
                             analysis["filters"]["regime"] = False
+
+                    # ── P3.6: BTC-ETH correlation gate ────────────────
+                    # Fleet-level: alt trend entries only while BTC-ETH
+                    # correlation ≥ min. BTC strategies exempt (the gate
+                    # protects ALT trades from rotational chop). Default
+                    # OFF via config until P4 validation.
+                    if (USE_BTC_ETH_CORR_GATE
+                            and analysis.get("would_enter")
+                            and symbol != "BTCUSDT"):
+                        from regime import corr_gate_allows
+                        if not corr_gate_allows(btc_eth_corr,
+                                                 min_corr=BTC_ETH_CORR_MIN):
+                            analysis["would_enter"] = False
+                            analysis["blocked_by"] = "btc_eth_corr"
+                            analysis["filters"]["btc_eth_corr"] = False
 
                     # Log filter breakdown
                     def _sym(v):

@@ -261,3 +261,45 @@ def daily_regime_allows(direction: str, regime: str) -> bool:
     if direction == "SHORT":
         return regime == "down"
     return True
+
+
+# ─── P3.6 — BTC-ETH rolling-returns correlation gate ───────────────────────
+# Practitioner research (Jul 2026 sweep): alt trend entries taken only while
+# BTC-ETH correlation is high roughly doubled PF. Correlation breakdown
+# precedes rotational chop where trend signals bleed.
+
+def rolling_returns_correlation(closes_a, closes_b,
+                                 window: int = 30) -> Optional[float]:
+    """Pearson correlation of the last `window` simple returns of two
+    close series. None on insufficient data, length mismatch, or zero
+    variance — callers treat None as "no data", never as a block."""
+    import pandas as pd
+
+    if closes_a is None or closes_b is None:
+        return None
+    if len(closes_a) == 0 or len(closes_b) == 0:
+        return None
+    n = min(len(closes_a), len(closes_b))
+    if n < window + 1:
+        return None
+    try:
+        a = pd.Series([float(x) for x in closes_a[-(window + 1):]])
+        b = pd.Series([float(x) for x in closes_b[-(window + 1):]])
+        ra = a.pct_change().dropna()
+        rb = b.pct_change().dropna()
+        if len(ra) < window or len(rb) < window:
+            return None
+        if float(ra.std()) == 0.0 or float(rb.std()) == 0.0:
+            return None
+        corr = float(ra.corr(rb))
+        return None if pd.isna(corr) else corr
+    except (TypeError, ValueError):
+        return None
+
+
+def corr_gate_allows(corr: Optional[float], min_corr: float = 0.6) -> bool:
+    """Allow alt trend entries only while BTC-ETH correlation ≥ min_corr.
+    None (no data) → allow — degrade to pass like every fleet filter."""
+    if corr is None:
+        return True
+    return corr >= min_corr
