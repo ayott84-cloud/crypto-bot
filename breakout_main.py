@@ -99,7 +99,10 @@ def _parse_funding_rate_8h(raw) -> Optional[float]:
     first = raw[0] if isinstance(raw, list) else raw
     if not isinstance(first, dict):
         return None
-    for key in ("fundingRate", "funding_rate", "rate"):
+    # 'lastFundingRate' is the key the live WEEX payload actually uses
+    # (see dashboard.py / data_pull.py reading the same endpoint) — it
+    # must be tried FIRST or the veto silently never fires (P5 finding 1).
+    for key in ("lastFundingRate", "fundingRate", "funding_rate", "rate"):
         if key in first:
             try:
                 return float(first[key])
@@ -109,19 +112,24 @@ def _parse_funding_rate_8h(raw) -> Optional[float]:
 
 
 def _update_water_mark(pos: dict, direction: str,
-                       bar_high: float, bar_low: float) -> float:
-    """P3.3b — ratchet the position's water mark from the latest bar.
+                       current_close: float) -> float:
+    """P3.3b — ratchet the position's water mark from the current close.
 
-    LONG tracks the highest high since entry; SHORT tracks the lowest
-    low (stored under the same "high_water_mark" key — check_trailing_exit
-    interprets it by direction). Monotonic: never moves against the trade.
+    LONG tracks the highest close since entry; SHORT the lowest (stored
+    under the same "high_water_mark" key — check_trailing_exit interprets
+    it by direction). Monotonic: never moves against the trade.
+
+    Deliberately close-based, NOT bar high/low: the forming bar's extremes
+    include price action from BEFORE the position opened, and a pre-entry
+    spike must not arm the trail (P5 finding 6). With a 5-min poll the
+    close-track shadows the true extreme closely enough.
     """
     entry = float(pos["entry_price"])
     prev = float(pos.get("high_water_mark", entry))
     if direction.upper() == "SHORT":
-        mark = min(prev, float(bar_low))
+        mark = min(prev, float(current_close))
     else:
-        mark = max(prev, float(bar_high))
+        mark = max(prev, float(current_close))
     pos["high_water_mark"] = mark
     return mark
 
@@ -403,10 +411,8 @@ def run_cycle(executor: Executor, state: dict) -> None:
             # has moved trail_arm_atr_mult × ATR in favor, then gives back
             # at most trail_atr_mult × ATR from the mark.
             if cfg.get("use_trailing_exit", False):
-                mark = _update_water_mark(
-                    pos, direction,
-                    bar_high=float(df.iloc[-1]["high"]),
-                    bar_low=float(df.iloc[-1]["low"]))
+                mark = _update_water_mark(pos, direction,
+                                           current_close=current_close)
                 trail_reason = check_trailing_exit(
                     direction, entry_price, mark, current_close,
                     atr_at_entry, cfg)

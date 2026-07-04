@@ -25,6 +25,14 @@ from __future__ import annotations
 
 from typing import Optional
 
+# P5 finding 7 — minimum bars for the SMA200 slope gate to be ACTIVE:
+# rolling(200) is NaN before row 199, and the slope reads iloc[-7], so
+# len must be >= 206 for both reads to be real values. Below this the
+# filter silently passes (graceful degrade); replay harnesses must not
+# evaluate entries below it when the filter is on, or they admit trades
+# live would block.
+SMA200_FILTER_MIN_BARS = 206
+
 
 def analyze_crossover_entry(df, cfg: dict, df_1h=None) -> dict:
     """Verbose entry-signal analyzer.
@@ -101,8 +109,11 @@ def analyze_crossover_entry(df, cfg: dict, df_1h=None) -> dict:
     # ── Phase N.3: 200-SMA trend filter with slope gate ──
     # TradingRush 100-trade template: losses cluster when the 200 SMA is
     # flat/sideways. LONG only when price above a RISING SMA200; SHORT
-    # only below a FALLING one. Insufficient data → pass.
-    if cfg.get("use_sma200_filter", False) and len(df) >= 205:
+    # only below a FALLING one. Insufficient data → pass — callers that
+    # need the filter ACTIVE must supply >= SMA200_FILTER_MIN_BARS bars
+    # (P5 finding 7: the old 205 minimum left the slope read NaN, and
+    # short replay windows silently ran with the filter off).
+    if cfg.get("use_sma200_filter", False) and len(df) >= SMA200_FILTER_MIN_BARS:
         sma200 = df["close"].rolling(200).mean()
         s_now = sma200.iloc[-2]
         s_then = sma200.iloc[-7]   # 5-bar slope lookback

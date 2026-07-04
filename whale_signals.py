@@ -197,10 +197,12 @@ _COMPOSITE_W_ALLTIME = 0.01
 try:
     from whale_config import (MIN_ACCOUNT_VALUE_USD,
                                 WHALE_COHORT_REQUIRE_POSITIVE_MONTH,
+                                WHALE_COHORT_REQUIRE_POSITIVE_WEEK,
                                 WHALE_WALLET_WHITELIST)
 except ImportError:
     MIN_ACCOUNT_VALUE_USD = 100_000.0
     WHALE_COHORT_REQUIRE_POSITIVE_MONTH = True
+    WHALE_COHORT_REQUIRE_POSITIVE_WEEK = True
     WHALE_WALLET_WHITELIST = []
 
 
@@ -221,7 +223,7 @@ def _composite_score(wallet: dict) -> float:
 def _qualifying_wallets(wallets: List[dict],
                           min_account_value: float = MIN_ACCOUNT_VALUE_USD,
                           require_positive_month: bool = WHALE_COHORT_REQUIRE_POSITIVE_MONTH,
-                          require_positive_week: bool = True,
+                          require_positive_week: bool = WHALE_COHORT_REQUIRE_POSITIVE_WEEK,
                           ) -> List[dict]:
     """Apply the cohort quality gates: account-size floor + positive-month
     + (P3.5) positive-week multi-window persistence.
@@ -276,8 +278,10 @@ def fetch_cohorts(n: int = WHALE_FETCH_COUNT) -> Tuple[List[dict], List[dict]]:
     else:
         # U.3 smart cohort: gate first, then sort by recent-weighted composite
         qualified = _qualifying_wallets(parsed)
-        logger.info("Cohort gate: %d / %d wallets cleared min-account + "
-                     "positive-month filters", len(qualified), len(parsed))
+        logger.info("Cohort gate: %d / %d wallets cleared min-account"
+                     "%s%s filters", len(qualified), len(parsed),
+                     " + positive-month" if WHALE_COHORT_REQUIRE_POSITIVE_MONTH else "",
+                     " + positive-week" if WHALE_COHORT_REQUIRE_POSITIVE_WEEK else "")
         smart_sorted = sorted(qualified, key=_composite_score, reverse=True)
         # Scan more than N because some wallets may have no open positions
         # (vaults, sub-accounts). Target N wallets WITH positions per cohort.

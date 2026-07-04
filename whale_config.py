@@ -85,6 +85,16 @@ WHALE_COHORT_REQUIRE_POSITIVE_MONTH = (
     os.getenv("WHALE_COHORT_REQUIRE_POSITIVE_MONTH", "true").lower()
     in ("true", "1", "yes")
 )
+# P3.5 multi-window persistence: positive week AND month (<15% of
+# monthly top-10 repeat; single-window winners mean-revert). Wallets
+# with no week data in the payload pass (absence of data never blocks).
+# Toggle via WHALE_COHORT_REQUIRE_POSITIVE_WEEK=false in .env to A/B
+# against the month-only cohort (P5 finding 10: every cohort gate must
+# have an operator knob).
+WHALE_COHORT_REQUIRE_POSITIVE_WEEK = (
+    os.getenv("WHALE_COHORT_REQUIRE_POSITIVE_WEEK", "true").lower()
+    in ("true", "1", "yes")
+)
 
 # ─── Capital / sizing ────────────────────────────────────────────────────────
 # Whale bot shares the global 8-slot cap with bot 1 (first-come-first-served).

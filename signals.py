@@ -695,6 +695,29 @@ def analyze_short_entry_signal(
         if not btc_ok and result["blocked_by"] is None:
             fail("btc_filter")
 
+    # 11. P3.4 — MACD zero-line-side gate, SHORT mirror (P5 finding 8:
+    # these two gates must apply symmetrically or enabling the flags
+    # gates only one side of the book).
+    if cfg.get("use_macd_zeroline_gate", False):
+        ml = None if pd.isna(curr.get("macd_line")) else float(curr["macd_line"])
+        zl_ok = macd_zeroline_ok("SHORT", ml)
+        result["filters"]["macd_zeroline"] = zl_ok
+        if ml is not None:
+            result["values"]["macd_line"] = ml
+        if not zl_ok and result["blocked_by"] is None:
+            fail("macd_zeroline")
+
+    # 12. P3.4 — EMA200 alignment gate, SHORT mirror
+    if cfg.get("use_ema200_alignment", False):
+        df_gate = df
+        if "ema200" not in df.columns:
+            df_gate = df.copy()
+            df_gate["ema200"] = df_gate["close"].ewm(span=200, adjust=False).mean()
+        e200_ok = ema200_alignment_ok(df_gate, "SHORT")
+        result["filters"]["ema200_alignment"] = e200_ok
+        if not e200_ok and result["blocked_by"] is None:
+            fail("ema200_alignment")
+
     result["would_enter"] = result["blocked_by"] is None
     return result
 

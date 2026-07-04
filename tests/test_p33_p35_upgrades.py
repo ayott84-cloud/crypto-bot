@@ -209,18 +209,18 @@ def test_parse_funding_rate_8h_graceful_on_garbage():
 def test_update_water_mark_long_ratchets_up_only():
     from breakout_main import _update_water_mark
     pos = {"entry_price": 100.0}
-    assert _update_water_mark(pos, "LONG", bar_high=103.0, bar_low=99.0) == 103.0
+    assert _update_water_mark(pos, "LONG", current_close=103.0) == 103.0
     assert pos["high_water_mark"] == 103.0
-    # lower bar must not lower the mark
-    assert _update_water_mark(pos, "LONG", bar_high=101.0, bar_low=98.0) == 103.0
+    # lower close must not lower the mark
+    assert _update_water_mark(pos, "LONG", current_close=101.0) == 103.0
 
 
 def test_update_water_mark_short_tracks_low():
     from breakout_main import _update_water_mark
     pos = {"entry_price": 100.0}
-    assert _update_water_mark(pos, "SHORT", bar_high=101.0, bar_low=96.0) == 96.0
-    # higher low must not raise the mark
-    assert _update_water_mark(pos, "SHORT", bar_high=104.0, bar_low=97.5) == 96.0
+    assert _update_water_mark(pos, "SHORT", current_close=96.0) == 96.0
+    # higher close must not raise the mark
+    assert _update_water_mark(pos, "SHORT", current_close=97.5) == 96.0
 
 
 def test_breakout_factory_has_p33_flags():

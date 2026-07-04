@@ -98,6 +98,15 @@ def _record_exit_for_cooldown(state: dict, symbol: str) -> None:
 
 # ─── Open / Close ──────────────────────────────────────────────────────
 
+def _position_uses_atr_bracket(pos: dict) -> bool:
+    """P5 finding 2 — deploy-migration guard. Only positions OPENED by
+    M.3 code (bracket_kind='atr') may be exit-checked against ATR
+    brackets: pre-M.3 positions stored atr_at_entry as a single bar's
+    range proxy, and treating that as ATR(14) produces phantom
+    near-zero brackets + fabricated fills."""
+    return pos.get("bracket_kind") == "atr"
+
+
 def open_scalp_position(executor: Executor, state: dict, asset_name: str,
                           cfg: dict, df: pd.DataFrame, direction: str) -> None:
     """Place the order, register state, log + notify the entry."""
@@ -172,6 +181,13 @@ def open_scalp_position(executor: Executor, state: dict, asset_name: str,
         entry_reason=f"vol-expand + 20-bar momentum + new {cfg.get('new_high_lookback', 20)}-bar {'high' if direction == 'LONG' else 'low'}",
         symbol=symbol,
         direction=direction,
+        # P5 findings 2+9 — persist the bracket ON the position: the exit
+        # path routes by bracket_kind (migration guard), and close
+        # notifications report the ACTUAL exchange-resident triggers
+        # instead of recomputing from live cfg.
+        bracket_kind="atr" if cfg.get("use_atr_bracket", False) else "pct",
+        sl_price=sl_price,
+        tp_price=tp_price,
     )
 
     # Discord + email notification
@@ -248,24 +264,24 @@ def close_scalp_position(executor: Executor, state: dict, state_key: str,
     try:
         from notifier import notify_trade_closed
         entry = float(pos["entry_price"])
-        range_at_entry = float(pos.get("atr_at_entry") or 0)
-        sign = -1.0 if direction == "SHORT" else 1.0
         portfolio_value = 0.0
         try:
             bal = executor.get_account_balance()
             portfolio_value = float(bal.get("balance", 0) if bal else 0)
         except Exception:  # noqa: BLE001
             pass
+        # P5 finding 9 — report the bracket the position ACTUALLY ran
+        # (persisted at entry), never recomputed legacy percentages.
+        # Legacy positions without the fields render as "—".
         notify_trade_closed(
             symbol=symbol, direction=direction,
             entry_price=entry,
             exit_price=exit_price or entry,
             quantity=float(pos["quantity"]),
             leverage=SCALP_LEVERAGE,
-            sl_price=entry + sign * (1.5 / 100) * entry * -1 if direction == "LONG"
-                       else entry + sign * (1.5 / 100) * entry,
-            tp1_price=entry + sign * (3.0 / 100) * entry,
-            tp2_price=entry + sign * (3.0 / 100) * entry,
+            sl_price=pos.get("sl_price"),
+            tp1_price=pos.get("tp_price"),
+            tp2_price=pos.get("tp_price"),
             exit_reason=reason,
             strategy=pos.get("strategy", SCALP_STRATEGY_TAG),
             portfolio_value=portfolio_value,
@@ -317,7 +333,7 @@ def run_cycle(executor: Executor, state: dict) -> None:
                 continue
 
             atr_entry = float(pos.get("atr_at_entry") or 0)
-            if cfg.get("use_atr_bracket", False) and atr_entry > 0:
+            if _position_uses_atr_bracket(pos) and atr_entry > 0:
                 reason = check_scalp_exit_atr(entry_price, float(current_price),
                                                  direction, atr_entry, cfg)
                 trigger = None
@@ -415,13 +431,20 @@ def run_cycle(executor: Executor, state: dict) -> None:
             sig = analyze_scalp_entry(df, cfg, df_1h=df_1h)
 
             # P2.3 — daily 9-MA regime gate. Fetch failure → pass.
+            # P5 finding 5: classify on COMPLETED daily bars only — the
+            # fetch's last row is today's forming candle and would make
+            # the label repaint intraday.
             if sig["would_enter"] and cfg.get("use_daily_regime", False):
                 try:
-                    from regime import classify_daily_trend, daily_regime_allows
+                    from regime import (classify_daily_trend,
+                                          daily_regime_allows,
+                                          completed_daily_closes)
                     raw_1d = executor.get_klines(cfg["symbol"], "1d", 20)
                     df_1d = _build_dataframe(raw_1d)
-                    if df_1d is not None and len(df_1d) >= 12:
-                        regime_label = classify_daily_trend(df_1d["close"])
+                    if df_1d is not None and len(df_1d) >= 13:
+                        closes_1d = completed_daily_closes(
+                            df_1d["close"], last_bar_forming=True)
+                        regime_label = classify_daily_trend(closes_1d)
                         if not daily_regime_allows(sig["direction"], regime_label):
                             sig = {**sig, "would_enter": False,
                                     "blocked_by": f"daily_regime_{regime_label}"}

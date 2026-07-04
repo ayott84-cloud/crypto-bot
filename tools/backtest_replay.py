@@ -159,6 +159,20 @@ def check_intrabar_exit(entry_price: float, direction: str,
     return None, None
 
 
+def _daily_closes_asof(daily_closes, cutoff_ts):
+    """Slice a resample('1D').last() series to FULLY COMPLETED days as of
+    a mid-day bar timestamp (P5 finding 5).
+
+    resample labels each day at 00:00 but stores the END-of-day close —
+    an `index <= cutoff_ts` slice therefore includes the current day's
+    row, whose value comes from bars hours in the future (lookahead).
+    Strictly-before-today keeps only days whose close actually existed.
+    """
+    if daily_closes is None:
+        return None
+    return daily_closes.loc[daily_closes.index < cutoff_ts.normalize()]
+
+
 # ─── Klines fetcher ────────────────────────────────────────────────────────
 
 def _fetch_klines(symbol: str, interval: str, count: int,
@@ -309,29 +323,32 @@ def replay_scalp(asset_name: str, cfg: dict, bars: int = 1000,
                    source: str = "weex",
                    round_trip_cost_pct: float = DEFAULT_ROUND_TRIP_COST_PCT,
                    ) -> BacktestReport:
-    """Phase M — replay the 5m vol-expansion + new-high scalp strategy.
+    """Phase M — replay the vol-expansion + new-high scalp strategy.
 
-    Exit is pure-pct bracket (no ATR scaling). Once a position opens, the
-    next bar's high/low (vs SL/TP thresholds) determines whether it
-    closes; for simplicity we use the bar CLOSE as the trigger price
-    (conservative: real fills can be better with limit orders or worse
-    with market slippage). Cooldown logic from the live bot is mirrored
-    so the replay matches live behavior.
+    P5 finding 4 rewrite: the replay now models the SAME strategy the
+    live M.3 bot runs — ATR(14) brackets (SMA-of-TR, matching
+    scalp_main._compute_df_atr), the 16-bar time-limit barrier, the
+    daily 9-MA regime gate (completed days only, no lookahead), and a
+    higher-TF 1h trend gate that works for ANY sub-1h base interval
+    (the old `== "5m"` hardcode silently dropped the gate after the
+    15m switch). Legacy pct brackets remain for use_atr_bracket=False.
 
     source: "weex" (default, hardcapped at 1000 bars) or "binance"
-    (chained, any window). Use Binance for windows > 3.5 days on 5m.
+    (chained, any window).
     """
-    from scalp_signals import analyze_scalp_entry, check_scalp_exit
+    from scalp_signals import (analyze_scalp_entry, check_scalp_exit,
+                                 atr_bracket_prices)
 
     df = _fetch_klines(cfg["symbol"], cfg["interval"], bars, source=source)
     if df is None or len(df) == 0:
         return BacktestReport(bot="scalp", asset=asset_name, bars_seen=0)
 
-    # Phase M.2: resample 5m → 1h for the higher-TF trend gate. Cheaper
-    # than chaining another Coinbase fetch + guarantees time alignment.
-    # On 5m data with ts index, "1h" rolling buckets aggregate cleanly.
+    # Higher-TF trend gate: resample base TF → 1h for any sub-1h interval
+    # (mirrors replay_crossover; the live bot fetches real 1h klines).
     df_1h_full = None
-    if cfg.get("use_higher_tf_trend", False) and cfg.get("interval") == "5m":
+    sub_hour_intervals = {"1m", "3m", "5m", "15m", "30m"}
+    if (cfg.get("use_higher_tf_trend", False)
+            and cfg.get("interval") in sub_hour_intervals):
         try:
             df_1h_full = df["close"].resample("1h").last().to_frame()
             df_1h_full["close"] = df_1h_full["close"].ffill()
@@ -341,6 +358,35 @@ def replay_scalp(asset_name: str, cfg: dict, bars: int = 1000,
             df_1h_full["ema_slow"] = df_1h_full["close"].ewm(span=es, adjust=False).mean()
         except Exception:  # noqa: BLE001
             df_1h_full = None
+
+    # P2.3 — daily regime series (resampled; sliced to COMPLETED days)
+    daily_closes_full = None
+    if cfg.get("use_daily_regime", False):
+        try:
+            daily_closes_full = df["close"].resample("1D").last().ffill()
+        except Exception:  # noqa: BLE001
+            daily_closes_full = None
+
+    # M.3 — ATR series (SMA-of-TR, same as scalp_main._compute_df_atr)
+    atr_series = None
+    if cfg.get("use_atr_bracket", False):
+        prev_close = df["close"].shift(1)
+        tr = pd.concat([
+            df["high"] - df["low"],
+            (df["high"] - prev_close).abs(),
+            (df["low"] - prev_close).abs(),
+        ], axis=1).max(axis=1)
+        atr_series = tr.rolling(int(cfg.get("atr_period", 14))).mean()
+
+    # Cooldown in bars, derived from the actual interval (600s live)
+    try:
+        from scalp_signals import _INTERVAL_MINUTES
+        _iv_min = _INTERVAL_MINUTES.get(cfg.get("interval", "15m"), 15)
+    except Exception:  # noqa: BLE001
+        _iv_min = 15
+    cooldown_bars = max(1, round(600 / (_iv_min * 60)))
+
+    time_limit_bars = int(cfg.get("time_limit_bars", 0) or 0)
 
     needed = max(cfg.get("range_long_sma", 50),
                   cfg.get("momentum_lookback", 20),
@@ -369,30 +415,60 @@ def replay_scalp(asset_name: str, cfg: dict, bars: int = 1000,
                     df_1h_slice = None
             sig = analyze_scalp_entry(window, cfg, df_1h=df_1h_slice)
             if sig["would_enter"]:
+                # P2.3 — daily regime gate on COMPLETED days only
+                if daily_closes_full is not None:
+                    from regime import classify_daily_trend, daily_regime_allows
+                    daily_slice = _daily_closes_asof(daily_closes_full,
+                                                       window.index[-2])
+                    regime_label = classify_daily_trend(daily_slice)
+                    if not daily_regime_allows(sig["direction"], regime_label):
+                        continue
+                # ATR at entry: last COMPLETED bar, matching live's
+                # _compute_df_atr .iloc[-2] convention.
+                atr_e = 0.0
+                if atr_series is not None and i >= 1:
+                    v = atr_series.iloc[i - 1]
+                    atr_e = float(v) if v == v else 0.0
                 position = {
                     "direction":     sig["direction"],
                     "entry_bar":     i,
                     "entry_price":   current_close,
+                    "atr_at_entry":  atr_e,
                 }
             continue
 
-        # P2.1 — conservative intra-bar bracket exit (SL vs low/TP vs
-        # high for LONG, mirrored SHORT, SL-first, fill at trigger).
-        sl_pct = float(cfg.get("sl_pct", 1.5))
-        tp_pct = float(cfg.get("tp_pct", 3.0))
+        # Exit legs — single source: atr_bracket_prices handles both the
+        # ATR bracket and the pct fallback, same function the live bot
+        # uses at entry.
         entry = position["entry_price"]
-        if position["direction"] == "LONG":
-            sl_price = entry * (1 - sl_pct / 100)
-            tp_price = entry * (1 + tp_pct / 100)
+        if cfg.get("use_atr_bracket", False) and position["atr_at_entry"] > 0:
+            sl_price, tp_price = atr_bracket_prices(
+                entry, position["direction"], position["atr_at_entry"], cfg)
         else:
-            sl_price = entry * (1 + sl_pct / 100)
-            tp_price = entry * (1 - tp_pct / 100)
+            sl_pct = float(cfg.get("sl_pct", 1.5))
+            tp_pct = float(cfg.get("tp_pct", 3.0))
+            if position["direction"] == "LONG":
+                sl_price = entry * (1 - sl_pct / 100)
+                tp_price = entry * (1 + tp_pct / 100)
+            else:
+                sl_price = entry * (1 + sl_pct / 100)
+                tp_price = entry * (1 - tp_pct / 100)
+
+        # P2.1 — conservative intra-bar bracket exit (SL-first). The
+        # exchange bracket fills continuously, so it outranks the
+        # bot-side time limit within the same bar.
         reason, fill_price = check_intrabar_exit(
             entry_price=entry, direction=position["direction"],
             bar_high=float(df.iloc[i]["high"]),
             bar_low=float(df.iloc[i]["low"]),
             sl_price=sl_price, tp_price=tp_price,
         )
+
+        # M.3 — triple-barrier time limit (bot-side, fills at bar close)
+        if (reason is None and time_limit_bars > 0
+                and i - position["entry_bar"] >= time_limit_bars):
+            reason, fill_price = "Time Limit", current_close
+
         if reason:
             sign = 1.0 if position["direction"] == "LONG" else -1.0
             pnl_pct = sign * (fill_price - entry) / entry * 100
@@ -405,8 +481,7 @@ def replay_scalp(asset_name: str, cfg: dict, bars: int = 1000,
                 exit_price=fill_price,
                 exit_reason=reason, pnl_pct=pnl_pct,
             ))
-            # Apply cooldown: SCALP_COOLDOWN_SECONDS / 5min ≈ 2 bars
-            cooldown_until_bar = i + 2
+            cooldown_until_bar = i + cooldown_bars
             position = None
     return report
 
@@ -498,6 +573,13 @@ def replay_crossover(asset_name: str, cfg: dict, bars: int = 1000,
         atr_series = tr.rolling(14).mean()
 
     needed = int(cfg.get("sma_slow", 100)) + 2
+    # P5 finding 7 — replay/live parity: live always fetches 260 bars so
+    # the SMA200 slope gate is ALWAYS active; the replay must not
+    # evaluate entries in the pre-warmup window where the gate would
+    # silently pass.
+    if cfg.get("use_sma200_filter", False):
+        from crossover_signals import SMA200_FILTER_MIN_BARS
+        needed = max(needed, SMA200_FILTER_MIN_BARS)
     report = BacktestReport(bot="crossover", asset=asset_name, bars_seen=len(df))
 
     position: dict | None = None
@@ -534,12 +616,12 @@ def replay_crossover(asset_name: str, cfg: dict, bars: int = 1000,
                         _filter_stats["would_enter_pre_filter"] += 1
             if sig["would_enter"]:
                 # P2.3 — daily regime gate: block counter-regime entries.
-                # Slice the daily series to "as of this bar" (no lookahead).
+                # P5 finding 5: COMPLETED days only — the current day's
+                # resampled row holds the EOD close (future data).
                 if daily_closes_full is not None:
                     from regime import classify_daily_trend, daily_regime_allows
-                    cutoff_ts = window.index[-2]
-                    daily_slice = daily_closes_full.loc[
-                        daily_closes_full.index <= cutoff_ts]
+                    daily_slice = _daily_closes_asof(daily_closes_full,
+                                                       window.index[-2])
                     regime_label = classify_daily_trend(daily_slice)
                     if not daily_regime_allows(sig["direction"], regime_label):
                         continue

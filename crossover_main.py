@@ -188,18 +188,27 @@ def open_crossover_position(executor: Executor, state: dict, asset_name: str,
         entry_reason=entry_reason,
         symbol=symbol,
         direction=direction,
+        # P5 findings 3+9 — persist exit semantics + triggers ON the
+        # position: the exit path routes by exit_kind (migration guard —
+        # pre-N.3 positions keep their pct bracket), and notifications
+        # report the actual exchange-resident prices.
+        exit_kind="invalidation" if invalidation_mode else "bracket",
+        sl_price=sl_price,
+        tp_price=tp_price,
     )
 
     try:
         from notifier import notify_trade_opened
+        # tp_price=None in invalidation mode renders as "—" (no TP by
+        # design — the SMA-recross is the profit mechanism).
         notify_trade_opened(
             symbol=symbol,
             entry_price=current_price,
             quantity=str(qty),
             leverage=CROSSOVER_LEVERAGE,
             sl_price=sl_price,
-            tp1_price=tp_price or sl_price,
-            tp2_price=tp_price or sl_price,
+            tp1_price=tp_price,
+            tp2_price=tp_price,
             atr_at_entry=atr_at_entry,
             strategy=cfg.get("strategy_name", CROSSOVER_STRATEGY_TAG),
             entry_reason=entry_reason,
@@ -207,6 +216,16 @@ def open_crossover_position(executor: Executor, state: dict, asset_name: str,
         )
     except Exception as e:  # noqa: BLE001
         logger.warning("[%s] open notification failed: %s", asset_name, e)
+
+
+def _position_uses_invalidation_exit(pos: dict) -> bool:
+    """P5 finding 3 — deploy-migration guard. Only positions OPENED by
+    N.3 code (exit_kind='invalidation') use the v3 invalidation exit:
+    pre-N.3 positions stored atr_at_entry as a bar-range proxy, so the
+    3.5xATR emergency stop would sit at a near-zero (or missing)
+    distance while their real exchange bracket is the pct SL they
+    registered at entry."""
+    return pos.get("exit_kind") == "invalidation"
 
 
 def close_crossover_position(executor: Executor, state: dict, state_key: str,
@@ -261,22 +280,24 @@ def close_crossover_position(executor: Executor, state: dict, state_key: str,
     try:
         from notifier import notify_trade_closed
         entry = float(pos["entry_price"])
-        sign = -1.0 if direction == "SHORT" else 1.0
         portfolio_value = 0.0
         try:
             bal = executor.get_account_balance()
             portfolio_value = float(bal.get("balance", 0) if bal else 0)
         except Exception:  # noqa: BLE001
             pass
+        # P5 finding 9 — report the bracket the position ACTUALLY ran
+        # (persisted at entry); legacy positions without the fields
+        # render as "—" instead of fabricated percentages.
         notify_trade_closed(
             symbol=symbol, direction=direction,
             entry_price=entry,
             exit_price=exit_price or entry,
             quantity=float(pos["quantity"]),
             leverage=CROSSOVER_LEVERAGE,
-            sl_price=entry * (1 - sign * 1.0 / 100),
-            tp1_price=entry * (1 + sign * 2.0 / 100),
-            tp2_price=entry * (1 + sign * 2.0 / 100),
+            sl_price=pos.get("sl_price"),
+            tp1_price=pos.get("tp_price"),
+            tp2_price=pos.get("tp_price"),
             exit_reason=reason,
             strategy=pos.get("strategy", CROSSOVER_STRATEGY_TAG),
             portfolio_value=portfolio_value,
@@ -315,7 +336,10 @@ def run_cycle(executor: Executor, state: dict) -> None:
             if not current_price:
                 continue
 
-            if cfg.get("exit_mode") == "invalidation":
+            # P5 finding 3 — route by the exit semantics the position was
+            # OPENED with, not live cfg: pre-N.3 positions keep the pct
+            # bracket they registered on the exchange.
+            if _position_uses_invalidation_exit(pos):
                 # N.3 — primary exit is signal invalidation (close crossed
                 # back through SMA-fast) + wide emergency ATR stop. Needs
                 # klines for the SMA; fetch is cheap at 1h cadence.
@@ -341,14 +365,18 @@ def run_cycle(executor: Executor, state: dict) -> None:
                     sma_fast_now=sma_fast_now,
                     atr_at_entry=atr_entry, cfg=cfg)
                 if reason:
-                    # Emergency SL fills at its trigger; invalidation exits
-                    # fill at the close that confirmed the recross.
+                    # Emergency SL fills at its trigger — the PERSISTED
+                    # exchange-resident stop (P5 finding 9), so mid-position
+                    # cfg tuning can't shift the modeled fill. Invalidation
+                    # exits fill at the close that confirmed the recross.
                     override = None
-                    if reason == "Emergency SL" and atr_entry > 0:
-                        mult = float(cfg.get("emergency_atr_mult", 3.5))
-                        override = (entry_price - mult * atr_entry
-                                     if direction == "LONG"
-                                     else entry_price + mult * atr_entry)
+                    if reason == "Emergency SL":
+                        override = pos.get("sl_price")
+                        if override is None and atr_entry > 0:
+                            mult = float(cfg.get("emergency_atr_mult", 3.5))
+                            override = (entry_price - mult * atr_entry
+                                         if direction == "LONG"
+                                         else entry_price + mult * atr_entry)
                     logger.info("[%s] exit %s — closing", asset_name, reason)
                     close_crossover_position(executor, state, state_key,
                                                 reason,
@@ -427,13 +455,20 @@ def run_cycle(executor: Executor, state: dict) -> None:
 
             # P2.3 — daily 9-MA regime gate (live parity with replay).
             # Fetch failure → gate degrades to pass.
+            # P5 finding 5: classify on COMPLETED daily bars only — the
+            # fetch's last row is today's forming candle and would make
+            # the label repaint intraday.
             if sig["would_enter"] and cfg.get("use_daily_regime", False):
                 try:
-                    from regime import classify_daily_trend, daily_regime_allows
+                    from regime import (classify_daily_trend,
+                                          daily_regime_allows,
+                                          completed_daily_closes)
                     raw_1d = executor.get_klines(cfg["symbol"], "1d", 20)
                     df_1d = _build_dataframe(raw_1d)
-                    if df_1d is not None and len(df_1d) >= 12:
-                        regime_label = classify_daily_trend(df_1d["close"])
+                    if df_1d is not None and len(df_1d) >= 13:
+                        closes_1d = completed_daily_closes(
+                            df_1d["close"], last_bar_forming=True)
+                        regime_label = classify_daily_trend(closes_1d)
                         if not daily_regime_allows(sig["direction"], regime_label):
                             sig = {**sig, "would_enter": False,
                                     "blocked_by": f"daily_regime_{regime_label}"}

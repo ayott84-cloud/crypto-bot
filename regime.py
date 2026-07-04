@@ -263,6 +263,21 @@ def daily_regime_allows(direction: str, regime: str) -> bool:
     return True
 
 
+def completed_daily_closes(daily_closes, last_bar_forming: bool):
+    """P5 finding 5 — pin the daily-regime input to COMPLETED daily bars.
+
+    Live kline fetches include today's still-forming daily candle as the
+    last row; classifying on it makes the regime label repaint intraday.
+    Callers pass last_bar_forming=True for raw exchange 1d klines and
+    False for series already known to end on a completed day. None in →
+    None out."""
+    if daily_closes is None:
+        return None
+    if not last_bar_forming:
+        return daily_closes
+    return daily_closes.iloc[:-1]
+
+
 # ─── P3.6 — BTC-ETH rolling-returns correlation gate ───────────────────────
 # Practitioner research (Jul 2026 sweep): alt trend entries taken only while
 # BTC-ETH correlation is high roughly doubled PF. Correlation breakdown

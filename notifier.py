@@ -179,6 +179,15 @@ def _fmt(value: float, decimals: int = 2) -> str:
     return f"{value:,.{decimals}f}"
 
 
+def _price_or_dash(value, decimals: int = 2) -> str:
+    """'$<price>' or an em-dash when the leg doesn't exist (P5 finding 9:
+    invalidation-mode trades have no TP; legacy positions may lack
+    persisted trigger prices — render '—', never a fabricated number)."""
+    if value is None:
+        return "—"
+    return f"${_fmt(float(value), decimals)}"
+
+
 def _pnl_color(value: float) -> str:
     return "green" if value >= 0 else "red"
 
@@ -212,10 +221,14 @@ def notify_trade_opened(
     margin = notional / leverage
 
     # Direction-aware: LONG profits when price rises, SHORT profits when price falls.
+    # None legs (e.g. invalidation mode has no TP) contribute zero and render "—".
     sign = 1 if direction == "LONG" else -1
-    profit_tp1 = (tp1_price - entry_price) * qty * sign
-    profit_tp2 = (tp2_price - entry_price) * qty * sign
-    loss_sl = (entry_price - sl_price) * qty * sign  # always positive when SL is set correctly
+    profit_tp1 = ((tp1_price - entry_price) * qty * sign
+                   if tp1_price is not None else 0.0)
+    profit_tp2 = ((tp2_price - entry_price) * qty * sign
+                   if tp2_price is not None else 0.0)
+    loss_sl = ((entry_price - sl_price) * qty * sign
+                if sl_price is not None else 0.0)
 
     # Percentages relative to margin
     pct_tp1 = (profit_tp1 / margin * 100) if margin > 0 else 0
@@ -243,9 +256,9 @@ def notify_trade_opened(
 
   <div class="divider"></div>
   <table>
-    <tr><td>Stop Loss</td><td class="red">${_fmt(sl_price, pdec)}</td></tr>
-    <tr><td>Take Profit 1 (50%)</td><td class="green">${_fmt(tp1_price, pdec)}</td></tr>
-    <tr><td>Take Profit 2 (full)</td><td class="green">${_fmt(tp2_price, pdec)}</td></tr>
+    <tr><td>Stop Loss</td><td class="red">{_price_or_dash(sl_price, pdec)}</td></tr>
+    <tr><td>Take Profit 1 (50%)</td><td class="green">{_price_or_dash(tp1_price, pdec)}</td></tr>
+    <tr><td>Take Profit 2 (full)</td><td class="green">{_price_or_dash(tp2_price, pdec)}</td></tr>
   </table>
 
   <div class="divider"></div>
@@ -277,9 +290,9 @@ def notify_trade_opened(
             {"name": "Entry",        "value": f"${_fmt(entry_price, pdec)}", "inline": True},
             {"name": "Quantity",     "value": f"{quantity}",                  "inline": True},
             {"name": "Leverage",     "value": f"{leverage}x",                 "inline": True},
-            {"name": "Stop Loss",    "value": f"${_fmt(sl_price, pdec)}",     "inline": True},
-            {"name": "TP1 (50%)",    "value": f"${_fmt(tp1_price, pdec)}",    "inline": True},
-            {"name": "TP2 (full)",   "value": f"${_fmt(tp2_price, pdec)}",    "inline": True},
+            {"name": "Stop Loss",    "value": _price_or_dash(sl_price, pdec),  "inline": True},
+            {"name": "TP1 (50%)",    "value": _price_or_dash(tp1_price, pdec), "inline": True},
+            {"name": "TP2 (full)",   "value": _price_or_dash(tp2_price, pdec), "inline": True},
             {"name": "Risk (SL)",    "value": f"−${_fmt(loss_sl)} ({pct_sl:.1f}% ROE)",   "inline": True},
             {"name": "Reward (TP1)", "value": f"+${_fmt(profit_tp1)} ({pct_tp1:.1f}% ROE)", "inline": True},
             {"name": "Notional",     "value": f"${_fmt(notional)}",           "inline": True},
@@ -348,9 +361,9 @@ def notify_trade_closed(
 
   <div class="divider"></div>
   <table>
-    <tr><td>Stop Loss</td><td class="red">${_fmt(sl_price, pdec)}</td></tr>
-    <tr><td>Take Profit 1</td><td class="green">${_fmt(tp1_price, pdec)}</td></tr>
-    <tr><td>Take Profit 2</td><td class="green">${_fmt(tp2_price, pdec)}</td></tr>
+    <tr><td>Stop Loss</td><td class="red">{_price_or_dash(sl_price, pdec)}</td></tr>
+    <tr><td>Take Profit 1</td><td class="green">{_price_or_dash(tp1_price, pdec)}</td></tr>
+    <tr><td>Take Profit 2</td><td class="green">{_price_or_dash(tp2_price, pdec)}</td></tr>
   </table>
 
   <div class="divider"></div>
