@@ -1,0 +1,26 @@
+{# Tier 1.4: revalidation gate tracker — each bot's position in the P4
+   pipeline. Caller passes `gate_tracker`. #}
+{% if gate_tracker and gate_tracker.available %}
+<section class="gt-panel" aria-label="Revalidation pipeline status">
+  <h2 class="gt-panel__heading">Revalidation pipeline</h2>
+  <div class="gt-legend" aria-hidden="true">
+    {% for label in ["Deploy", "Replay", "X-check", "Shakedown", "Paper 14d", "Micro-live", "Scale"] %}
+    <span class="gt-legend__step">{{ loop.index0 }} {{ label }}</span>
+    {% endfor %}
+  </div>
+  {% for row in gate_tracker.rows %}
+  <div class="gt-row">
+    <span class="gt-row__bot">{{ row.label }}</span>
+    <div class="gt-steps" role="img"
+         aria-label="{{ row.label }}: step {{ row.step }} of 6 — {{ row.steps[row.step].label }}">
+      {% for s in row.steps %}
+      <span class="gt-step {% if s.done %}gt-step--done{% elif s.current %}gt-step--current{% endif %}"
+            title="{{ s.label }}"></span>
+      {% endfor %}
+    </div>
+    <span class="gt-row__stage">{{ row.steps[row.step].label }}</span>
+    <span class="gt-row__note">{{ row.note }}</span>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}

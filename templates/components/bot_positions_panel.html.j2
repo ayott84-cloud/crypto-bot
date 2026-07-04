@@ -8,6 +8,8 @@
         <th scope="col">Symbol</th>
         <th scope="col">Dir</th>
         <th scope="col">Entry</th>
+        <th scope="col">SL</th>
+        <th scope="col">TP</th>
         <th scope="col">Qty</th>
         <th scope="col">Strategy</th>
       </tr>
@@ -18,6 +20,8 @@
         <td>{{ p.symbol }}</td>
         <td class="{{ p.direction_class }}">{{ p.direction }}</td>
         <td class="num">{{ p.entry_display }}</td>
+        <td class="num is-down">{{ p.sl_display }}</td>
+        <td class="num is-up">{{ p.tp_display }}</td>
         <td class="num">{{ p.qty_display }}</td>
         <td>{{ p.strategy }}</td>
       </tr>
@@ -28,6 +32,11 @@
 {% else %}
 <section class="bot-positions" aria-label="Open positions for this bot">
   <h2 class="bot-positions__heading">Open positions</h2>
-  <p class="bot-positions__empty">No open positions for this bot.</p>
+  {# Tier 2.3: standardized empty state #}
+  <div class="empty-state">
+    <span class="empty-state__glyph" aria-hidden="true">⌀</span>
+    <span class="empty-state__msg">No open positions</span>
+    <span class="empty-state__hint">flat is a position — entries appear here with their exchange-resident SL/TP</span>
+  </div>
 </section>
 {% endif %}

@@ -1,0 +1,91 @@
+{# Tier 3.A: Mission Control — 24h what-changed strip + dense bot status
+   table. Replaces the Overview card grid; the sparkline + why-panel
+   markup contracts are preserved inside table cells. #}
+{% if mission %}
+<section class="mc-strip" aria-label="Last 24 hours">
+  <div class="mc-strip__cell">
+    <span class="mc-strip__label">24h CLOSED</span>
+    <span class="mc-strip__value">{{ mission.strip.closed }}
+      <span class="mc-strip__sub">{{ mission.strip.wins }}W / {{ mission.strip.losses }}L</span></span>
+  </div>
+  <div class="mc-strip__cell">
+    <span class="mc-strip__label">24h NET</span>
+    <span class="mc-strip__value {% if mission.strip.net > 0 %}is-up{% elif mission.strip.net < 0 %}is-down{% endif %}">
+      {{ mission.strip.net_display }}</span>
+  </div>
+  <div class="mc-strip__cell">
+    <span class="mc-strip__label">BEST</span>
+    <span class="mc-strip__value is-up">{{ mission.strip.best_display }}</span>
+  </div>
+  <div class="mc-strip__cell">
+    <span class="mc-strip__label">WORST</span>
+    <span class="mc-strip__value is-down">{{ mission.strip.worst_display }}</span>
+  </div>
+</section>
+
+<section class="mc-table-wrap" aria-label="Bot status">
+  <table class="regime-table mc-table">
+    <caption class="sr-only">Per-bot status: state, PnL, trailing-14-day profit factor, open positions, and why-quiet notes</caption>
+    <thead>
+      <tr>
+        <th scope="col">Bot</th>
+        <th scope="col">State</th>
+        <th scope="col">Net PnL</th>
+        <th scope="col">Closed · WR</th>
+        <th scope="col">PF 14d</th>
+        <th scope="col">Open</th>
+        <th scope="col">30d</th>
+        <th scope="col">Why quiet?</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for bot in mission.rows %}
+      <tr class="mc-row mc-row--{{ bot.class }}">
+        <td class="mc-cell-bot">
+          {% with monogram=bot.monogram, bot_class=bot.class %}
+          {% include "components/bot_monogram.html.j2" %}
+          {% endwith %}
+          <span class="mc-bot-name">{{ bot.name }}</span>
+        </td>
+        <td>
+          {% with state=bot.state, seen_label=bot.seen_label %}
+          {% include "components/status_pill.html.j2" %}
+          {% endwith %}
+        </td>
+        <td class="num {% if bot.net_pnl > 0 %}is-up{% elif bot.net_pnl < 0 %}is-down{% endif %}">
+          {{ bot.net_pnl_display }}
+          {% if bot.pnl_trend and bot.pnl_trend.available %}
+          <span class="trend-chip trend-chip--{{ bot.pnl_trend.direction }}"
+                aria-label="30-day Net PnL trend: {{ bot.pnl_trend.direction }}"
+                title="vs prior 30 days">{{ bot.pnl_trend.glyph }}</span>
+          {% endif %}
+        </td>
+        <td class="num">{{ bot.trade_count }} · {{ bot.win_rate_display }}
+          {% if bot.wr_trend and bot.wr_trend.available %}
+          <span class="trend-chip trend-chip--{{ bot.wr_trend.direction }}"
+                aria-label="30-day Win Rate trend: {{ bot.wr_trend.direction }}"
+                title="vs prior 30 days">{{ bot.wr_trend.glyph }}</span>
+          {% endif %}
+        </td>
+        <td class="num {{ bot.pf14_class }}">{{ bot.pf14_display }}</td>
+        <td class="num">{{ bot.open_count }}</td>
+        <td>
+          {% if bot.spark_svg %}
+          <div class="bot-card__spark mc-spark" aria-hidden="true">{{ bot.spark_svg|safe }}</div>
+          {% endif %}
+        </td>
+        <td class="mc-cell-why">
+          {% if bot.why %}
+          <div class="why-panel why-panel--{{ bot.why.kind }} mc-why" role="note">
+            <span class="why-panel__heading">why no trades?</span>
+            <span class="why-panel__label">{{ bot.why.label }}</span>
+            <span class="why-panel__detail">{{ bot.why.detail }}</span>
+          </div>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}

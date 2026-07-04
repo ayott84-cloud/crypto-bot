@@ -38,6 +38,15 @@ window.initAssetChart = function (chartId, data) {
   var container = document.getElementById('chart-' + chartId);
   if (!container) return null;
 
+  // Tier 2.1 — registry enables theme-aware re-init: charts bake their
+  // colors at creation, so a theme toggle must rebuild them.
+  window._twlcCharts = window._twlcCharts || {};
+  var existing = window._twlcCharts[chartId];
+  if (existing && existing.chart) {
+    try { existing.chart.remove(); } catch (e) { /* already disposed */ }
+    container.replaceChildren();
+  }
+
   var theme = (document.documentElement.dataset.theme === 'light') ? 'light' : 'dark';
   var isDark = theme === 'dark';
   var chart = LightweightCharts.createChart(container, {
@@ -109,7 +118,17 @@ window.initAssetChart = function (chartId, data) {
     ro.observe(container);
   }
 
+  window._twlcCharts[chartId] = { chart: chart, data: data };
   return chart;
+};
+
+// Tier 2.1 — rebuild every initialized chart in the new theme's colors.
+window.reinitChartsForTheme = function () {
+  if (!window._twlcCharts) return;
+  Object.keys(window._twlcCharts).forEach(function (id) {
+    var entry = window._twlcCharts[id];
+    if (entry && entry.data) window.initAssetChart(id, entry.data);
+  });
 };
 
 // J.5a: Asset-dropdown handler. When a bot tab's <select> changes, hide
@@ -176,8 +195,54 @@ window.initAssetDropdowns = function () {
       document.documentElement.dataset.theme = next;
       try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
       syncTogglePressed();
+      // Tier 2.1 — charts bake colors at init; rebuild in the new theme
+      if (typeof window.reinitChartsForTheme === 'function') {
+        window.reinitChartsForTheme();
+      }
     });
   }
+
+  // ── Tier 2.2: generic sortable tables (per-bot trade panels) ─────────
+  // Any table[data-sortable]: click a header to sort by that column.
+  // Numeric detection strips $ % , − and falls back to string compare.
+  document.querySelectorAll('table[data-sortable]').forEach(function (tbl) {
+    const tb = tbl.querySelector('tbody');
+    if (!tb) return;
+    tbl.querySelectorAll('thead th').forEach(function (th, colIdx) {
+      th.setAttribute('role', 'button');
+      th.setAttribute('tabindex', '0');
+      th.title = 'Sort by ' + th.textContent.trim();
+      const doSort = function () {
+        const dir = th.dataset.dir === 'asc' ? 'desc' : 'asc';
+        tbl.querySelectorAll('thead th').forEach(o => delete o.dataset.dir);
+        th.dataset.dir = dir;
+        const sign = dir === 'asc' ? 1 : -1;
+        const rows = Array.from(tb.querySelectorAll('tr'));
+        const val = function (tr) {
+          const cell = tr.cells[colIdx];
+          return cell ? cell.textContent.trim() : '';
+        };
+        const num = function (s) {
+          return parseFloat(s.replace(/[$,%\s,]/g, '').replace('−', '-'));
+        };
+        const allNum = rows.every(r => val(r) === '—' || !isNaN(num(val(r))));
+        rows.sort(function (a, b) {
+          const av = val(a), bv = val(b);
+          if (allNum) {
+            const an = av === '—' ? -Infinity : num(av);
+            const bn = bv === '—' ? -Infinity : num(bv);
+            return (an - bn) * sign;
+          }
+          return av.localeCompare(bv) * sign;
+        });
+        rows.forEach(r => tb.appendChild(r));
+      };
+      th.addEventListener('click', doSort);
+      th.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doSort(); }
+      });
+    });
+  });
 
   // J.1: tab buttons now live in the sidebar (was .tab-nav).
   // Selector covers both so a partial deploy doesn't break navigation.

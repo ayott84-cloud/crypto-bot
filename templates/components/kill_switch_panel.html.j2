@@ -1,0 +1,36 @@
+{# Tier 1.1: kill-switch status — per-owner armed/tripped + 24h DD meter.
+   Caller passes `kill_switch` (from _v2_kill_switch_panel). #}
+{% if kill_switch and kill_switch.available %}
+<section class="ks-panel" aria-label="Kill switch status">
+  <h2 class="ks-panel__heading">Kill switches</h2>
+
+  <div class="ks-meter {% if kill_switch.daily.breached %}ks-meter--breached{% endif %}"
+       role="status" aria-live="polite">
+    <span class="ks-meter__label">24h drawdown</span>
+    <span class="ks-meter__value {% if kill_switch.daily.pnl < 0 %}is-down{% else %}is-up{% endif %}">
+      {{ kill_switch.daily.pnl_display }}
+    </span>
+    <span class="ks-meter__vs">vs breaker {{ kill_switch.daily.threshold_display }}</span>
+    <div class="ks-meter__bar" aria-hidden="true">
+      <div class="ks-meter__fill {% if kill_switch.daily.breached %}ks-meter__fill--breached{% endif %}"
+           style="width: {{ kill_switch.daily.pct_used }}%"></div>
+    </div>
+    {% if kill_switch.daily.breached %}
+    <span class="ks-meter__flag">BREAKER TRIPPED — all new entries blocked until the 24h window clears</span>
+    {% endif %}
+  </div>
+
+  <ul class="ks-owners">
+    {% for o in kill_switch.owners %}
+    <li class="ks-owner">
+      <span class="ks-owner__dot {{ o.state_class }}" aria-hidden="true"></span>
+      <span class="ks-owner__name">{{ o.label }}</span>
+      <span class="ks-owner__state {{ o.state_class }}">{{ o.state_label }}</span>
+      {% if o.reason %}
+      <span class="ks-owner__reason">{{ o.reason }}</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}

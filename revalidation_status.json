@@ -1,0 +1,34 @@
+{
+  "scalp": {
+    "step": 3,
+    "note": "ETH_5M shakedown (PF 1.54/1yr honest); BTC+XRP observation; DOGE/LINK demoted"
+  },
+  "breakout": {
+    "step": 2,
+    "note": "5 long-run positives paper-only; regime-gate A/B queued; none cleared PF≥1.5"
+  },
+  "crossover": {
+    "step": 0,
+    "note": "PARKED — structurally dead over 2yr (all 8 assets PF 0.15-0.72)"
+  },
+  "momentum": {
+    "step": 1,
+    "note": "queued for honest-replay revalidation (pre-P2 numbers untrusted)"
+  },
+  "whale": {
+    "step": 1,
+    "note": "paused; rebuilt filter stack awaiting paper-soak evidence"
+  },
+  "funding": {
+    "step": 1,
+    "note": "live-paper, no qualifying signals yet; replay N/A (event-driven)"
+  },
+  "pair": {
+    "step": 1,
+    "note": "queued for honest-replay revalidation"
+  },
+  "reversal": {
+    "step": 0,
+    "note": "PARKED — Phase I.X permanent deferral"
+  }
+}

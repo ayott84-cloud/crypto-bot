@@ -840,63 +840,67 @@ def _build_v2_context(data: Dict[str, Any], state: dict | None = None,
     data["_trades_cache"] = trades
 
     now = datetime.now(timezone.utc)
+    bots_list = [
+        {**_bot_card("momentum", "M", "Momentum", "Momentum",
+                     bot_status.get("momentum", {})),
+         "spark_svg": _v2_sparkline_svg(
+             spark_momentum,
+             stroke_class="spark__line spark__line--momentum",
+             label="Momentum 30-day cumulative PnL"),
+         "why":       _v2_why_silent("momentum", data)},
+        {**_bot_card("whale",    "W", "Whale",    "Whale",
+                     bot_status.get("whale", {})),
+         "spark_svg": _v2_sparkline_svg(
+             spark_whale,
+             stroke_class="spark__line spark__line--whale",
+             label="Whale 30-day cumulative PnL"),
+         "why":       _v2_why_silent("whale", data)},
+        {**_bot_card("funding",  "F", "Funding",  "Funding",
+                     bot_status.get("funding", {})),
+         "spark_svg": _v2_sparkline_svg(
+             spark_funding,
+             stroke_class="spark__line spark__line--funding",
+             label="Funding 30-day cumulative PnL"),
+         "why":       _v2_why_silent("funding", data)},
+        {**_bot_card("breakout", "B", "Breakout", "Breakout",
+                     bot_status.get("breakout", {})),
+         "spark_svg": _v2_sparkline_svg(
+             spark_breakout,
+             stroke_class="spark__line spark__line--breakout",
+             label="Breakout 30-day cumulative PnL"),
+         "why":       _v2_why_silent("breakout", data)},
+        {**_bot_card("pair",     "P", "Pair",     "Pair",
+                     bot_status.get("pair", {})),
+         "spark_svg": _v2_sparkline_svg(
+             spark_pair,
+             stroke_class="spark__line spark__line--pair",
+             label="Pair 30-day cumulative PnL"),
+         "why":       _v2_why_silent("pair", data)},
+        {**_bot_card("reversal", "R", "Reversal", "Reversal",
+                     bot_status.get("reversal", {})),
+         "spark_svg": _v2_sparkline_svg(
+             spark_reversal,
+             stroke_class="spark__line spark__line--reversal",
+             label="Reversal 30-day cumulative PnL"),
+         "why":       _v2_why_silent("reversal", data)},
+        {**_bot_card("scalp", "S", "Scalp", "Scalp",
+                     bot_status.get("scalp", {})),
+         "spark_svg": _v2_sparkline_svg(
+             spark_scalp,
+             stroke_class="spark__line spark__line--scalp",
+             label="Scalp 30-day cumulative PnL"),
+         "why":       _v2_why_silent("scalp", data)},
+    ]
     return {
         "operator":  os.getenv("OPERATOR", "ayott84"),
         "env":       "paper" if DRY_RUN else "live",
         "freshness": "0s",
         "build_sha": _resolve_build_sha(),
         "build_ts":  now.strftime("%Y-%m-%d %H:%M UTC"),
-        "bots": [
-            {**_bot_card("momentum", "M", "Momentum", "Momentum",
-                         bot_status.get("momentum", {})),
-             "spark_svg": _v2_sparkline_svg(
-                 spark_momentum,
-                 stroke_class="spark__line spark__line--momentum",
-                 label="Momentum 30-day cumulative PnL"),
-             "why":       _v2_why_silent("momentum", data)},
-            {**_bot_card("whale",    "W", "Whale",    "Whale",
-                         bot_status.get("whale", {})),
-             "spark_svg": _v2_sparkline_svg(
-                 spark_whale,
-                 stroke_class="spark__line spark__line--whale",
-                 label="Whale 30-day cumulative PnL"),
-             "why":       _v2_why_silent("whale", data)},
-            {**_bot_card("funding",  "F", "Funding",  "Funding",
-                         bot_status.get("funding", {})),
-             "spark_svg": _v2_sparkline_svg(
-                 spark_funding,
-                 stroke_class="spark__line spark__line--funding",
-                 label="Funding 30-day cumulative PnL"),
-             "why":       _v2_why_silent("funding", data)},
-            {**_bot_card("breakout", "B", "Breakout", "Breakout",
-                         bot_status.get("breakout", {})),
-             "spark_svg": _v2_sparkline_svg(
-                 spark_breakout,
-                 stroke_class="spark__line spark__line--breakout",
-                 label="Breakout 30-day cumulative PnL"),
-             "why":       _v2_why_silent("breakout", data)},
-            {**_bot_card("pair",     "P", "Pair",     "Pair",
-                         bot_status.get("pair", {})),
-             "spark_svg": _v2_sparkline_svg(
-                 spark_pair,
-                 stroke_class="spark__line spark__line--pair",
-                 label="Pair 30-day cumulative PnL"),
-             "why":       _v2_why_silent("pair", data)},
-            {**_bot_card("reversal", "R", "Reversal", "Reversal",
-                         bot_status.get("reversal", {})),
-             "spark_svg": _v2_sparkline_svg(
-                 spark_reversal,
-                 stroke_class="spark__line spark__line--reversal",
-                 label="Reversal 30-day cumulative PnL"),
-             "why":       _v2_why_silent("reversal", data)},
-            {**_bot_card("scalp", "S", "Scalp", "Scalp",
-                         bot_status.get("scalp", {})),
-             "spark_svg": _v2_sparkline_svg(
-                 spark_scalp,
-                 stroke_class="spark__line spark__line--scalp",
-                 label="Scalp 30-day cumulative PnL"),
-             "why":       _v2_why_silent("scalp", data)},
-        ],
+        "bots": bots_list,
+        # Tier 3.A — Mission Control: 24h what-changed strip + dense
+        # bot status table (replaces the card grid on Overview)
+        "mission": _v2_mission_control(bots_list, trades, state),
         "portfolio": {
             "net_pnl":          portfolio_net,
             "net_pnl_display":  _v2_pnl_display(portfolio_net),
@@ -939,7 +943,216 @@ def _build_v2_context(data: Dict[str, Any], state: dict | None = None,
             _v2_daily_pnl_bars(trades, days=30)),
         "risk_metrics":      _v2_risk_metrics(metrics),
         "regime_expectancy": _v2_regime_expectancy(metrics),
+        # Tier 1.1 — kill-switch status panel ("am I safe?")
+        "kill_switch":       _v2_kill_switch_panel(),
+        # Tier 1.3 — exit-reason distribution (runbook thresholds)
+        "exit_reasons":      _v2_exit_reason_panel(trades),
+        # Tier 1.4 — revalidation pipeline tracker
+        "gate_tracker":      _v2_gate_tracker(),
     }
+
+
+_KS_OWNER_LABELS = {
+    "momentum": "Momentum", "whale": "Whale", "funding": "Funding",
+    "scalp": "Scalp", "crossover": "Crossover", "breakout": "Breakout",
+    "pair": "Pair", "reversal": "Reversal",
+}
+
+
+def _v2_mission_control(bots_list: list, trades: list, state: dict | None) -> dict:
+    """Tier 3.A — Mission Control data: the 24h what-changed strip and
+    the dense bot status table (open count + trailing-14d PF per bot)."""
+    from datetime import datetime as _dt, timedelta as _td
+
+    cutoff24 = (_dt.now() - _td(hours=24)).isoformat()
+    closed24 = [t for t in trades or []
+                if t.get("result") in ("WIN", "LOSS")
+                and (t.get("date_closed") or "") >= cutoff24]
+    pnls = [float(t.get("net_pnl") or 0) for t in closed24]
+    net = sum(pnls)
+    strip = {
+        "closed":        len(closed24),
+        "wins":          sum(1 for p in pnls if p > 0),
+        "losses":        sum(1 for p in pnls if p < 0),
+        "net":           net,
+        "net_display":   f"{'-' if net < 0 else '+'}${abs(net):,.2f}",
+        "best_display":  (f"+${max(pnls):,.2f}"
+                           if pnls and max(pnls) > 0 else "—"),
+        "worst_display": (f"-${abs(min(pnls)):,.2f}"
+                           if pnls and min(pnls) < 0 else "—"),
+    }
+
+    cutoff14 = (_dt.now() - _td(days=14)).isoformat()
+    rows = []
+    for b in bots_list:
+        label = _BOT_CLASS_TO_LABEL.get(b["class"], b.get("name", ""))
+        bt = [t for t in trades or []
+              if t.get("bot") == label
+              and t.get("result") in ("WIN", "LOSS")
+              and (t.get("date_closed") or "") >= cutoff14]
+        gw = sum(float(t.get("net_pnl") or 0) for t in bt
+                  if float(t.get("net_pnl") or 0) > 0)
+        gl = abs(sum(float(t.get("net_pnl") or 0) for t in bt
+                      if float(t.get("net_pnl") or 0) < 0))
+        if not bt:
+            pf14 = None
+        elif gl == 0:
+            pf14 = 999.0 if gw > 0 else None
+        else:
+            pf14 = gw / gl
+        rows.append({
+            **b,
+            "open_count":   len(_v2_open_positions_for_bot(state or {},
+                                                             b["class"])),
+            "pf14_display": ("—" if pf14 is None
+                              else "∞" if pf14 >= 999 else f"{pf14:.2f}"),
+            "pf14_class":   ("" if pf14 is None
+                              else "is-up" if pf14 >= 1.3
+                              else "is-down" if pf14 < 1.0 else ""),
+        })
+    return {"strip": strip, "rows": rows}
+
+
+def _v2_kill_switch_panel() -> dict:
+    """Tier 1.1 — per-owner kill-switch state + the 24h drawdown meter.
+
+    The P3.6 breaker fired live on Jul 4 2026 with zero dashboard
+    evidence; this panel is the fix. Watchdog philosophy: any failure
+    degrades to available=False, never breaks the build.
+    """
+    try:
+        import kill_switch as ks
+        from journal import read_trades
+
+        summary = ks.status_summary()
+        trades = read_trades(max_rows=1000)
+        closed = [t for t in trades if t.get("result") in ("WIN", "LOSS")]
+        daily_pnl = ks._trailing_pnl(closed, hours=24)
+        thr = ks._daily_dd_threshold_usd()
+        pct_used = (0 if thr == 0 else
+                     min(100, max(0, round(abs(min(daily_pnl, 0.0))
+                                            / abs(thr) * 100))))
+        owners = []
+        for owner, s in summary.items():
+            paused = bool(s.get("paused"))
+            owners.append({
+                "owner":       owner,
+                "label":       _KS_OWNER_LABELS.get(owner, owner.capitalize()),
+                "paused":      paused,
+                "state_label": "TRIPPED" if paused else "ARMED",
+                "state_class": "is-down" if paused else "is-up",
+                "reason":      s.get("reason") or "",
+            })
+        sign = "-" if daily_pnl < 0 else "+"
+        return {
+            "available": True,
+            "owners":    owners,
+            "daily": {
+                "pnl":               daily_pnl,
+                "pnl_display":       f"{sign}${abs(daily_pnl):,.2f}",
+                "threshold":         thr,
+                "threshold_display": f"-${abs(thr):,.2f}",
+                "pct_used":          pct_used,
+                "breached":          daily_pnl <= thr,
+            },
+        }
+    except Exception as e:  # noqa: BLE001
+        logger.warning("kill-switch panel unavailable: %s", e)
+        return {"available": False, "owners": [], "daily": None}
+
+
+# Tier 1.3 — exit-reason segment classing. SL-family = red, TP = green,
+# time barriers = amber, everything else (invalidation/donchian/adx/
+# trailing/manual) = neutral info.
+_ER_SL_REASONS = ("SL Hit", "Emergency SL", "Stop Loss")
+_ER_TP_REASONS = ("TP Hit", "TP1 Hit", "TP2 Hit", "Take Profit")
+_ER_TIME_REASONS = ("Time Limit", "Time Stop", "Stale Exit")
+
+
+def _v2_exit_reason_panel(trades: list, days: int = 14) -> dict:
+    """Tier 1.3 — per-bot exit-reason distribution over the trailing
+    window, with the P4 runbook thresholds surfaced as flags:
+    SL-share > 60% (brackets too tight), Time-share > 40% (entries
+    firing into drift)."""
+    from collections import Counter, defaultdict
+    from datetime import datetime as _dt, timedelta as _td
+
+    cutoff = (_dt.now() - _td(days=days)).isoformat()
+    by_bot: dict = defaultdict(Counter)
+    for t in trades or []:
+        if t.get("result") not in ("WIN", "LOSS"):
+            continue
+        if (t.get("date_closed") or "") < cutoff:
+            continue
+        by_bot[t.get("bot") or "?"][t.get("exit_reason") or "unknown"] += 1
+
+    def _seg_class(reason):
+        if reason in _ER_SL_REASONS:
+            return "er-seg--sl"
+        if reason in _ER_TP_REASONS:
+            return "er-seg--tp"
+        if reason in _ER_TIME_REASONS:
+            return "er-seg--time"
+        return "er-seg--other"
+
+    bots = []
+    for label in sorted(by_bot):
+        counts = by_bot[label]
+        total = sum(counts.values())
+        segments = [{
+            "reason": reason,
+            "count":  n,
+            "pct":    round(n / total * 100),
+            "class":  _seg_class(reason),
+        } for reason, n in counts.most_common()]
+        sl_share = round(sum(n for r, n in counts.items()
+                              if r in _ER_SL_REASONS) / total * 100)
+        tl_share = round(sum(n for r, n in counts.items()
+                              if r in _ER_TIME_REASONS) / total * 100)
+        bots.append({
+            "label":    label,
+            "total":    total,
+            "segments": segments,
+            "sl_share": sl_share,
+            "tl_share": tl_share,
+            "sl_flag":  sl_share > 60,
+            "tl_flag":  tl_share > 40,
+        })
+    return {"days": days, "bots": bots}
+
+
+# Tier 1.4 — revalidation gate tracker. The status file is the audit
+# trail's machine-readable face; the operator (or a bot at a gate
+# transition) updates it.
+_REVALIDATION_STATUS_FILE = Path(__file__).resolve().parent / "revalidation_status.json"
+_GATE_STEP_LABELS = ["Deploy", "Replay", "X-check", "Shakedown",
+                       "Paper 14d", "Micro-live", "Scale"]
+
+
+def _v2_gate_tracker() -> dict:
+    """Tier 1.4 — each bot's position in the P4 pipeline (Step 0-6)."""
+    import json as _json
+    try:
+        raw = _json.loads(_REVALIDATION_STATUS_FILE.read_text(encoding="utf-8"))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("gate tracker unavailable: %s", e)
+        return {"available": False, "rows": []}
+    rows = []
+    for bot, info in raw.items():
+        step = max(0, min(6, int(info.get("step", 0))))
+        rows.append({
+            "bot":   bot,
+            "label": _KS_OWNER_LABELS.get(bot, bot.capitalize()),
+            "step":  step,
+            "note":  info.get("note", ""),
+            "steps": [{
+                "label":   _GATE_STEP_LABELS[i],
+                "current": i == step,
+                "done":    i < step,
+            } for i in range(7)],
+        })
+    rows.sort(key=lambda r: (-r["step"], r["bot"]))
+    return {"available": True, "rows": rows}
 
 
 def _v2_risk_metrics(metrics: dict) -> dict:
@@ -1143,7 +1356,11 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
             _v2_daily_pnl_bars(trades, days=30)),
         "risk_metrics":      _v2_risk_metrics(_compute_metrics(trades)),
         "regime_expectancy": _v2_regime_expectancy(_compute_metrics(trades)),
+        "kill_switch":       _v2_kill_switch_panel(),
+        "exit_reasons":      _v2_exit_reason_panel(trades),
+        "gate_tracker":      _v2_gate_tracker(),
     }
+    ctx["mission"] = _v2_mission_control(ctx["bots"], trades, None)
     ctx.update(overrides)
     return ctx
 
@@ -2127,6 +2344,16 @@ def _v2_open_positions_for_bot(state: dict, bot_class: str) -> List[dict]:
     """
     from position_manager import _bot_of_key
     positions = (state or {}).get("positions", {}) or {}
+
+    def _px(v):
+        """Tier 1.2 — render a persisted trigger price, or an em-dash
+        when the leg doesn't exist (legacy position, or invalidation
+        mode's deliberate no-TP). Never fabricate a number."""
+        if v is None or v == "" or (isinstance(v, (int, float)) and v == 0):
+            return "—"
+        v = float(v)
+        return f"{v:,.4f}" if v < 1 else f"{v:,.2f}"
+
     out = []
     for state_key, pos in positions.items():
         if _bot_of_key(state_key) != bot_class:
@@ -2141,6 +2368,10 @@ def _v2_open_positions_for_bot(state: dict, bot_class: str) -> List[dict]:
             "direction_class": "is-up" if direction == "LONG" else "is-down",
             "entry_display":  f"{entry:,.4f}" if entry < 1 else f"{entry:,.2f}",
             "qty_display":    f"{qty:,.6f}".rstrip("0").rstrip(".") or "0",
+            # Tier 1.2 — the ACTUAL exchange-resident brackets (persisted
+            # at entry by P5a); "—" for legacy positions without them
+            "sl_display":     _px(pos.get("sl_price")),
+            "tp_display":     _px(pos.get("tp_price")),
             "strategy":       pos.get("strategy", ""),
             "entry_reason":   pos.get("entry_reason", ""),
         })

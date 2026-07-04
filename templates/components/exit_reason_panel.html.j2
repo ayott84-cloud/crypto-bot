@@ -1,0 +1,27 @@
+{# Tier 1.3: per-bot exit-reason distribution (trailing 14d) with the
+   P4 runbook thresholds as flags. Caller passes `exit_reasons`. #}
+{% if exit_reasons and exit_reasons.bots %}
+<section class="er-panel" aria-label="Exit reason distribution">
+  <h2 class="er-panel__heading">Exit reasons · last {{ exit_reasons.days }}d</h2>
+  <p class="er-panel__note">runbook thresholds: SL-share &gt; 60% = brackets too tight · time-share &gt; 40% = entries firing into drift</p>
+  {% for bot in exit_reasons.bots %}
+  <div class="er-row">
+    <span class="er-row__label">{{ bot.label }} <span class="er-row__n">n={{ bot.total }}</span></span>
+    <div class="er-bar" role="img"
+         aria-label="{{ bot.label }} exits: {% for s in bot.segments %}{{ s.reason }} {{ s.pct }}%{% if not loop.last %}, {% endif %}{% endfor %}">
+      {% for s in bot.segments %}
+      <div class="er-seg {{ s.class }}" style="width: {{ s.pct }}%"
+           title="{{ s.reason }} — {{ s.count }} ({{ s.pct }}%)"></div>
+      {% endfor %}
+    </div>
+    <span class="er-row__shares">
+      SL {{ bot.sl_share }}%{% if bot.sl_flag %} <span class="er-flag">⚠ too tight?</span>{% endif %}
+      · time {{ bot.tl_share }}%{% if bot.tl_flag %} <span class="er-flag">⚠ drift?</span>{% endif %}
+    </span>
+    <span class="er-row__legend">
+      {% for s in bot.segments %}<span class="er-legend {{ s.class }}">{{ s.reason }} {{ s.pct }}%</span>{% endfor %}
+    </span>
+  </div>
+  {% endfor %}
+</section>
+{% endif %}

@@ -2,7 +2,8 @@
 {% if bot_trades %}
 <section class="bot-trades" aria-label="Closed trades for this bot">
   <h2 class="bot-trades__heading">Recent closed trades ({{ bot_trades|length }})</h2>
-  <table class="regime-table">
+  {# Tier 2.2: data-sortable = generic click-to-sort headers + sticky thead #}
+  <table class="regime-table" data-sortable>
     <thead>
       <tr>
         <th scope="col">When</th>
@@ -34,6 +35,11 @@
 {% else %}
 <section class="bot-trades" aria-label="Closed trades for this bot">
   <h2 class="bot-trades__heading">Recent closed trades</h2>
-  <p class="bot-trades__empty">No closed trades for this bot yet.</p>
+  {# Tier 2.3: standardized empty state #}
+  <div class="empty-state">
+    <span class="empty-state__glyph" aria-hidden="true">⌀</span>
+    <span class="empty-state__msg">No closed trades yet</span>
+    <span class="empty-state__hint">rows appear after the first paper exit — check the Revalidation pipeline panel for this bot's stage</span>
+  </div>
 </section>
 {% endif %}

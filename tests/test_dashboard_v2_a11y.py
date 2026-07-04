@@ -74,9 +74,10 @@ def test_sidebar_nav_has_vertical_orientation():
 
 
 def test_sidebar_groups_system_bots_and_analysis():
-    """J.1: sidebar items are organized into three labeled groups."""
+    """J.1 sidebar groups, relabeled by Tier 3.B (Jul 2026): TRADING
+    (5-second status checks) / BOTS / RESEARCH (weekly deep reviews)."""
     html = render("base.html.j2", dashboard._v2_test_context([]))
-    for label in ("SYSTEM", "BOTS", "ANALYSIS"):
+    for label in ("TRADING", "BOTS", "RESEARCH"):
         assert label in html, f"Missing sidebar group label: {label}"
 
 

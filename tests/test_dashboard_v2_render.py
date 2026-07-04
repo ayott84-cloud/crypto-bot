@@ -26,26 +26,29 @@ from dashboard_renderer import render
 
 def _ctx(net_pnl: float = -147.47):
     import dashboard
+    bots = [
+        {"class": "momentum", "monogram": "M", "name": "Momentum",
+         "state": "live",   "seen_label": "0s ago",
+         "net_pnl":  78.20, "net_pnl_display": "+$78.20",
+         "trade_count": 17, "win_rate_display": "65%"},
+        {"class": "whale",    "monogram": "W", "name": "Whale",
+         "state": "dormant", "seen_label": "paused",
+         "net_pnl": -225.67, "net_pnl_display": "−$225.67",
+         "trade_count": 23,  "win_rate_display": "13%"},
+        {"class": "funding",  "monogram": "F", "name": "Funding",
+         "state": "live",    "seen_label": "33m ago",
+         "net_pnl": 0.0,     "net_pnl_display": "$0.00",
+         "trade_count": 0,   "win_rate_display": "—"},
+    ]
     return {
         "operator":  "ayott84",
         "env":       "paper",
         "freshness": "0s",
         "build_sha": "abcd1234",
         "build_ts":  "2026-06-04 23:59 UTC",
-        "bots": [
-            {"class": "momentum", "monogram": "M", "name": "Momentum",
-             "state": "live",   "seen_label": "0s ago",
-             "net_pnl":  78.20, "net_pnl_display": "+$78.20",
-             "trade_count": 17, "win_rate_display": "65%"},
-            {"class": "whale",    "monogram": "W", "name": "Whale",
-             "state": "dormant", "seen_label": "paused",
-             "net_pnl": -225.67, "net_pnl_display": "−$225.67",
-             "trade_count": 23,  "win_rate_display": "13%"},
-            {"class": "funding",  "monogram": "F", "name": "Funding",
-             "state": "live",    "seen_label": "33m ago",
-             "net_pnl": 0.0,     "net_pnl_display": "$0.00",
-             "trade_count": 0,   "win_rate_display": "—"},
-        ],
+        "bots": bots,
+        # Tier 3.A: the Overview bot table renders from `mission`
+        "mission": dashboard._v2_mission_control(bots, [], None),
         "portfolio": {
             "net_pnl":          net_pnl,
             "net_pnl_display":  "−$147.47" if net_pnl < 0 else "+$0.00",
