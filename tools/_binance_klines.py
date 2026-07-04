@@ -66,7 +66,65 @@ _SYMBOL_MAP = {
     "DOGEUSDT": "DOGE-USD",
     "AVAXUSDT": "AVAX-USD",
     "LINKUSDT": "LINK-USD",
+    # Breakout long-window universe (P4 Step 1)
+    "NEARUSDT": "NEAR-USD",
+    "AAVEUSDT": "AAVE-USD",
+    "INJUSDT":  "INJ-USD",
 }
+
+# Intervals Coinbase lacks natively, synthesized by aggregating a finer
+# granularity: target → (base_interval, factor).
+_AGGREGATE_BASE = {
+    "4h":  ("1h", 4),
+    "2h":  ("1h", 2),
+    "30m": ("15m", 2),
+    "3m":  ("1m", 3),
+}
+
+
+def _aggregate_rows(rows: list, target_ms: int) -> list:
+    """Aggregate chronological finer-granularity rows into target_ms
+    buckets (open=first, high=max, low=min, close=last, volume=sum).
+
+    A partial LEADING bucket (pagination cut mid-bucket) is dropped; the
+    trailing bucket is kept — replays already treat the last bar as
+    forming (iloc[-2] convention)."""
+    if not rows:
+        return []
+    buckets: dict = {}
+    order: list = []
+    for r in rows:
+        open_ms = int(r[0])
+        b = open_ms // target_ms
+        if b not in buckets:
+            buckets[b] = {
+                "first_ts": open_ms,
+                "open": r[1], "high": float(r[2]), "low": float(r[3]),
+                "close": r[4], "volume": float(r[5]),
+            }
+            order.append(b)
+        else:
+            agg = buckets[b]
+            agg["high"] = max(agg["high"], float(r[2]))
+            agg["low"] = min(agg["low"], float(r[3]))
+            agg["close"] = r[4]
+            agg["volume"] += float(r[5])
+    # Drop a partial leading bucket: its first constituent bar doesn't
+    # sit on the bucket boundary.
+    if order and buckets[order[0]]["first_ts"] % target_ms != 0:
+        order = order[1:]
+    out = []
+    for b in order:
+        agg = buckets[b]
+        open_time_ms = b * target_ms
+        out.append([
+            open_time_ms,
+            str(agg["open"]), str(agg["high"]), str(agg["low"]),
+            str(agg["close"]), str(agg["volume"]),
+            open_time_ms + target_ms - 1,
+            "0", "0", "0", "0",
+        ])
+    return out
 
 
 def _interval_ms(interval: str) -> int:
@@ -174,7 +232,17 @@ def fetch_klines_chained(symbol: str, interval: str, total_bars: int) -> list:
     subsequent call's `end` parameter = previous call's earliest
     open_time - 1ms.
     """
-    if interval.lower() not in _INTERVAL_GRANULARITY:
+    iv = interval.lower()
+    if iv in _AGGREGATE_BASE:
+        # Coinbase lacks this granularity natively — fetch the finer base
+        # and aggregate. +2 extra buckets of base bars cover the dropped
+        # partial leading bucket.
+        base_iv, factor = _AGGREGATE_BASE[iv]
+        base_rows = fetch_klines_chained(symbol, base_iv,
+                                           (total_bars + 2) * factor)
+        rows = _aggregate_rows(base_rows, _interval_ms(iv))
+        return rows[-total_bars:] if len(rows) > total_bars else rows
+    if iv not in _INTERVAL_GRANULARITY:
         raise ValueError(f"Unsupported interval: {interval}")
     if total_bars <= 0:
         return []
