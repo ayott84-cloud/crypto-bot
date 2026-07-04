@@ -913,16 +913,16 @@ def _run_momentum(bars: int) -> List[BacktestReport]:
             for name, cfg in ASSETS.items()]
 
 
-def _run_scalp(bars: int) -> List[BacktestReport]:
+def _run_scalp(bars: int, source: str = "weex") -> List[BacktestReport]:
     from scalp_config import SCALP_ASSETS
-    return [replay_scalp(name, cfg, bars=bars)
+    return [replay_scalp(name, cfg, bars=bars, source=source)
             for name, cfg in SCALP_ASSETS.items()]
 
 
-def _run_crossover(bars: int) -> List[BacktestReport]:
+def _run_crossover(bars: int, source: str = "weex") -> List[BacktestReport]:
     from crossover_config import CROSSOVER_ASSETS, CROSSOVER_CANDIDATE_ASSETS
     universe = {**CROSSOVER_ASSETS, **CROSSOVER_CANDIDATE_ASSETS}
-    return [replay_crossover(name, cfg, bars=bars)
+    return [replay_crossover(name, cfg, bars=bars, source=source)
             for name, cfg in universe.items()]
 
 
@@ -954,6 +954,11 @@ def main() -> None:
                         default="all", help="Which strategy to replay")
     parser.add_argument("--bars", type=int, default=500,
                         help="How many historical bars to fetch per asset")
+    parser.add_argument("--source", choices=["weex", "binance"],
+                        default="weex",
+                        help="Kline source. weex caps at 1000 bars/asset; "
+                              "binance chains 1500-bar chunks for long "
+                              "windows (scalp/crossover only)")
     args = parser.parse_args()
 
     runners = {
@@ -964,13 +969,18 @@ def main() -> None:
         "scalp":     _run_scalp,
         "crossover": _run_crossover,
     }
+    # Only scalp/crossover replays accept an alternate kline source
+    _source_aware = {"scalp", "crossover"}
     selected = list(runners) if args.bot == "all" else [args.bot]
 
     all_reports: List[BacktestReport] = []
     for bot in selected:
         print(f"\n=== {bot.upper()} ({args.bars} bars/asset) ===")
         try:
-            reports = runners[bot](args.bars)
+            if bot in _source_aware:
+                reports = runners[bot](args.bars, source=args.source)
+            else:
+                reports = runners[bot](args.bars)
         except Exception as e:
             print(f"  ERROR fetching/replaying {bot}: {e}")
             continue
