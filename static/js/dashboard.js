@@ -5,6 +5,31 @@
 // Exposed at window.initAssetChart so _v2_render_asset_chart_panel can
 // call it from its inlined <script> block. Accepts a sanitized chart_id
 // and a parsed chart-data object of the documented shape.
+
+// P5c QA fix: the vendored TWLC bundle is v5, whose API replaced
+// chart.addCandlestickSeries()/addLineSeries() with
+// chart.addSeries(SeriesDefinition) and series.setMarkers() with the
+// createSeriesMarkers plugin. These shims work against either major
+// version so a future bundle swap can't silently kill every chart again.
+function _twlcAddSeries(chart, kind, options) {
+  var legacyName = kind === 'candlestick' ? 'addCandlestickSeries' : 'addLineSeries';
+  if (typeof chart[legacyName] === 'function') {          // v4 API
+    return chart[legacyName](options);
+  }
+  var def = kind === 'candlestick'
+    ? LightweightCharts.CandlestickSeries
+    : LightweightCharts.LineSeries;                        // v5 API
+  return chart.addSeries(def, options);
+}
+
+function _twlcSetMarkers(series, markers) {
+  if (typeof series.setMarkers === 'function') {           // v4 API
+    series.setMarkers(markers);
+  } else if (typeof LightweightCharts.createSeriesMarkers === 'function') {
+    LightweightCharts.createSeriesMarkers(series, markers); // v5 plugin API
+  }
+}
+
 window.initAssetChart = function (chartId, data) {
   if (!window.LightweightCharts) {
     console.warn('LightweightCharts missing; chart-' + chartId + ' skipped');
@@ -40,7 +65,7 @@ window.initAssetChart = function (chartId, data) {
   // Candles (primary series for momentum/breakout; absent for pair/funding)
   var primarySeries = null;
   if (Array.isArray(data.candles) && data.candles.length > 0) {
-    primarySeries = chart.addCandlestickSeries({
+    primarySeries = _twlcAddSeries(chart, 'candlestick', {
       upColor:       '#57cb95',
       downColor:     '#e85a4c',
       borderUpColor: '#57cb95',
@@ -55,7 +80,7 @@ window.initAssetChart = function (chartId, data) {
   if (Array.isArray(data.overlays)) {
     data.overlays.forEach(function (overlay) {
       if (!overlay || !Array.isArray(overlay.data) || overlay.data.length === 0) return;
-      var line = chart.addLineSeries({
+      var line = _twlcAddSeries(chart, 'line', {
         color:     overlay.color || '#5fa8e5',
         lineWidth: overlay.line_width || 1.5,
         priceLineVisible: false,
@@ -70,7 +95,7 @@ window.initAssetChart = function (chartId, data) {
   // Markers go on the primary series (candles for momentum/breakout,
   // first overlay for pair/funding).
   if (primarySeries && Array.isArray(data.markers) && data.markers.length > 0) {
-    primarySeries.setMarkers(data.markers);
+    _twlcSetMarkers(primarySeries, data.markers);
   }
 
   // Auto-fit data on initial render
