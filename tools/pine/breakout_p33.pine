@@ -1,0 +1,130 @@
+//@version=6
+// ─────────────────────────────────────────────────────────────────────────
+// Breakout P3.3 — Donchian-55 breakout with the DEPLOYED exit stack:
+// 2.5×ATR stop (1.0 for SHORT), breakeven after 1×ATR, Donchian-20
+// opposite exit, ADX<15 exit, close-based offset-armed trailing
+// (arm 1.5×ATR / trail 1.0×ATR). Pine port of crypto_bot's
+// breakout_signals.py / breakout_main.py (Jul 2026, P4 Step 2).
+//
+// Purpose: cross-check the Step-1 replay shortlist (BTC_1H PF 2.05,
+// NEAR_1H 1.32) on multi-year data, and provide the ONLY long-window
+// source for BNB/TRX (not listed on US-reachable venues).
+//
+// Known fidelity gaps vs live (both entry-reducing/additive, note when
+// comparing): the funding veto (needs funding history) and pyramiding
+// legs are not modeled.
+//
+// Chart: 1h (or 4h for the _4H configs). Enable "Use bar magnifier".
+// ─────────────────────────────────────────────────────────────────────────
+strategy("Breakout P3.3 (Donchian 55)",
+     overlay = true,
+     initial_capital = 10000,
+     default_qty_type = strategy.percent_of_equity,
+     default_qty_value = 10,
+     commission_type = strategy.commission.percent,
+     commission_value = 0.075,          // ≈0.15% round trip (bot cost model)
+     slippage = 2,
+     use_bar_magnifier = true,
+     calc_on_every_tick = false)
+
+// ── Inputs (mirror breakout_config._breakout_default) ───────────────────
+donLen      = input.int(55,    "Donchian entry period")
+donExitLen  = input.int(20,    "Donchian exit period")
+atrLen      = input.int(14,    "ATR length")
+atrSmaLen   = input.int(20,    "ATR SMA length (vol regime)")
+adxLen      = input.int(14,    "ADX length")
+adxTh       = input.float(20,  "ADX entry threshold")
+adxExitTh   = input.float(15,  "ADX exit threshold")
+slMultLong  = input.float(2.5, "SL x ATR (LONG)")
+slMultShort = input.float(1.0, "SL x ATR (SHORT)")
+useVol      = input.bool(true,  "Volume filter")
+volMult     = input.float(1.5, "Volume threshold (x SMA)")
+volSmaLen   = input.int(20,    "Volume SMA length")
+useTrend1D  = input.bool(true,  "1D EMA20/50 trend gate")
+useBE       = input.bool(true,  "Breakeven after trigger")
+beTrigger   = input.float(1.0, "Breakeven trigger (x ATR)")
+useTrail    = input.bool(true,  "Trailing exit")
+trailArm    = input.float(1.5, "Trail arm (x ATR favorable)")
+trailMult   = input.float(1.0, "Trail distance (x ATR)")
+allowShort  = input.bool(true,  "Allow SHORT")
+
+// ── Indicators ───────────────────────────────────────────────────────────
+donUpper  = ta.highest(high, donLen)[1]     // prior bars only, like the bot
+donLower  = ta.lowest(low,  donLen)[1]
+exitLower = ta.lowest(low,  donExitLen)[1]
+exitUpper = ta.highest(high, donExitLen)[1]
+atrVal    = ta.atr(atrLen)
+atrSma    = ta.sma(atrVal, atrSmaLen)
+volSma    = ta.sma(volume, volSmaLen)
+[diPlus, diMinus, adxVal] = ta.dmi(adxLen, adxLen)
+
+// 1D EMA20/50 trend gate, no-repaint
+[d1EmaF, d1EmaS] = request.security(syminfo.tickerid, "D",
+     [ta.ema(close, 20)[1], ta.ema(close, 50)[1]],
+     lookahead = barmerge.lookahead_off)
+
+// ── Entry filters (analyze_breakout_entry order) ─────────────────────────
+volOk      = not useVol or volume > volMult * volSma
+atrRegime  = atrVal > atrSma
+adxOk      = adxVal > adxTh
+trendUpOk  = not useTrend1D or d1EmaF > d1EmaS
+trendDnOk  = not useTrend1D or d1EmaF < d1EmaS
+
+longSignal  = close > donUpper and atrRegime and adxOk and volOk and trendUpOk
+shortSignal = close < donLower and atrRegime and adxOk and volOk and trendDnOk and allowShort
+
+// ── Position state (ATR at entry, water mark, breakeven flag) ────────────
+var float entryAtr = na
+var float mark     = na
+var bool  beOn     = false
+
+if longSignal and strategy.position_size == 0
+    entryAtr := atrVal
+    mark     := close
+    beOn     := false
+    strategy.entry("L", strategy.long)
+if shortSignal and strategy.position_size == 0
+    entryAtr := atrVal
+    mark     := close
+    beOn     := false
+    strategy.entry("S", strategy.short)
+
+// ── Exits — mirror live run_cycle order ──────────────────────────────────
+if strategy.position_size > 0
+    avg = strategy.position_avg_price
+    // L.3.1 breakeven ratchet (monotonic)
+    if useBE and not beOn and close >= avg + beTrigger * entryAtr
+        beOn := true
+    // Exchange-resident stop: BE-adjusted ATR stop (intra-bar)
+    stopPx = beOn ? avg : avg - slMultLong * entryAtr
+    strategy.exit("L-sl", "L", stop = stopPx)
+    // Close-confirmed bot-side exits
+    if close < exitLower
+        strategy.close("L", comment = "Donchian Exit")
+    else if adxVal < adxExitTh
+        strategy.close("L", comment = "ADX Exit")
+    else if useTrail
+        mark := math.max(mark, close)          // close-based water mark
+        if mark >= avg + trailArm * entryAtr and close <= mark - trailMult * entryAtr
+            strategy.close("L", comment = "Trailing Exit")
+
+if strategy.position_size < 0
+    avg = strategy.position_avg_price
+    if useBE and not beOn and close <= avg - beTrigger * entryAtr
+        beOn := true
+    stopPx = beOn ? avg : avg + slMultShort * entryAtr
+    strategy.exit("S-sl", "S", stop = stopPx)
+    if close > exitUpper
+        strategy.close("S", comment = "Donchian Exit")
+    else if adxVal < adxExitTh
+        strategy.close("S", comment = "ADX Exit")
+    else if useTrail
+        mark := math.min(mark, close)
+        if mark <= avg - trailArm * entryAtr and close >= mark + trailMult * entryAtr
+            strategy.close("S", comment = "Trailing Exit")
+
+// ── Plots ────────────────────────────────────────────────────────────────
+plot(donUpper,  "Donchian upper", color = color.new(color.aqua, 40))
+plot(donLower,  "Donchian lower", color = color.new(color.orange, 40))
+plot(strategy.position_size > 0 ? exitLower : strategy.position_size < 0 ? exitUpper : na,
+     "Exit channel", color = color.new(color.gray, 50), style = plot.style_linebr)
