@@ -134,6 +134,16 @@ def _update_water_mark(pos: dict, direction: str,
     return mark
 
 
+def _cfg_for_open_position(asset_name: str):
+    """Cfg lookup for EXIT MANAGEMENT — falls back to the candidate dict
+    so demoting an asset (P4 Step-2 universe cut) never orphans an open
+    position: it keeps being exit-managed until it closes, it just can't
+    open new trades."""
+    from breakout_config import BREAKOUT_CANDIDATE_ASSETS
+    return (BREAKOUT_ASSETS.get(asset_name)
+            or BREAKOUT_CANDIDATE_ASSETS.get(asset_name))
+
+
 def open_breakout_position(
     executor: Executor, state: dict, asset_name: str, cfg: dict,
     df: pd.DataFrame, direction: str,
@@ -365,7 +375,7 @@ def run_cycle(executor: Executor, state: dict) -> None:
     ]
     for state_key in breakout_keys:
         asset_name = state_key[len(BREAKOUT_STATE_KEY_PREFIX):]
-        cfg = BREAKOUT_ASSETS.get(asset_name)
+        cfg = _cfg_for_open_position(asset_name)
         if not cfg:
             continue
         try:

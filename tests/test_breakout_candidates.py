@@ -44,13 +44,25 @@ def test_candidates_do_not_overlap_with_live_assets():
 
 
 def test_candidates_not_iterated_by_breakout_main():
-    """breakout_main.py must never reference CANDIDATE_ASSETS — it would
-    silently activate untested strategies."""
+    """The ENTRY loop must never iterate CANDIDATE_ASSETS — that would
+    silently activate untested strategies. The one legitimate reference
+    is _cfg_for_open_position's EXIT-management fallback (P4 Step-2
+    orphan guard: a demoted asset's open position keeps being managed
+    until it closes, but can never open new trades)."""
     bm_path = BOT_DIR / "breakout_main.py"
     if not bm_path.exists():
         pytest.skip("breakout_main.py not present")
     text = bm_path.read_text(encoding="utf-8")
-    assert "BREAKOUT_CANDIDATE_ASSETS" not in text
+    # Entry iteration stays on the live dict only
+    assert "for asset_name, cfg in BREAKOUT_ASSETS.items()" in text
+    assert "BREAKOUT_CANDIDATE_ASSETS.items()" not in text
+    # Every candidate-dict reference lives inside the exit-management
+    # helper, nowhere else
+    import inspect
+    import breakout_main
+    helper_src = inspect.getsource(breakout_main._cfg_for_open_position)
+    outside = text.replace(helper_src, "")
+    assert "BREAKOUT_CANDIDATE_ASSETS" not in outside
 
 
 def test_breakout_meta_exposes_candidate_rows():

@@ -435,49 +435,77 @@ BREAKOUT_CANDIDATE_ASSETS = {
 # Promotion history (BREAKOUT_ASSETS, in order):
 #   BTC_4H, ETH_4H, SOL_4H — original G.2 baseline
 #   BTC_1H, ETH_1H — commit 998af1c
-#   DOGE_1H, ADA_1H, NEAR_1H, AAVE_1H, INJ_1H — this commit
+#   DOGE_1H, ADA_1H, NEAR_1H, AAVE_1H, INJ_1H — round 2
+#   BNB_4H_D20, TRX_4H_D20, BNB_1H_D20 — round 3 (D20 recovery)
+
+
+# ─── P4 Step-2 demotions (Jul 4 2026, operator-approved) ──────────────────
+# Long-window HONEST replay (17,000 bars ≈ 2yr at 1h / ~5-8yr at 4h,
+# Coinbase, conservative fills + 0.15% costs + deployed exit stack)
+# ruled these out. The short-window Phase K numbers that promoted them
+# were regime luck on n<10 samples:
+#   BTC_4H  PF=1.16 DD=57.6%   BTC_1H  PF=0.85   ADA_1H  PF=0.75
+#   NEAR_1H PF=1.07 DD=62.7%   AAVE_1H PF=0.88
+#   BNB/TRX D20: no US-reachable long-window data source — unvalidatable,
+#   therefore no promotion path (TV Basic plan can't backfill either).
+# KEPT (long-run positive expectancy): SOL_4H 1.43, ETH_4H 1.25,
+# DOGE_1H 1.41, ETH_1H 1.24, INJ_1H 1.23 — paper-only research status;
+# nothing cleared the PF>=1.5 promotion gate. Exit-management for any
+# open position on a demoted asset keeps working via
+# breakout_main._cfg_for_open_position's candidate-dict fallback.
+_STEP2_DEMOTED = [
+    "BTC_4H", "BTC_1H", "ADA_1H", "NEAR_1H", "AAVE_1H",
+    "BNB_4H_D20", "TRX_4H_D20", "BNB_1H_D20",
+]
+for _k in _STEP2_DEMOTED:
+    if _k in BREAKOUT_ASSETS:
+        BREAKOUT_CANDIDATE_ASSETS[_k] = BREAKOUT_ASSETS.pop(_k)
 
 
 # ─── Phase J.6 — backtest stats for projection table ──────────────────────
-# Source: tools/backtest_replay.py 1000-bar 4h replay (Jun 2026). Each
-# row's `trades` count is genuinely small; the projection table renders
-# these as "low confidence" so the operator doesn't over-weight them.
+# P4 Step-2 refresh (Jul 4 2026): every row now cites the long-window
+# HONEST replay (intra-bar fills, 0.15% costs, trailing + breakeven
+# exits). The Phase K short-window numbers (PF 2.3-91.8 on n=2-9) are
+# gone — they were the exact overfit the P4 pipeline exists to kill.
+_BK_1H_SOURCE = "17000-bar 1h Coinbase honest replay (~2yr, deployed exits)"
+_BK_4H_SOURCE = "17000-bar 4h Coinbase honest replay (multi-yr, deployed exits)"
 BREAKOUT_BACKTEST_STATS = {
-    "BTC_4H": {"pf": 2.81, "trades":  4, "pnl_pct": 11.5, "dd_pct": 6.0,
-                "wr": 50.0, "years": 0.46,
-                "source": "1000-bar 4h replay (small n)"},
-    "ETH_4H": {"pf": 3.17, "trades":  3, "pnl_pct": 21.5, "dd_pct": 9.9,
-                "wr": 66.7, "years": 0.46,
-                "source": "1000-bar 4h replay (small n)"},
-    "SOL_4H": {"pf": 91.83, "trades": 2, "pnl_pct": 23.5, "dd_pct": 0.3,
-                "wr": 50.0, "years": 0.46,
-                "source": "1000-bar 4h replay (n=2 — directional only)"},
-    # Phase K (Jun 2026) — promoted candidates
-    "BTC_1H": {"pf": 4.40, "trades":  6, "pnl_pct": 13.2, "dd_pct": 3.0,
-                "wr": 50.0, "years": 0.11,
-                "source": "1000-bar 1h replay"},
-    "ETH_1H": {"pf": 2.14, "trades":  7, "pnl_pct": 12.2, "dd_pct": 7.1,
-                "wr": 28.6, "years": 0.11,
-                "source": "1000-bar 1h replay"},
-    # Phase K second round (Jun 7 2026) — 1H alts
-    "DOGE_1H": {"pf": 1.93, "trades": 6, "pnl_pct":  7.0, "dd_pct": 7.6,
-                 "wr": 50.0, "years": 0.11, "source": "1000-bar 1h replay"},
-    "ADA_1H":  {"pf": 3.25, "trades": 5, "pnl_pct": 19.5, "dd_pct": 8.4,
-                 "wr": 40.0, "years": 0.11, "source": "1000-bar 1h replay"},
-    "NEAR_1H": {"pf": 6.46, "trades": 5, "pnl_pct": 38.4, "dd_pct": 7.0,
-                 "wr": 60.0, "years": 0.11, "source": "1000-bar 1h replay"},
-    "AAVE_1H": {"pf": 2.39, "trades": 5, "pnl_pct": 14.1, "dd_pct": 8.4,
-                 "wr": 40.0, "years": 0.11, "source": "1000-bar 1h replay"},
-    "INJ_1H":  {"pf": 2.31, "trades": 6, "pnl_pct": 10.5, "dd_pct": 6.7,
-                 "wr": 66.7, "years": 0.11, "source": "1000-bar 1h replay"},
-    # Phase K round 3 (Jun 7 2026) — D20 recovery promotions
+    # ── Live set (Step-2 keeps) ──
+    "SOL_4H":  {"pf": 1.43, "trades":  46, "pnl_pct":  74.7, "dd_pct": 29.9,
+                 "wr": 47.8, "years": 5.0, "source": _BK_4H_SOURCE},
+    "ETH_4H":  {"pf": 1.25, "trades":  83, "pnl_pct":  60.4, "dd_pct": 64.3,
+                 "wr": 38.6, "years": 7.8, "source": _BK_4H_SOURCE},
+    "DOGE_1H": {"pf": 1.41, "trades":  90, "pnl_pct":  49.3, "dd_pct": 27.7,
+                 "wr": 34.4, "years": 1.9, "source": _BK_1H_SOURCE},
+    "ETH_1H":  {"pf": 1.24, "trades":  93, "pnl_pct":  32.6, "dd_pct": 31.4,
+                 "wr": 31.2, "years": 1.9, "source": _BK_1H_SOURCE},
+    "INJ_1H":  {"pf": 1.23, "trades":  75, "pnl_pct":  36.3, "dd_pct": 37.5,
+                 "wr": 33.3, "years": 1.9, "source": _BK_1H_SOURCE},
+    # ── Demoted at Step-2 (kept for candidate-table honesty) ──
+    "BTC_4H":  {"pf": 1.16, "trades":  78, "pnl_pct":  32.3, "dd_pct": 57.6,
+                 "wr": 38.5, "years": 7.8,
+                 "source": _BK_4H_SOURCE + " — DEMOTED"},
+    "BTC_1H":  {"pf": 0.85, "trades": 106, "pnl_pct": -14.8, "dd_pct": 47.2,
+                 "wr": 25.5, "years": 1.9,
+                 "source": _BK_1H_SOURCE + " — DEMOTED"},
+    "ADA_1H":  {"pf": 0.75, "trades": 105, "pnl_pct": -43.1, "dd_pct": 73.8,
+                 "wr": 27.6, "years": 1.9,
+                 "source": _BK_1H_SOURCE + " — DEMOTED"},
+    "NEAR_1H": {"pf": 1.07, "trades":  92, "pnl_pct":  11.2, "dd_pct": 62.7,
+                 "wr": 22.8, "years": 1.9,
+                 "source": _BK_1H_SOURCE + " — DEMOTED"},
+    "AAVE_1H": {"pf": 0.88, "trades": 102, "pnl_pct": -22.7, "dd_pct": 54.8,
+                 "wr": 24.5, "years": 1.9,
+                 "source": _BK_1H_SOURCE + " — DEMOTED"},
+    # BNB/TRX D20: no honest long-window source exists (not US-listed);
+    # short-window numbers retained ONLY as provenance, flagged unvalidated.
     "BNB_4H_D20": {"pf": 2.33, "trades": 9, "pnl_pct": 14.2, "dd_pct": 7.7,
                     "wr": 44.4, "years": 0.46,
-                    "source": "1000-bar 4h replay (Donchian 20/10)"},
+                    "source": "1000-bar 4h replay — UNVALIDATED (no long-window source), DEMOTED"},
     "TRX_4H_D20": {"pf": 3.82, "trades": 6, "pnl_pct":  6.0, "dd_pct": 0.9,
                     "wr": 50.0, "years": 0.46,
-                    "source": "1000-bar 4h replay (Donchian 20/10)"},
+                    "source": "1000-bar 4h replay — UNVALIDATED (no long-window source), DEMOTED"},
     "BNB_1H_D20": {"pf": 5.27, "trades": 8, "pnl_pct": 12.3, "dd_pct": 2.5,
                     "wr": 62.5, "years": 0.11,
-                    "source": "1000-bar 1h replay (Donchian 20/10)"},
+                    "source": "1000-bar 1h replay — UNVALIDATED (no long-window source), DEMOTED"},
 }

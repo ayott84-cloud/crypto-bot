@@ -100,18 +100,21 @@ def test_projection_rows_sorted_by_annual_pnl_desc():
 # ─── Per-row window_years (no shared global divisor) ─────────────────────
 
 def test_projection_breakout_uses_own_window_not_global():
-    """Each breakout row uses its OWN window, not the global BACKTEST_YEARS.
-    4H assets ≈ 0.46yr; 1H assets ≈ 0.11yr; mixing TFs is expected."""
+    """Each breakout row uses its OWN window, not the global BACKTEST_YEARS
+    (5.3). P4 Step-2 refresh: honest long-window stats are 1.9yr (1h) /
+    5.0-7.8yr (4h, listing-capped) — legitimate values, so the guard is
+    now 'never exactly the 5.3 global', not a blanket ceiling."""
+    from config import BACKTEST_YEARS
     proj = dashboard._compute_yearly_projection()
     breakout_rows = [r for r in proj["rows"] if r["bot"] == "Breakout"]
     if not breakout_rows:
         pytest.skip("breakout_config not importable")
-    # Every row should be well below the global 5.3yr divisor — the
-    # whole point is they have their OWN per-row windows.
     for r in breakout_rows:
-        assert 0 < r["window_years"] < 5.0, (
-            f"breakout {r['key']} window {r['window_years']} suggests "
-            "the global BACKTEST_YEARS divisor leaked in")
+        assert 0 < r["window_years"] <= 8.0, (
+            f"breakout {r['key']} window {r['window_years']} out of range")
+        assert r["window_years"] != BACKTEST_YEARS, (
+            f"breakout {r['key']} window equals the global BACKTEST_YEARS "
+            "divisor — per-row years field is being ignored")
 
 
 def test_projection_pair_uses_own_window():

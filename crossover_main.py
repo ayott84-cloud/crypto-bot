@@ -218,6 +218,15 @@ def open_crossover_position(executor: Executor, state: dict, asset_name: str,
         logger.warning("[%s] open notification failed: %s", asset_name, e)
 
 
+def _cfg_for_open_position(asset_name: str):
+    """Cfg lookup for EXIT MANAGEMENT — falls back to the candidate dict
+    so a demoted asset's open position keeps being exit-managed until it
+    closes (P4 Step-2 universe-cut convention, mirrors scalp/breakout)."""
+    from crossover_config import CROSSOVER_ASSETS, CROSSOVER_CANDIDATE_ASSETS
+    return (CROSSOVER_ASSETS.get(asset_name)
+            or CROSSOVER_CANDIDATE_ASSETS.get(asset_name))
+
+
 def _position_uses_invalidation_exit(pos: dict) -> bool:
     """P5 finding 3 — deploy-migration guard. Only positions OPENED by
     N.3 code (exit_kind='invalidation') use the v3 invalidation exit:
@@ -324,7 +333,7 @@ def run_cycle(executor: Executor, state: dict) -> None:
     ]
     for state_key in crossover_keys:
         asset_name = state_key[len(CROSSOVER_STATE_KEY_PREFIX):]
-        cfg = CROSSOVER_ASSETS.get(asset_name)
+        cfg = _cfg_for_open_position(asset_name)
         if not cfg:
             continue
         try:

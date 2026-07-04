@@ -98,6 +98,15 @@ def _record_exit_for_cooldown(state: dict, symbol: str) -> None:
 
 # ─── Open / Close ──────────────────────────────────────────────────────
 
+def _cfg_for_open_position(asset_name: str):
+    """Cfg lookup for EXIT MANAGEMENT — falls back to the candidate dict
+    so demoting an asset (P4 Step-2 universe cut) never orphans an open
+    position: it keeps being exit-managed until it closes, it just can't
+    open new trades."""
+    from scalp_config import SCALP_CANDIDATE_ASSETS
+    return SCALP_ASSETS.get(asset_name) or SCALP_CANDIDATE_ASSETS.get(asset_name)
+
+
 def _position_uses_atr_bracket(pos: dict) -> bool:
     """P5 finding 2 — deploy-migration guard. Only positions OPENED by
     M.3 code (bracket_kind='atr') may be exit-checked against ATR
@@ -308,7 +317,7 @@ def run_cycle(executor: Executor, state: dict) -> None:
     ]
     for state_key in scalp_keys:
         asset_name = state_key[len(SCALP_STATE_KEY_PREFIX):]
-        cfg = SCALP_ASSETS.get(asset_name)
+        cfg = _cfg_for_open_position(asset_name)
         if not cfg:
             continue
         try:
