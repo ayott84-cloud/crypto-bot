@@ -256,12 +256,13 @@ def fetch_klines_chained(symbol: str, interval: str, total_bars: int) -> list:
         chunk = _one_call(symbol, interval, end_time_ms, chunk_limit)
         if not chunk:
             break   # empty chunk = history exhausted (or hard error)
-        accumulated = chunk + accumulated
         oldest_open_time = int(chunk[0][0])
-        # No-progress guard: the next window must end strictly earlier,
-        # or a pathological payload would loop forever.
+        # No-progress guard BEFORE accumulating: a payload that doesn't
+        # reach further back (static mock, API echo) would otherwise be
+        # appended as a duplicate and loop forever.
         if end_time_ms is not None and oldest_open_time - 1 >= end_time_ms:
             break
+        accumulated = chunk + accumulated
         end_time_ms = oldest_open_time - 1
         remaining -= len(chunk)
         # NOTE: do NOT break on short chunks. Coinbase routinely returns

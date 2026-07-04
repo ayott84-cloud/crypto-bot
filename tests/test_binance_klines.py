@@ -132,15 +132,20 @@ def test_fetch_chained_invalid_interval_raises():
 
 
 def test_fetch_chained_handles_partial_history():
-    """If Coinbase returns fewer bars than asked (symbol listed mid-window
-    or not on the exchange), the helper stops chaining rather than
-    infinite-looping."""
+    """A payload that makes no backward progress (static mock here; a
+    real API echo in the wild) must stop without accumulating duplicate
+    chunks. NOTE: short-but-ADVANCING chunks now continue the chain —
+    Coinbase routinely returns 299 rows for a 300-bar window and the old
+    break-on-short silently truncated long fetches (see
+    test_binance_klines_aggregate.py). Only empty chunks or no-progress
+    payloads terminate."""
     from tools._binance_klines import fetch_klines_chained
-    # First call returns only 200 bars (less than the 300 asked for)
+    # Every call returns the SAME 200 bars — second iteration makes no
+    # backward progress and must break before appending a duplicate.
     partial = [[t * 300_000, "1", "2", "0.5", "1.5", "100"] for t in range(200)]
     with patch("tools._binance_klines._one_call", return_value=partial):
         rows = fetch_klines_chained("BTCUSDT", "5m", 5000)
-    assert len(rows) == 200  # got what was available, stopped
+    assert len(rows) == 200  # got what was available once, no duplicates
 
 
 def test_fetch_chained_trims_to_requested_size():
