@@ -716,19 +716,21 @@ def replay_crossover(asset_name: str, cfg: dict, bars: int = 1000,
 
 # ─── Breakout replay ───────────────────────────────────────────────────────
 
-def replay_breakout(asset_name: str, cfg: dict, bars: int = 500) -> BacktestReport:
+def replay_breakout(asset_name: str, cfg: dict, bars: int = 500,
+                      source: str = "weex") -> BacktestReport:
     from breakout_signals import (
         compute_donchian_channels, analyze_breakout_entry, check_breakout_exit,
     )
     from breakout_main import _compute_indicators  # ATR/ATR_SMA/ADX
 
-    df = _fetch_klines(cfg["symbol"], cfg["interval"], bars)
+    df = _fetch_klines(cfg["symbol"], cfg["interval"], bars, source=source)
     df = _compute_indicators(df, cfg)
 
     # G.2: fetch 1D series for the trend gate
     df_1d_full = None
     if cfg.get("use_trend_filter", False):
-        df_1d_full = _fetch_klines(cfg["symbol"], "1d", min(bars, 365))
+        df_1d_full = _fetch_klines(cfg["symbol"], "1d", min(bars, 365),
+                                     source=source)
         if df_1d_full is not None and len(df_1d_full) >= 50:
             df_1d_full["ema_fast"] = df_1d_full["close"].ewm(span=20, adjust=False).mean()
             df_1d_full["ema_slow"] = df_1d_full["close"].ewm(span=50, adjust=False).mean()
@@ -926,9 +928,9 @@ def _run_crossover(bars: int, source: str = "weex") -> List[BacktestReport]:
             for name, cfg in universe.items()]
 
 
-def _run_breakout(bars: int) -> List[BacktestReport]:
+def _run_breakout(bars: int, source: str = "weex") -> List[BacktestReport]:
     from breakout_config import BREAKOUT_ASSETS
-    return [replay_breakout(name, cfg, bars=bars)
+    return [replay_breakout(name, cfg, bars=bars, source=source)
             for name, cfg in BREAKOUT_ASSETS.items()]
 
 
@@ -969,8 +971,8 @@ def main() -> None:
         "scalp":     _run_scalp,
         "crossover": _run_crossover,
     }
-    # Only scalp/crossover replays accept an alternate kline source
-    _source_aware = {"scalp", "crossover"}
+    # Only scalp/crossover/breakout replays accept an alternate kline source
+    _source_aware = {"scalp", "crossover", "breakout"}
     selected = list(runners) if args.bot == "all" else [args.bot]
 
     all_reports: List[BacktestReport] = []
