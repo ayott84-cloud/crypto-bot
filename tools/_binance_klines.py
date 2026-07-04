@@ -255,13 +255,20 @@ def fetch_klines_chained(symbol: str, interval: str, total_bars: int) -> list:
         chunk_limit = min(_PER_CALL_LIMIT, remaining)
         chunk = _one_call(symbol, interval, end_time_ms, chunk_limit)
         if not chunk:
-            break
+            break   # empty chunk = history exhausted (or hard error)
         accumulated = chunk + accumulated
         oldest_open_time = int(chunk[0][0])
+        # No-progress guard: the next window must end strictly earlier,
+        # or a pathological payload would loop forever.
+        if end_time_ms is not None and oldest_open_time - 1 >= end_time_ms:
+            break
         end_time_ms = oldest_open_time - 1
         remaining -= len(chunk)
-        if len(chunk) < chunk_limit:
-            break
+        # NOTE: do NOT break on short chunks. Coinbase routinely returns
+        # 299 rows for a 300-bar window (boundary rounding, sparse
+        # candles); the old `len(chunk) < chunk_limit` break silently
+        # truncated a 4500-bar request to ~375 bars. Only an EMPTY chunk
+        # means there is nothing further back.
         time.sleep(_RATE_LIMIT_SLEEP_S)
 
     if len(accumulated) > total_bars:

@@ -70,3 +70,49 @@ def test_breakout_long_window_symbols_mapped():
     # BNB/TRX are genuinely unlisted on Coinbase — must stay None (skip)
     assert _weex_to_coinbase("BNBUSDT") is None
     assert _weex_to_coinbase("TRXUSDT") is None
+
+
+def test_chained_fetch_survives_short_chunks(monkeypatch):
+    """Coinbase routinely returns 299-bar chunks (boundary rounding).
+    The chain must keep paginating while chunks are NON-EMPTY — only an
+    empty chunk means history is exhausted. The old `len < limit` break
+    silently truncated a 4500-bar request to ~375 bars (P4 Step 1)."""
+    import tools._binance_klines as bk
+
+    now_ms = 1_750_000_000_000 // H1_MS * H1_MS
+
+    def fake_one_call(symbol, interval, end_time_ms, limit):
+        end = now_ms if end_time_ms is None else (int(end_time_ms) + 1) // H1_MS * H1_MS
+        # serve 299 bars per call (one short of the 300 cap), endless history
+        n = min(299, limit)
+        start = end - n * H1_MS
+        return _mk_1h_rows(start, n)
+
+    monkeypatch.setattr(bk, "_one_call", fake_one_call)
+    monkeypatch.setattr(bk, "_RATE_LIMIT_SLEEP_S", 0)
+    rows = bk.fetch_klines_chained("BTCUSDT", "1h", 1200)
+    assert len(rows) == 1200
+    # chronological + contiguous
+    times = [int(r[0]) for r in rows]
+    assert times == sorted(times)
+    assert all(b - a == H1_MS for a, b in zip(times, times[1:]))
+
+
+def test_chained_fetch_stops_on_empty_chunk(monkeypatch):
+    """History exhaustion (empty chunk) must still terminate the chain."""
+    import tools._binance_klines as bk
+
+    now_ms = 1_750_000_000_000 // H1_MS * H1_MS
+    listing_ms = now_ms - 500 * H1_MS   # only 500 bars of history exist
+
+    def fake_one_call(symbol, interval, end_time_ms, limit):
+        end = now_ms if end_time_ms is None else (int(end_time_ms) + 1) // H1_MS * H1_MS
+        start = max(listing_ms, end - min(299, limit) * H1_MS)
+        if start >= end:
+            return []
+        return _mk_1h_rows(start, (end - start) // H1_MS)
+
+    monkeypatch.setattr(bk, "_one_call", fake_one_call)
+    monkeypatch.setattr(bk, "_RATE_LIMIT_SLEEP_S", 0)
+    rows = bk.fetch_klines_chained("BTCUSDT", "1h", 5000)
+    assert len(rows) == 500   # everything that exists, no infinite loop
