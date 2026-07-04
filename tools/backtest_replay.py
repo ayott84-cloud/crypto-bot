@@ -717,13 +717,29 @@ def replay_crossover(asset_name: str, cfg: dict, bars: int = 1000,
 # ─── Breakout replay ───────────────────────────────────────────────────────
 
 def replay_breakout(asset_name: str, cfg: dict, bars: int = 500,
-                      source: str = "weex") -> BacktestReport:
+                      source: str = "weex",
+                      pre_fetched_df=None,
+                      round_trip_cost_pct: float = DEFAULT_ROUND_TRIP_COST_PCT,
+                      ) -> BacktestReport:
+    """Replay the Donchian breakout with the DEPLOYED exit stack.
+
+    P5 parity rewrite: mirrors live run_cycle's order — L.3.1 breakeven
+    ratchet → check_breakout_exit → P3.3b close-based trailing exit
+    (same _update_water_mark helper the live bot uses) — and applies the
+    P2.2 round-trip cost model, which this replay alone had skipped.
+    Known remaining gap: the live funding veto is not modeled (no
+    historical funding data); it only removes entries.
+    """
     from breakout_signals import (
         compute_donchian_channels, analyze_breakout_entry, check_breakout_exit,
+        check_breakeven_trigger, check_trailing_exit,
     )
-    from breakout_main import _compute_indicators  # ATR/ATR_SMA/ADX
+    from breakout_main import _compute_indicators, _update_water_mark
 
-    df = _fetch_klines(cfg["symbol"], cfg["interval"], bars, source=source)
+    if pre_fetched_df is not None:
+        df = pre_fetched_df
+    else:
+        df = _fetch_klines(cfg["symbol"], cfg["interval"], bars, source=source)
     df = _compute_indicators(df, cfg)
 
     # G.2: fetch 1D series for the trend gate
@@ -753,6 +769,15 @@ def replay_breakout(asset_name: str, cfg: dict, bars: int = 500,
                     "atr_at_entry": float(df.iloc[i]["atr"]),
                 }
         else:
+            current_close = float(df.iloc[i]["close"])
+
+            # L.3.1 — breakeven ratchet, persisted like the live bot
+            if not position.get("breakeven_triggered", False):
+                if check_breakeven_trigger(
+                        current_close, position["entry_price"],
+                        position["atr_at_entry"], position["direction"], cfg):
+                    position["breakeven_triggered"] = True
+
             reason, kind = check_breakout_exit(
                 window,
                 position_direction=position["direction"],
@@ -760,11 +785,25 @@ def replay_breakout(asset_name: str, cfg: dict, bars: int = 500,
                 atr_at_entry=position["atr_at_entry"],
                 current_adx=float(df.iloc[i].get("adx", 0) or 0),
                 cfg=cfg,
+                breakeven_triggered=bool(position.get("breakeven_triggered", False)),
             )
+
+            # P3.3b — trailing exit, close-based water mark (live order:
+            # only consulted when the primary exit didn't fire)
+            if reason is None and cfg.get("use_trailing_exit", False):
+                mark = _update_water_mark(position, position["direction"],
+                                            current_close=current_close)
+                trail = check_trailing_exit(
+                    position["direction"], position["entry_price"], mark,
+                    current_close, position["atr_at_entry"], cfg)
+                if trail:
+                    reason = trail
+
             if reason:
-                exit_price = float(df.iloc[i]["close"])
+                exit_price = current_close
                 sign = 1.0 if position["direction"] == "LONG" else -1.0
                 pnl_pct = sign * (exit_price - position["entry_price"]) / position["entry_price"] * 100
+                pnl_pct -= round_trip_cost_pct   # P2.2 cost model
                 report.trades.append(TradeResult(
                     direction=position["direction"],
                     entry_bar=position["entry_bar"], exit_bar=i,
