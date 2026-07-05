@@ -233,23 +233,21 @@ def test_1d_promotions_use_274_window():
                 f"{name} 1D window should be 2.74yr, got {stats['years']}")
 
 
-def test_legacy_assets_do_not_have_years_field():
-    """Critical peer-review correction: legacy ASSETS rows must NOT have
-    years added. Their pnl_pct was computed over 5.3yr TradingView
-    windows, so the BACKTEST_YEARS fallback is accidentally correct.
-    Adding years=0.46 to them would inflate by ~11× in the wrong
-    direction."""
-    from config import ASSETS, _MOMENTUM_PROMOTIONS
-    promoted_keys = {name for name, _s, _i, _bts in _MOMENTUM_PROMOTIONS}
+def test_momentum_stats_are_internally_consistent():
+    """Superseded contract (Jul 5 2026): the old guard kept `years` OFF
+    legacy rows because their pnl_pct came from 5.3yr TV windows and
+    relied on the BACKTEST_YEARS fallback. After the Step-2 cut, every
+    remaining ASSETS row's stats were REPLACED with honest-replay
+    numbers where pnl_pct and years come from the SAME window — so the
+    new invariant is the opposite: every row carries its own years and
+    cites the honest source (no fallback reliance anywhere)."""
+    from config import ASSETS
     for key, cfg in ASSETS.items():
-        if key in promoted_keys:
-            continue  # Phase K promotions are allowed to have years
         stats = cfg.get("backtest_stats")
-        if stats is None:
-            continue
-        assert "years" not in stats, (
-            f"legacy asset {key} should NOT have a years field; "
-            f"removing breaks the BACKTEST_YEARS fallback")
+        assert stats is not None, f"{key} missing backtest_stats"
+        assert "years" in stats, f"{key} missing same-window years"
+        assert "honest replay" in stats.get("source", ""), (
+            f"{key} cites a non-honest source: {stats.get('source')!r}")
 
 
 # L.1c — sqrt(n/20) sample-size discount

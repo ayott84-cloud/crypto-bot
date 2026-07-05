@@ -162,6 +162,9 @@ def main() -> int:
 
     ok = send_brief(sections)
     print("discord:", "sent" if ok else "not sent (no webhook / disabled)")
+
+    from routine_stamps import stamp
+    stamp("alpha_brief")
     return 0
 
 

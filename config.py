@@ -735,3 +735,40 @@ _STEP2_DEMOTED_MOMENTUM = [
 for _k in _STEP2_DEMOTED_MOMENTUM:
     if _k in ASSETS:
         MOMENTUM_CANDIDATE_ASSETS[_k] = ASSETS.pop(_k)
+
+
+# ─── P4 Step-2 honest projection stats for the kept momentum configs ────────
+# Source: 17000-bar Coinbase honest replay (Jul 4-5 2026 — conservative
+# intra-bar fills via signals.exit_levels, 0.15% round-trip costs).
+# These REPLACE the 5.3yr TradingView-era inline stats so the projection
+# table annualizes from measured, cost-inclusive numbers. `years` are
+# listing-capped approximations of each asset's actual replay window —
+# imprecise by months, but an order of magnitude more honest than the
+# global BACKTEST_YEARS fallback.
+_MOMENTUM_HONEST_SOURCE = ("17000-bar Coinbase honest replay "
+                             "(exit_levels fills, costs; years approx)")
+_MOMENTUM_HONEST_STATS = {
+    "BTC":       {"pf": 1.57, "trades": 80, "pnl_pct": 22.3, "dd_pct":  8.2,
+                   "wr": 55.0, "years": 7.8},
+    "ADA_4H":    {"pf": 1.78, "trades": 33, "pnl_pct": 16.9, "dd_pct":  5.8,
+                   "wr": 60.6, "years": 5.2},
+    "ARB_4H":    {"pf": 1.81, "trades": 44, "pnl_pct": 38.9, "dd_pct": 11.8,
+                   "wr": 56.8, "years": 3.2},
+    "INJ_4H":    {"pf": 1.45, "trades": 52, "pnl_pct": 31.1, "dd_pct": 11.8,
+                   "wr": 51.9, "years": 5.2},
+    "SUI_1D":    {"pf": 2.40, "trades": 18, "pnl_pct": 46.3, "dd_pct": 11.7,
+                   "wr": 66.7, "years": 3.1},
+    "NEAR_1D":   {"pf": 1.69, "trades": 10, "pnl_pct": 12.9, "dd_pct":  9.2,
+                   "wr": 60.0, "years": 3.7},
+    "DOGE_4H":   {"pf": 1.59, "trades": 65, "pnl_pct": 41.9, "dd_pct": 18.2,
+                   "wr": 55.4, "years": 5.0},
+    "RENDER_4H": {"pf": 1.49, "trades": 29, "pnl_pct": 17.3, "dd_pct": 22.3,
+                   "wr": 51.7, "years": 5.0},
+    "HBAR_4H":   {"pf": 1.45, "trades": 26, "pnl_pct": 11.8, "dd_pct": 19.7,
+                   "wr": 50.0, "years": 4.4},
+    "AAVE_4H":   {"pf": 1.33, "trades": 81, "pnl_pct": 34.8, "dd_pct": 22.8,
+                   "wr": 49.4, "years": 5.5},
+}
+for _k, _s in _MOMENTUM_HONEST_STATS.items():
+    if _k in ASSETS:
+        ASSETS[_k]["backtest_stats"] = {**_s, "source": _MOMENTUM_HONEST_SOURCE}

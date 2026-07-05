@@ -53,6 +53,40 @@
     </tbody>
   </table>
 </section>
+
+{% if momentum_meta.candidate_assets and momentum_meta.candidate_assets|length > 0 %}
+<section class="config-grid" aria-label="Demoted and candidate configs">
+  <h2 class="config-grid__heading">
+    Demoted / candidates ({{ momentum_meta.candidate_assets|length }})
+    <span class="config-grid__hint">
+      — parked in <code>MOMENTUM_CANDIDATE_ASSETS</code> by the P4 Step-2
+      long-window verdicts (Jul 2026); open positions on these stay
+      exit-managed, entries never fire. Re-promotion requires a fresh
+      honest-replay pass.
+    </span>
+  </h2>
+  <table class="regime-table">
+    <thead>
+      <tr>
+        <th scope="col">Strategy</th>
+        <th scope="col">Symbol</th>
+        <th scope="col">Timeframe</th>
+        <th scope="col">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in momentum_meta.candidate_assets %}
+      <tr>
+        <td>{{ a.name }}</td>
+        <td>{{ a.symbol }}</td>
+        <td>{{ a.interval }}</td>
+        <td><span class="confidence-pill confidence-pill--none">demoted / unvalidated</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
 {% endif %}
 
 {% set bot_kpis = bot_panels.momentum.kpis %}

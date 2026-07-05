@@ -1,0 +1,17 @@
+{# Routines liveness — reuses the kill-switch panel's owner-row styles.
+   Caller passes `routines` (from _v2_routines_panel). #}
+{% if routines and routines.available %}
+<section class="ks-panel" aria-label="Scheduled routine health">
+  <h2 class="ks-panel__heading">Routines</h2>
+  <ul class="ks-owners">
+    {% for r in routines.rows %}
+    <li class="ks-owner">
+      <span class="ks-owner__dot {{ r.state_class }}" aria-hidden="true"></span>
+      <span class="ks-owner__name">{{ r.label }}</span>
+      <span class="ks-owner__state {{ r.state_class }}">{{ r.last_display }}</span>
+      <span class="ks-owner__reason">{{ r.cadence }}{% if r.stale %} — OVERDUE{% endif %}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}

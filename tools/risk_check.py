@@ -137,6 +137,9 @@ def main() -> int:
         _send_discord_embed(title=title, description=desc[:3900],
                               color=_DISCORD_RED if issues else _DISCORD_GREEN,
                               fields=fields)
+
+    from routine_stamps import stamp
+    stamp("risk_check")
     return 0
 
 

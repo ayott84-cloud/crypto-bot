@@ -164,6 +164,9 @@ def main() -> int:
     overlaps = find_overlaps(poly, kalshi)
     flagged = [o for o in overlaps if o["flagged"]]
 
+    from routine_stamps import stamp
+    stamp("prediction_scan")
+
     if args.quiet:
         print(f"scan: {len(poly)} polymarket + {len(kalshi)} kalshi rows, "
                f"{len(overlaps)} overlaps, {len(flagged)} flagged -> "

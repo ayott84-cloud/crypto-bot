@@ -207,7 +207,14 @@ def run() -> None:
     logger.info("Discord control plane up — channel %s, %d operator(s)",
                  channel, len(operators))
 
+    _last_stamp = 0.0
     while True:
+        # Liveness stamp for the dashboard Routines panel, throttled so
+        # the 5s poll loop doesn't hammer the disk.
+        if time.time() - _last_stamp > 60:
+            from routine_stamps import stamp
+            stamp("discord_control")
+            _last_stamp = time.time()
         try:
             params = {"limit": 20}
             if last_id:

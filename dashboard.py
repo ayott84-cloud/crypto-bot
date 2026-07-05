@@ -949,6 +949,8 @@ def _build_v2_context(data: Dict[str, Any], state: dict | None = None,
         "exit_reasons":      _v2_exit_reason_panel(trades),
         # Tier 1.4 — revalidation pipeline tracker
         "gate_tracker":      _v2_gate_tracker(),
+        # Routines liveness (risk sentinel / brief / scanner / Discord)
+        "routines":          _v2_routines_panel(),
     }
 
 
@@ -1152,6 +1154,56 @@ def _v2_gate_tracker() -> dict:
             } for i in range(7)],
         })
     rows.sort(key=lambda r: (-r["step"], r["bot"]))
+    return {"available": True, "rows": rows}
+
+
+# Routines panel — name, label, cadence text, staleness threshold (s).
+# Thresholds are ~2.5x cadence (alpha brief spans weekends).
+_ROUTINE_DEFS = [
+    ("risk_check",      "Risk sentinel",    "hourly",             2.5 * 3600),
+    ("alpha_brief",     "Alpha brief",      "weekdays 07:30 CT",  80 * 3600),
+    ("prediction_scan", "Prediction scan",  "daily 14:00 UTC",    50 * 3600),
+    ("discord_control", "Discord control",  "daemon",             10 * 60),
+]
+
+
+def _v2_routines_panel() -> dict:
+    """Scheduled-routine liveness from run-stamps (routine_stamps.py).
+
+    'never' is normal until a routine's first run (or, for the Discord
+    daemon, until the operator configures its bot token) — rendered
+    neutral, not as an alert."""
+    from datetime import datetime as _dt, timezone as _tz
+    try:
+        from routine_stamps import read_stamps
+        stamps = read_stamps()
+    except Exception:  # noqa: BLE001
+        return {"available": False, "rows": []}
+    now = _dt.now(_tz.utc)
+    rows = []
+    for name, label, cadence, stale_after_s in _ROUTINE_DEFS:
+        iso = stamps.get(name)
+        if not iso:
+            rows.append({"name": name, "label": label, "cadence": cadence,
+                          "last_display": "never", "stale": False,
+                          "state_class": "is-flat"})
+            continue
+        try:
+            last = _dt.fromisoformat(iso)
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=_tz.utc)
+            age_s = (now - last).total_seconds()
+        except ValueError:
+            age_s = None
+        if age_s is None:
+            disp, stale = "unparseable", True
+        elif age_s < 90 * 60:
+            disp, stale = f"{int(age_s // 60)}m ago", age_s > stale_after_s
+        else:
+            disp, stale = f"{age_s / 3600:.1f}h ago", age_s > stale_after_s
+        rows.append({"name": name, "label": label, "cadence": cadence,
+                      "last_display": disp, "stale": stale,
+                      "state_class": "is-down" if stale else "is-up"})
     return {"available": True, "rows": rows}
 
 
@@ -1359,6 +1411,7 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
         "kill_switch":       _v2_kill_switch_panel(),
         "exit_reasons":      _v2_exit_reason_panel(trades),
         "gate_tracker":      _v2_gate_tracker(),
+        "routines":          _v2_routines_panel(),
     }
     ctx["mission"] = _v2_mission_control(ctx["bots"], trades, None)
     ctx.update(overrides)
@@ -3030,11 +3083,20 @@ def _v2_momentum_meta(trades: List[dict]) -> dict:
         from config import ASSETS
     except ImportError:
         ASSETS = {}
+    try:
+        from config import MOMENTUM_CANDIDATE_ASSETS
+    except ImportError:
+        MOMENTUM_CANDIDATE_ASSETS = {}
 
     asset_rows = [
         {"name": k, "symbol": v.get("symbol", ""),
          "interval": v.get("interval", "")}
         for k, v in ASSETS.items()
+    ]
+    candidate_rows = [
+        {"name": k, "symbol": v.get("symbol", ""),
+         "interval": v.get("interval", "")}
+        for k, v in sorted(MOMENTUM_CANDIDATE_ASSETS.items())
     ]
     momentum_trades = [t for t in trades if t.get("bot") == "Momentum"]
     closed = [t for t in momentum_trades
@@ -3044,6 +3106,7 @@ def _v2_momentum_meta(trades: List[dict]) -> dict:
         "paused":              False,
         "state_label":         "LIVE",
         "assets":              asset_rows,
+        "candidate_assets":    candidate_rows,
         "closed_count":        len(closed),
         "win_rate_display":    (f"{sum(1 for p in pnl_list if p > 0) / len(pnl_list) * 100:.1f}%"
                                 if pnl_list else "—"),
