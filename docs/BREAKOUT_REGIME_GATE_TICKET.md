@@ -48,6 +48,14 @@ A/B replay shows they help.** Activating this gate changes live behavior
 
 ## Status
 
-- [ ] Step 1-2 implemented behind the replay
-- [ ] A/B run + per-asset verdicts recorded here
-- [ ] Live flip (only for winners), droplet deploy
+- [x] Steps 1-2 implemented replay-side (Jul 4): `replay_breakout(...,
+      regime_gate_active=True)` / CLI `--regime-gate`. EMA columns are
+      computed in the REPLAY only — live stays gate-inert until the A/B
+      verdict. Wiring test: tests/test_breakout_replay_parity.py::
+      test_regime_gate_arm_blocks_misaligned_entries.
+- [ ] A/B run + per-asset verdicts recorded here. Droplet commands:
+      `venv/bin/python tools/backtest_replay.py --bot breakout --bars 17000 --source binance`
+      (baseline — matches the Jul 4 Step-2 numbers) then the same with
+      `--regime-gate`. Ship per asset only where PF +0.10 and DD not worse.
+- [ ] Live flip (only for winners): add ema_fast/ema_slow to
+      breakout_main._compute_indicators + droplet deploy

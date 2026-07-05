@@ -217,22 +217,30 @@ def _fetch_klines(symbol: str, interval: str, count: int,
 
 # ─── Momentum replay ───────────────────────────────────────────────────────
 
-def replay_momentum(asset_name: str, cfg: dict, bars: int = 500) -> BacktestReport:
+def replay_momentum(asset_name: str, cfg: dict, bars: int = 500,
+                      source: str = "weex",
+                      pre_fetched_df=None,
+                      round_trip_cost_pct: float = DEFAULT_ROUND_TRIP_COST_PCT,
+                      ) -> BacktestReport:
     """Replay momentum entries+exits over the last `bars` of klines.
 
-    Uses the SAME analyze_entry_signal / check_exit_conditions the live
-    bot uses, so the report reflects exactly what the bot would have
-    done — minus rotation logic (single-position-per-asset replay).
+    Honesty rewrite (Jul 2026 Step-1 prep): exits fill CONSERVATIVELY
+    intra-bar against signals.exit_levels (the same level math
+    check_exit_conditions uses) — SL vs bar low, TP vs bar high, SL-first
+    on ambiguous bars, fill at the trigger price — and every leg deducts
+    its share of the P2.2 round-trip cost. The old close-only exits were
+    the liberal-fill bias that inflated every pre-P2 backtest.
 
     Two-phase exits: TP1 partially closes, then breakeven SL / TP2 / stale
     decide the rest. We treat TP1 as a separate trade and the remainder
     as another trade so PnL accounting matches the journal's row count.
     """
-    from signals import (
-        compute_indicators, analyze_entry_signal, check_exit_conditions,
-    )
+    from signals import compute_indicators, analyze_entry_signal, exit_levels
 
-    df = _fetch_klines(cfg["symbol"], cfg["interval"], bars)
+    if pre_fetched_df is not None:
+        df = pre_fetched_df
+    else:
+        df = _fetch_klines(cfg["symbol"], cfg["interval"], bars, source=source)
     if df is None or len(df) == 0:
         return BacktestReport(bot="momentum", asset=asset_name, bars_seen=0)
 
@@ -241,9 +249,10 @@ def replay_momentum(asset_name: str, cfg: dict, bars: int = 500) -> BacktestRepo
     # BTC context for correlation filter (cfg.use_btc_filter)
     btc_close_series = None
     btc_ema_series   = None
-    if cfg.get("use_btc_filter"):
+    if cfg.get("use_btc_filter") and pre_fetched_df is None:
         try:
-            btc_df = _fetch_klines("BTCUSDT", cfg["interval"], bars)
+            btc_df = _fetch_klines("BTCUSDT", cfg["interval"], bars,
+                                     source=source)
             ema_period = cfg.get("btc_ema_period", 50)
             btc_df["btc_ema"] = btc_df["close"].ewm(span=ema_period, adjust=False).mean()
             btc_close_series = btc_df["close"]
@@ -260,6 +269,17 @@ def replay_momentum(asset_name: str, cfg: dict, bars: int = 500) -> BacktestRepo
         cfg.get("macd_slow", 26),
     ) + 5
     position: dict | None = None
+
+    def _book(exit_bar, exit_price, reason, fraction):
+        raw = (exit_price - position["entry_price"]) / position["entry_price"] * 100
+        report.trades.append(TradeResult(
+            direction="LONG", entry_bar=position["entry_bar"],
+            exit_bar=exit_bar, entry_price=position["entry_price"],
+            exit_price=exit_price, exit_reason=reason,
+            # Each leg is `fraction` of the position → same fraction of
+            # the round-trip cost.
+            pnl_pct=raw * fraction - round_trip_cost_pct * fraction,
+        ))
 
     for i in range(start, len(df)):
         window = df.iloc[: i + 1]
@@ -279,40 +299,32 @@ def replay_momentum(asset_name: str, cfg: dict, bars: int = 500) -> BacktestRepo
                 }
             continue
 
-        bars_since_entry = i - position["entry_bar"]
-        current_price    = float(df.iloc[i]["close"])
-        reason, kind = check_exit_conditions(
-            entry_price=position["entry_price"],
-            atr_at_entry=position["atr_at_entry"],
-            current_price=current_price,
-            bars_since_entry=bars_since_entry,
-            phase=position["phase"],
-            cfg=cfg,
-        )
-        if reason is None:
+        lv = exit_levels(position["entry_price"], position["atr_at_entry"],
+                          position["phase"], cfg)
+        bar_high = float(df.iloc[i]["high"])
+        bar_low  = float(df.iloc[i]["low"])
+        current_price = float(df.iloc[i]["close"])
+
+        # Conservative intra-bar resolution — SL always wins ambiguous bars.
+        if bar_low <= lv["sl"]:
+            fraction = 0.5 if position["phase"] == "tp1_taken" else 1.0
+            _book(i, lv["sl"], lv["sl_reason"], fraction)
+            position = None
             continue
-
-        sign = 1.0  # momentum is LONG only by default for candidate validation
-        pnl_pct = sign * (current_price - position["entry_price"]) / position["entry_price"] * 100
-
-        if kind == "partial":
-            # TP1 — close half (model as 50% of the move) and continue
-            report.trades.append(TradeResult(
-                direction="LONG", entry_bar=position["entry_bar"],
-                exit_bar=i, entry_price=position["entry_price"],
-                exit_price=current_price, exit_reason=reason,
-                pnl_pct=pnl_pct * 0.5,  # half the position
-            ))
+        if position["phase"] == "full" and bar_high >= lv["tp1"]:
+            _book(i, lv["tp1"], "TP1 Hit", 0.5)
             position["phase"] = "tp1_taken"
-        else:
-            # Full exit (SL / TP2 / stale / BE)
-            remaining_factor = 0.5 if position["phase"] == "tp1_taken" else 1.0
-            report.trades.append(TradeResult(
-                direction="LONG", entry_bar=position["entry_bar"],
-                exit_bar=i, entry_price=position["entry_price"],
-                exit_price=current_price, exit_reason=reason,
-                pnl_pct=pnl_pct * remaining_factor,
-            ))
+            continue
+        if position["phase"] == "tp1_taken" and bar_high >= lv["tp2"]:
+            _book(i, lv["tp2"], "TP2 Hit", 0.5)
+            position = None
+            continue
+        # Stale exit is a bot-side decision on the completed bar — fills
+        # at the close like live's polled market close.
+        if (i - position["entry_bar"] >= cfg["stale_bars"]
+                and current_price < lv["stale_level"]):
+            fraction = 0.5 if position["phase"] == "tp1_taken" else 1.0
+            _book(i, current_price, "Stale Exit", fraction)
             position = None
     return report
 
@@ -720,6 +732,7 @@ def replay_breakout(asset_name: str, cfg: dict, bars: int = 500,
                       source: str = "weex",
                       pre_fetched_df=None,
                       round_trip_cost_pct: float = DEFAULT_ROUND_TRIP_COST_PCT,
+                      regime_gate_active: bool = False,
                       ) -> BacktestReport:
     """Replay the Donchian breakout with the DEPLOYED exit stack.
 
@@ -729,6 +742,14 @@ def replay_breakout(asset_name: str, cfg: dict, bars: int = 500,
     P2.2 round-trip cost model, which this replay alone had skipped.
     Known remaining gap: the live funding veto is not modeled (no
     historical funding data); it only removes entries.
+
+    regime_gate_active — the A/B arm from
+    docs/BREAKOUT_REGIME_GATE_TICKET.md. False (default) reproduces
+    current live behavior, where the L.2 gate silently no-ops because
+    breakout's indicator step computes no EMA columns. True computes
+    ema_fast/ema_slow/ema200 and applies classify_from_df +
+    gate_blocks_direction exactly as an ACTIVATED live gate would.
+    Live stays gate-inert until this A/B proves the arm helps.
     """
     from breakout_signals import (
         compute_donchian_channels, analyze_breakout_entry, check_breakout_exit,
@@ -741,6 +762,14 @@ def replay_breakout(asset_name: str, cfg: dict, bars: int = 500,
     else:
         df = _fetch_klines(cfg["symbol"], cfg["interval"], bars, source=source)
     df = _compute_indicators(df, cfg)
+
+    if regime_gate_active:
+        # Precompute the EMA columns classify_from_df needs (full-series
+        # once, not per bar). ema200 precomputed too so the classifier's
+        # fallback compute doesn't run 17,000 times.
+        df["ema_fast"] = df["close"].ewm(span=20, adjust=False).mean()
+        df["ema_slow"] = df["close"].ewm(span=50, adjust=False).mean()
+        df["ema200"]   = df["close"].ewm(span=200, adjust=False).mean()
 
     # G.2: fetch 1D series for the trend gate
     df_1d_full = None
@@ -761,6 +790,13 @@ def replay_breakout(asset_name: str, cfg: dict, bars: int = 500,
         if position is None:
             # Use whatever 1D bars are available; live bot does the same
             sig = analyze_breakout_entry(window, cfg, df_1d=df_1d_full)
+            if sig["would_enter"] and regime_gate_active:
+                # A/B arm — same call order as live run_cycle's L.2 gate
+                import regime
+                label = regime.classify_from_df(window, cfg)["label"]
+                if regime.gate_blocks_direction(label,
+                                                  sig.get("direction", "LONG")):
+                    sig = {**sig, "would_enter": False}
             if sig["would_enter"]:
                 position = {
                     "direction":    sig["direction"],
@@ -879,10 +915,19 @@ def replay_pair(bars: int = 500, asset_name: str | None = None,
                  long_symbol: str | None = None,
                  short_symbol: str | None = None,
                  interval: str | None = None,
-                 cfg: dict | None = None) -> BacktestReport:
+                 cfg: dict | None = None,
+                 source: str = "weex",
+                 pre_fetched=None,
+                 round_trip_cost_pct: float = DEFAULT_ROUND_TRIP_COST_PCT,
+                 ) -> BacktestReport:
     """Replay pair entries+exits. Defaults to ETH/BTC from pair_config;
     every argument is overridable so the same function validates
-    candidate pairs (BTC/SOL, ETH/SOL, etc.)."""
+    candidate pairs (BTC/SOL, ETH/SOL, etc.).
+
+    Honesty note (Jul 2026): a pair trade is TWO positions — the cost
+    model deducts 2 × round_trip_cost_pct per closed pair trade. The
+    z-score exits themselves stay close-confirmed by design (they are
+    bot-side signal decisions, not price brackets)."""
     from pair_signals import (
         compute_ratio, rolling_z_score, analyze_pair_entry, check_pair_exit,
     )
@@ -896,8 +941,11 @@ def replay_pair(bars: int = 500, asset_name: str | None = None,
     cfg          = cfg          or PAIR_CONFIG
     asset_name   = asset_name   or "ETHBTC"
 
-    eth = _fetch_klines(long_symbol,  interval, bars)
-    btc = _fetch_klines(short_symbol, interval, bars)
+    if pre_fetched is not None:
+        eth, btc = pre_fetched
+    else:
+        eth = _fetch_klines(long_symbol,  interval, bars, source=source)
+        btc = _fetch_klines(short_symbol, interval, bars, source=source)
     n = min(len(eth), len(btc))
     eth_close = eth["close"].iloc[:n].reset_index(drop=True)
     btc_close = btc["close"].iloc[:n].reset_index(drop=True)
@@ -935,6 +983,7 @@ def replay_pair(bars: int = 500, asset_name: str | None = None,
                 eth_pct = (exit_eth - position["entry_eth"]) / position["entry_eth"] * 100
                 btc_pct = (exit_btc - position["entry_btc"]) / position["entry_btc"] * 100
                 pnl_pct = (eth_pct - btc_pct) if long_eth else (btc_pct - eth_pct)
+                pnl_pct -= round_trip_cost_pct * 2   # two legs, two round trips
                 report.trades.append(TradeResult(
                     direction=position["direction"],
                     entry_bar=position["entry_bar"], exit_bar=i,
@@ -948,9 +997,9 @@ def replay_pair(bars: int = 500, asset_name: str | None = None,
 
 # ─── CLI ───────────────────────────────────────────────────────────────────
 
-def _run_momentum(bars: int) -> List[BacktestReport]:
+def _run_momentum(bars: int, source: str = "weex") -> List[BacktestReport]:
     from config import ASSETS
-    return [replay_momentum(name, cfg, bars=bars)
+    return [replay_momentum(name, cfg, bars=bars, source=source)
             for name, cfg in ASSETS.items()]
 
 
@@ -967,9 +1016,11 @@ def _run_crossover(bars: int, source: str = "weex") -> List[BacktestReport]:
             for name, cfg in universe.items()]
 
 
-def _run_breakout(bars: int, source: str = "weex") -> List[BacktestReport]:
+def _run_breakout(bars: int, source: str = "weex",
+                    regime_gate: bool = False) -> List[BacktestReport]:
     from breakout_config import BREAKOUT_ASSETS
-    return [replay_breakout(name, cfg, bars=bars, source=source)
+    return [replay_breakout(name, cfg, bars=bars, source=source,
+                              regime_gate_active=regime_gate)
             for name, cfg in BREAKOUT_ASSETS.items()]
 
 
@@ -979,8 +1030,8 @@ def _run_reversal(bars: int) -> List[BacktestReport]:
             for name, cfg in REVERSAL_ASSETS.items()]
 
 
-def _run_pair(bars: int) -> List[BacktestReport]:
-    return [replay_pair(bars=bars)]
+def _run_pair(bars: int, source: str = "weex") -> List[BacktestReport]:
+    return [replay_pair(bars=bars, source=source)]
 
 
 def main() -> None:
@@ -1000,6 +1051,10 @@ def main() -> None:
                         help="Kline source. weex caps at 1000 bars/asset; "
                               "binance chains 1500-bar chunks for long "
                               "windows (scalp/crossover only)")
+    parser.add_argument("--regime-gate", action="store_true",
+                        help="Breakout A/B arm: activate the L.2 regime "
+                              "gate in the replay (live is gate-inert; see "
+                              "docs/BREAKOUT_REGIME_GATE_TICKET.md)")
     args = parser.parse_args()
 
     runners = {
@@ -1010,15 +1065,18 @@ def main() -> None:
         "scalp":     _run_scalp,
         "crossover": _run_crossover,
     }
-    # Only scalp/crossover/breakout replays accept an alternate kline source
-    _source_aware = {"scalp", "crossover", "breakout"}
+    # Replays that accept an alternate kline source for long windows
+    _source_aware = {"scalp", "crossover", "breakout", "momentum", "pair"}
     selected = list(runners) if args.bot == "all" else [args.bot]
 
     all_reports: List[BacktestReport] = []
     for bot in selected:
         print(f"\n=== {bot.upper()} ({args.bars} bars/asset) ===")
         try:
-            if bot in _source_aware:
+            if bot == "breakout":
+                reports = runners[bot](args.bars, source=args.source,
+                                         regime_gate=args.regime_gate)
+            elif bot in _source_aware:
                 reports = runners[bot](args.bars, source=args.source)
             else:
                 reports = runners[bot](args.bars)

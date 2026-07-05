@@ -96,6 +96,38 @@ def test_replay_trailing_off_leaves_position_open():
     assert all(t.exit_reason != "Trailing Exit" for t in rep.trades)
 
 
+def test_regime_gate_arm_blocks_misaligned_entries(monkeypatch):
+    """Regime-gate A/B (docs/BREAKOUT_REGIME_GATE_TICKET.md): with the
+    arm ON, entries misaligned with the classified regime are skipped;
+    with the arm OFF the replay reproduces current (gate-inert) live
+    behavior and the classifier is never consulted."""
+    import regime
+    from tools.backtest_replay import replay_breakout
+
+    df = _fixture_df()
+
+    calls = {"n": 0}
+    def fake_classify(window, cfg):
+        calls["n"] += 1
+        return {"label": "strong_down", "trend": "down",
+                 "vol": "low", "strength": "strong"}
+    monkeypatch.setattr(regime, "classify_from_df", fake_classify)
+
+    # Arm ON: the fixture's LONG break happens in a (stubbed) strong_down
+    # regime — every entry must be blocked.
+    armed = replay_breakout("TEST", _cfg(use_trailing=True),
+                              pre_fetched_df=df, regime_gate_active=True)
+    assert armed.trades == []
+    assert calls["n"] > 0
+
+    # Arm OFF: baseline behavior, classifier untouched.
+    calls["n"] = 0
+    base = replay_breakout("TEST", _cfg(use_trailing=True),
+                             pre_fetched_df=df, regime_gate_active=False)
+    assert len(base.trades) >= 1
+    assert calls["n"] == 0
+
+
 def test_replay_breakout_applies_cost_model():
     from tools.backtest_replay import replay_breakout
     df = _fixture_df()

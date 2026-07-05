@@ -193,6 +193,30 @@ def check_entry_signal(
     return True
 
 
+def exit_levels(entry_price: float, atr_at_entry: float, phase: str,
+                 cfg: dict) -> dict:
+    """Single source for the momentum exit-level math (LONG).
+
+    Used by check_exit_conditions (live, close-based decisions) AND by
+    tools/backtest_replay's conservative intra-bar fill model — one
+    formula, two consumers, no drift.
+    """
+    if phase == "tp1_taken" and cfg.get("use_breakeven_after_tp1", False):
+        sl_price = entry_price          # breakeven stop
+        sl_reason = "BE Hit"
+    else:
+        sl_price = entry_price - cfg["sl_atr_mult"] * atr_at_entry
+        sl_reason = "SL Hit"
+    return {
+        "sl":          sl_price,
+        "sl_reason":   sl_reason,
+        "tp1":         entry_price + cfg["tp1_atr_mult"] * atr_at_entry,
+        "tp2":         entry_price + cfg["tp2_atr_mult"] * atr_at_entry,
+        "stale_level": entry_price + atr_at_entry * cfg["tp1_atr_mult"]
+                        * cfg["stale_threshold_mult"],
+    }
+
+
 def check_exit_conditions(
     entry_price: float,
     atr_at_entry: float,
@@ -210,35 +234,23 @@ def check_exit_conditions(
     cfg["use_breakeven_after_tp1"] is True. This converts would-be losers
     into breakeven exits — major contributor to PF 2.163 vs 0.36.
     """
-    tp1_price = entry_price + cfg["tp1_atr_mult"] * atr_at_entry
-    tp2_price = entry_price + cfg["tp2_atr_mult"] * atr_at_entry
-
-    # Dynamic SL: breakeven after TP1 if enabled, else original SL distance
-    if phase == "tp1_taken" and cfg.get("use_breakeven_after_tp1", False):
-        sl_price = entry_price  # breakeven stop
-        sl_reason = "BE Hit"
-    else:
-        sl_price = entry_price - cfg["sl_atr_mult"] * atr_at_entry
-        sl_reason = "SL Hit"
+    lv = exit_levels(entry_price, atr_at_entry, phase, cfg)
 
     # 1. Stop Loss / Breakeven stop — always checked first
-    if current_price <= sl_price:
-        return sl_reason, "full"
+    if current_price <= lv["sl"]:
+        return lv["sl_reason"], "full"
 
     # 2. TP1 — only if we haven't taken partial profit yet
-    if phase == "full" and current_price >= tp1_price:
+    if phase == "full" and current_price >= lv["tp1"]:
         return "TP1 Hit", "partial"
 
     # 3. TP2 — only after TP1 was taken
-    if phase == "tp1_taken" and current_price >= tp2_price:
+    if phase == "tp1_taken" and current_price >= lv["tp2"]:
         return "TP2 Hit", "full"
 
     # 4. Stale exit — trade stuck in limbo
-    stale_bars = cfg["stale_bars"]
-    stale_mult = cfg["stale_threshold_mult"]
-    stale_level = entry_price + atr_at_entry * cfg["tp1_atr_mult"] * stale_mult
-
-    if bars_since_entry >= stale_bars and current_price < stale_level:
+    if (bars_since_entry >= cfg["stale_bars"]
+            and current_price < lv["stale_level"]):
         return "Stale Exit", "full"
 
     return None, None
