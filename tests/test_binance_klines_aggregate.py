@@ -72,6 +72,16 @@ def test_breakout_long_window_symbols_mapped():
     assert _weex_to_coinbase("TRXUSDT") is None
 
 
+def test_momentum_universe_symbols_mapped():
+    """The Jul 4 momentum long-window run showed 0 trades for these —
+    missing MAPPINGS, not missing signals. All are Coinbase-listed."""
+    from tools._binance_klines import _weex_to_coinbase
+    for sym in ("DOTUSDT", "LTCUSDT", "UNIUSDT", "FILUSDT", "ETCUSDT",
+                  "APTUSDT", "ARBUSDT", "ATOMUSDT", "SUIUSDT", "HBARUSDT",
+                  "OPUSDT", "RENDERUSDT", "SHIBUSDT", "ICPUSDT"):
+        assert _weex_to_coinbase(sym) is not None, sym
+
+
 def test_chained_fetch_survives_short_chunks(monkeypatch):
     """Coinbase routinely returns 299-bar chunks (boundary rounding).
     The chain must keep paginating while chunks are NON-EMPTY — only an

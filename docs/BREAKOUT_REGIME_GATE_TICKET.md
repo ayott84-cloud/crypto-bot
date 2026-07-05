@@ -53,9 +53,22 @@ A/B replay shows they help.** Activating this gate changes live behavior
       computed in the REPLAY only — live stays gate-inert until the A/B
       verdict. Wiring test: tests/test_breakout_replay_parity.py::
       test_regime_gate_arm_blocks_misaligned_entries.
-- [ ] A/B run + per-asset verdicts recorded here. Droplet commands:
-      `venv/bin/python tools/backtest_replay.py --bot breakout --bars 17000 --source binance`
-      (baseline — matches the Jul 4 Step-2 numbers) then the same with
-      `--regime-gate`. Ship per asset only where PF +0.10 and DD not worse.
-- [ ] Live flip (only for winners): add ema_fast/ema_slow to
-      breakout_main._compute_indicators + droplet deploy
+- [x] A/B run (Jul 4 2026, 17000-bar windows, droplet):
+
+      | asset   | gate OFF        | gate ON         | verdict |
+      |---------|-----------------|-----------------|---------|
+      | SOL_4H  | 1.43 / DD 29.9% | 1.43 / DD 29.9% | no-op   |
+      | ETH_4H  | 1.25 / DD 64.3% | 1.25 / DD 64.3% | no-op   |
+      | ETH_1H  | 1.24 / DD 31.4% | 1.24 / DD 31.4% | no-op   |
+      | DOGE_1H | 1.41 / DD 27.7% | 1.44 / DD 25.5% | −1 trade, noise |
+      | INJ_1H  | 1.23 / DD 37.5% | 1.23 / DD 37.5% | no-op   |
+
+- [x] **VERDICT: FALSIFIED — NOT SHIPPED.** The gate blocked ~1 entry in
+      ~386 across five assets over 2 years. Root cause is structural: a
+      55-bar Donchian high simply does not print during a strong_down
+      regime (nor a 55-bar low during strong_up) — the breakout
+      condition already regime-selects. Every asset lands far below the
+      ≥+0.10 PF ship bar. Live stays gate-inert BY EVIDENCE now, not by
+      accident; the replay arm (--regime-gate) stays available for
+      re-testing if the entry logic ever changes (e.g. Donchian-20
+      variants, where shallower channels might fire counter-regime).

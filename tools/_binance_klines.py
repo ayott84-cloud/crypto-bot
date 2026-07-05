@@ -70,6 +70,22 @@ _SYMBOL_MAP = {
     "NEARUSDT": "NEAR-USD",
     "AAVEUSDT": "AAVE-USD",
     "INJUSDT":  "INJ-USD",
+    # Momentum long-window universe (Jul 4 run showed 0 trades for these
+    # — missing mappings, not missing signals). All Coinbase-listed.
+    "DOTUSDT":    "DOT-USD",
+    "LTCUSDT":    "LTC-USD",
+    "UNIUSDT":    "UNI-USD",
+    "FILUSDT":    "FIL-USD",
+    "ETCUSDT":    "ETC-USD",
+    "APTUSDT":    "APT-USD",
+    "ARBUSDT":    "ARB-USD",
+    "ATOMUSDT":   "ATOM-USD",
+    "SUIUSDT":    "SUI-USD",
+    "HBARUSDT":   "HBAR-USD",
+    "OPUSDT":     "OP-USD",
+    "RENDERUSDT": "RENDER-USD",
+    "SHIBUSDT":   "SHIB-USD",
+    "ICPUSDT":    "ICP-USD",
 }
 
 # Intervals Coinbase lacks natively, synthesized by aggregating a finer

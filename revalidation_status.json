@@ -5,15 +5,19 @@
   },
   "breakout": {
     "step": 2,
-    "note": "5 long-run positives paper-only; regime-gate A/B queued; none cleared PF≥1.5"
+    "note": "5 long-run positives paper-only; regime-gate A/B FALSIFIED Jul 4 (gate structurally redundant for Donchian-55)"
+  },
+  "momentum": {
+    "step": 2,
+    "note": "long-window passers: BTC 1.57, ADA_4H 1.41, NEAR_1D 1.69, INJ_4H 1.31 marginal; alts rerun pending (symbol map extended); needs exchange-native brackets before Step 3"
   },
   "crossover": {
     "step": 0,
     "note": "PARKED — structurally dead over 2yr (all 8 assets PF 0.15-0.72)"
   },
-  "momentum": {
-    "step": 1,
-    "note": "queued for honest-replay revalidation (pre-P2 numbers untrusted)"
+  "pair": {
+    "step": 0,
+    "note": "PARKED Jul 4 — 5.5yr honest replay PF 0.63, -81%, DD 94.5% with two-leg costs; old PF 4.96 was a short-window cost-free artifact"
   },
   "whale": {
     "step": 1,
@@ -22,10 +26,6 @@
   "funding": {
     "step": 1,
     "note": "live-paper, no qualifying signals yet; replay N/A (event-driven)"
-  },
-  "pair": {
-    "step": 1,
-    "note": "queued for honest-replay revalidation"
   },
   "reversal": {
     "step": 0,
