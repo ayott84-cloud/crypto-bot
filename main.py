@@ -42,6 +42,34 @@ def _fetch_btc_eth_corr(executor, window: int = 30):
         return None
     from regime import rolling_returns_correlation
     return rolling_returns_correlation(btc_closes, eth_closes, window=window)
+
+
+def _iteration_universe(assets: dict, candidates: dict, open_keys: set) -> dict:
+    """Step-2 orphan guard (momentum flavor): the cycle loop iterates the
+    live set PLUS any demoted asset that still has an OPEN position, so
+    demotion never orphans a trade — it exit-manages until flat, then
+    drops out of the loop entirely."""
+    uni = dict(assets)
+    for k, cfg in candidates.items():
+        if k in open_keys:
+            uni[k] = cfg
+    return uni
+
+
+def _may_enter(asset_name: str, assets: dict) -> bool:
+    """Entries fire ONLY for live-set assets — a demoted asset in the
+    loop is there for exit management alone."""
+    return asset_name in assets
+
+
+def _momentum_fill_price(reason: str, current_price: float, lv: dict) -> float:
+    """P1.1 exit-price-override parity: SL/BE exits fill at the
+    exchange-resident stop trigger, not the up-to-5-min-late polled
+    close. Bot-side exits (TP2 market close, Stale) keep the polled
+    price — that IS their honest fill."""
+    if reason in ("SL Hit", "BE Hit"):
+        return float(lv["sl"])
+    return float(current_price)
 from signals import (
     build_dataframe, compute_indicators, check_entry_signal,
     check_exit_conditions, get_entry_reason, analyze_entry_signal,
@@ -227,7 +255,11 @@ def run():
                           "n/a" if btc_eth_corr is None
                           else f"{btc_eth_corr:.3f}")
 
-        for asset_name, cfg in ASSETS.items():
+        # Step-2 cut: live set + demoted assets that still hold positions
+        from config import MOMENTUM_CANDIDATE_ASSETS
+        _open_keys = set(get_open_positions(state))
+        for asset_name, cfg in _iteration_universe(
+                ASSETS, MOMENTUM_CANDIDATE_ASSETS, _open_keys).items():
             symbol = cfg["symbol"]       # exchange symbol (XRPUSDT) — for API calls
             state_key = asset_name        # unique per strategy (XRP, XRP_4H) — for state
             interval = cfg["interval"]
@@ -356,9 +388,18 @@ def run():
                     )
 
                     if exit_reason:
-                        logger.info("[%s] EXIT: %s | price=%.4f | bars=%d | phase=%s",
+                        # P1.1 parity: stop exits journal at the exchange-
+                        # resident trigger, not the polled close.
+                        from signals import exit_levels
+                        _lv = exit_levels(pos["entry_price"],
+                                           pos["atr_at_entry"],
+                                           pos["phase"], cfg)
+                        fill_price = _momentum_fill_price(
+                            exit_reason, current_price, _lv)
+                        logger.info("[%s] EXIT: %s | price=%.4f fill=%.4f | "
+                                    "bars=%d | phase=%s",
                                     asset_name, exit_reason, current_price,
-                                    bars, pos["phase"])
+                                    fill_price, bars, pos["phase"])
 
                         if exit_type == "partial":
                             # TP1: close 50%
@@ -427,7 +468,7 @@ def run():
                             log_trade(
                                 symbol=symbol, direction="LONG",
                                 entry_price=pos["entry_price"],
-                                exit_price=current_price,
+                                exit_price=fill_price,
                                 quantity=float(pos["quantity"]),
                                 leverage=DEFAULT_LEVERAGE,
                                 strategy=cfg["strategy_name"],
@@ -446,7 +487,7 @@ def run():
                                     notify_trade_closed(
                                         symbol=symbol, direction="LONG",
                                         entry_price=pos["entry_price"],
-                                        exit_price=current_price,
+                                        exit_price=fill_price,
                                         quantity=float(pos["quantity"]),
                                         leverage=DEFAULT_LEVERAGE,
                                         sl_price=sl_p, tp1_price=tp1_p, tp2_price=tp2_p,
@@ -463,8 +504,10 @@ def run():
 
                 else:
                     # ── Check for new entry signal ──
-                    # Reuse the analysis already computed at top of cycle
-                    if analysis is not None and analysis.get("would_enter"):
+                    # Reuse the analysis already computed at top of cycle.
+                    # Demoted assets in the loop are exit-only (_may_enter).
+                    if (analysis is not None and analysis.get("would_enter")
+                            and _may_enter(asset_name, ASSETS)):
                         logger.info("[%s] ENTRY SIGNAL detected!", asset_name)
 
                         # Kill-switch check: consecutive-loss breaker + daily drawdown.
@@ -598,6 +641,12 @@ def run():
                             strategy=cfg["strategy_name"],
                             entry_reason=entry_reason,
                             symbol=symbol,  # exchange symbol for API calls
+                            # P5a parity — persist the exchange-resident
+                            # stop; TPs are bot-side (partial closes), so
+                            # no tp_price by design (renders as "—").
+                            bracket_kind="atr_sl",
+                            sl_price=sl_price,
+                            tp_price=None,
                         )
 
                         # Place exchange-side SL as safety net

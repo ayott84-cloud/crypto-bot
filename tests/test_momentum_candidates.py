@@ -41,13 +41,19 @@ def test_candidates_do_not_overlap_with_live_assets():
 
 
 def test_candidates_not_iterated_by_main_module():
-    """main.py must never reference MOMENTUM_CANDIDATE_ASSETS — it would
-    silently activate untested strategies."""
+    """Candidates must never be ENTRY candidates. The one legitimate
+    reference is the Step-2 orphan guard (_iteration_universe + the
+    _may_enter gate): a demoted asset with an open position stays
+    exit-managed until flat, but entries fire only for the live set."""
     main_path = BOT_DIR / "main.py"
     if not main_path.exists():
         pytest.skip("main.py not present")
     text = main_path.read_text(encoding="utf-8")
-    assert "MOMENTUM_CANDIDATE_ASSETS" not in text
+    # candidates flow ONLY through the orphan-guard universe builder
+    assert "_iteration_universe(" in text
+    assert "MOMENTUM_CANDIDATE_ASSETS.items()" not in text
+    # and the entry branch is gated on the live set
+    assert "_may_enter(asset_name, ASSETS)" in text
 
 
 def test_candidate_keys_unique():

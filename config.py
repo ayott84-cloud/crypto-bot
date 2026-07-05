@@ -712,3 +712,26 @@ MOMENTUM_CANDIDATE_ASSETS = {
     **{name: _momentum_tight_stop(sym, tf, title)
         for name, sym, tf, title in _MOMENTUM_DD_RECOVERY_TARGETS},
 }
+
+
+# ─── P4 Step-2 momentum demotions (Jul 4 2026, operator-approved) ──────────
+# Multi-year HONEST replay (Coinbase, conservative intra-bar fills, 0.15%
+# costs, exit_levels parity) ruled on all 29 configs:
+#   KEEP clean (PF>=1.3, DD<=15%): BTC 1.57, ADA_4H 1.78, ARB_4H 1.81,
+#       INJ_4H 1.45, SUI_1D 2.40, NEAR_1D 1.69
+#   KEEP observation (PF pass, DD 18-23%): DOGE_4H 1.59, RENDER_4H 1.49,
+#       HBAR_4H 1.45, AAVE_4H 1.33 — paper-only until risk-sizing work
+#   DEMOTED: BTC_1D 0.69(!), ETH 0.78, LINK_4H 0.79/DD67%, FIL_4H 0.46,
+#       DOT both TFs, DOGE_1D 0.21, AVAX/SHIB/SUI 4H, XRP both, ADA_1D,
+#       HBAR_1D. ETH_1D (8.11 n=9), SOL (12.65 n=5), SHIB_1D (1.38 n=5)
+#       demote as promising-but-undersampled. TRX_4H unvalidatable.
+# Exit management for any open position on a demoted asset continues via
+# main._iteration_universe's candidate fallback; entries never fire.
+_STEP2_DEMOTED_MOMENTUM = [
+    "BTC_1D", "ETH_1D", "ETH", "XRP", "XRP_4H", "SOL", "HBAR_1D",
+    "ADA_1D", "DOT_4H", "DOT_1D", "DOGE_1D", "SHIB_4H", "SHIB_1D",
+    "TRX_4H", "AVAX_4H", "LINK_4H", "FIL_4H", "APT_4H", "SUI_4H",
+]
+for _k in _STEP2_DEMOTED_MOMENTUM:
+    if _k in ASSETS:
+        MOMENTUM_CANDIDATE_ASSETS[_k] = ASSETS.pop(_k)
