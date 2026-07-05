@@ -1,0 +1,31 @@
+[Unit]
+Description=Discord two-way control plane (discord_control.py)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bot
+Group=bot
+WorkingDirectory=/home/bot/crypto-bot
+EnvironmentFile=-/home/bot/crypto-bot/.env
+ExecStart=/home/bot/crypto-bot/venv/bin/python /home/bot/crypto-bot/discord_control.py
+
+Restart=always
+RestartSec=15
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=crypto-discord-control
+
+MemoryMax=200M
+MemoryHigh=150M
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/bot/crypto-bot
+
+[Install]
+WantedBy=multi-user.target

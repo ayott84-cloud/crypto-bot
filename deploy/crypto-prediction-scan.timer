@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily prediction-market spread scan
+
+[Timer]
+OnCalendar=*-*-* 14:00:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

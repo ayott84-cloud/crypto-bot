@@ -176,6 +176,17 @@ def should_pause(owner: str, direction: str | None = None) -> KillSwitchStatus:
     shorts have unbounded loss potential. None = original behavior
     (all-direction streak vs CONSECUTIVE_LOSS_LIMIT=5).
     """
+    # 0. R3 — operator pause via the Discord control plane. Checked
+    # FIRST (cheap file read, no journal I/O) so a Discord "!pause X"
+    # takes effect on the very next entry check.
+    try:
+        from control_flags import is_operator_paused
+        if is_operator_paused(owner):
+            return KillSwitchStatus(
+                True, f"operator pause for {owner} (Discord control plane)")
+    except Exception:  # noqa: BLE001 — flags problems never block trading
+        pass
+
     try:
         from journal import read_trades  # local import to avoid module-level cycles
     except ImportError:
