@@ -38,6 +38,37 @@ def test_heartbeat_staleness_classifier(tmp_path):
     assert by_name[".breakout_heartbeat"]["stale"] is True
 
 
+def test_parked_bots_heartbeats_are_ignored(tmp_path, monkeypatch):
+    """A PARKED bot (revalidation step 0 — reversal, crossover, pair)
+    has no duty to heartbeat: its service may be disabled entirely. Its
+    relic heartbeat file must not alarm hourly (the .reversal_heartbeat
+    false positive of Jul 5-6)."""
+    import tools.risk_check as rc
+    monkeypatch.setattr(rc, "_parked_owners",
+                          lambda: {"reversal", "crossover", "pair"})
+    parked = tmp_path / ".reversal_heartbeat"
+    live = tmp_path / ".scalp_heartbeat"
+    parked.touch()
+    live.touch()
+    import os
+    old = time.time() - 90000
+    os.utime(parked, (old, old))
+    os.utime(live,   (old, old))
+    rows = rc.classify_heartbeats([parked, live], stale_after_s=1800)
+    names = {r["name"] for r in rows}
+    assert ".reversal_heartbeat" not in names    # parked → excluded
+    assert ".scalp_heartbeat" in names            # live bot still flags
+    assert all(r["stale"] for r in rows)
+
+
+def test_parked_owners_reads_status_file():
+    from tools.risk_check import _parked_owners
+    parked = _parked_owners()
+    # revalidation_status.json marks these step 0 as of Jul 2026
+    assert {"reversal", "crossover", "pair"} <= parked
+    assert "scalp" not in parked
+
+
 def test_positions_missing_sl_detector():
     from tools.risk_check import positions_missing_sl
     positions = {

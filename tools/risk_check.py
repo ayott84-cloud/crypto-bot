@@ -33,14 +33,37 @@ if str(BOT_DIR) not in sys.path:
 STALE_AFTER_SECONDS = 30 * 60
 
 
+def _parked_owners() -> set:
+    """Bots at revalidation step 0 (PARKED) — their services may be
+    disabled outright, so a relic heartbeat file is expected, not an
+    incident (the .reversal_heartbeat hourly false positive, Jul 5-6).
+    Unreadable status file → empty set (fail toward alerting)."""
+    import json
+    try:
+        raw = json.loads((BOT_DIR / "revalidation_status.json")
+                          .read_text(encoding="utf-8"))
+        return {bot for bot, info in raw.items()
+                 if int(info.get("step", 1)) == 0}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
 def classify_heartbeats(paths, stale_after_s: int = STALE_AFTER_SECONDS,
                           now_ts: float | None = None) -> list:
-    """[{name, age_s, stale}] for each heartbeat file that exists."""
+    """[{name, age_s, stale}] for each heartbeat file that exists.
+
+    Heartbeats belonging to PARKED bots are excluded entirely — a
+    parked bot has no duty to beat."""
     now = time.time() if now_ts is None else now_ts
+    parked = _parked_owners()
     out = []
     for p in paths:
         p = Path(p)
         if not p.exists():
+            continue
+        # ".reversal_heartbeat" → owner "reversal"
+        owner = p.name.lstrip(".").removesuffix("_heartbeat")
+        if owner in parked:
             continue
         age = now - p.stat().st_mtime
         out.append({"name": p.name, "age_s": int(age),
