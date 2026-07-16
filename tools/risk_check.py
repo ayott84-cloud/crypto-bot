@@ -52,8 +52,12 @@ def classify_heartbeats(paths, stale_after_s: int = STALE_AFTER_SECONDS,
                           now_ts: float | None = None) -> list:
     """[{name, age_s, stale}] for each heartbeat file that exists.
 
-    Heartbeats belonging to PARKED bots are excluded entirely — a
-    parked bot has no duty to beat."""
+    PARKED bots have no duty to beat — a STALE parked heartbeat is a
+    relic of a stopped service and stays silent (the .reversal_heartbeat
+    false positive, Jul 5-6). But a FRESH parked heartbeat means the
+    service is STILL RUNNING while the fleet believes it parked — that's
+    how the pair bot traded 216 legs in 14 days invisibly (Jul 16). Those
+    rows get parked_alive=True so build_issues can alarm."""
     now = time.time() if now_ts is None else now_ts
     parked = _parked_owners()
     out = []
@@ -63,9 +67,13 @@ def classify_heartbeats(paths, stale_after_s: int = STALE_AFTER_SECONDS,
             continue
         # ".reversal_heartbeat" → owner "reversal"
         owner = p.name.lstrip(".").removesuffix("_heartbeat")
-        if owner in parked:
-            continue
         age = now - p.stat().st_mtime
+        if owner in parked:
+            if age > stale_after_s:
+                continue  # relic of a stopped service — expected
+            out.append({"name": p.name, "age_s": int(age),
+                         "stale": False, "parked_alive": True})
+            continue
         out.append({"name": p.name, "age_s": int(age),
                      "stale": age > stale_after_s})
     return out
@@ -97,7 +105,12 @@ def build_issues(ks_summary: dict, daily: dict, heartbeats: list,
             # by the account-wide breaker message
             issues.append(f"kill-switch tripped for {owner}: {s.get('reason', '')}")
     for hb in heartbeats:
-        if hb["stale"]:
+        if hb.get("parked_alive"):
+            issues.append(
+                f"{hb['name']} is beating but its bot is PARKED — the "
+                "service is still running and may still be trading; "
+                "stop + disable it")
+        elif hb["stale"]:
             issues.append(
                 f"stale heartbeat {hb['name']} — {hb['age_s'] // 60} min old "
                 "(bot wedged while service shows active?)")

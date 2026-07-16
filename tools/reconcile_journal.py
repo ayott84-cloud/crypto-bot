@@ -111,6 +111,23 @@ def find_whale_orphans(db_path: Path, state_keys: set) -> list[dict]:
     return [dict(r) for r in rows if journal_state_key(dict(r)) not in state_keys]
 
 
+def find_rows_by_ids(db_path: Path, ids: list[int]) -> list[dict]:
+    """Full rows for the given ids (missing ids silently absent) — used to
+    print exactly what --delete-ids would remove before --apply."""
+    if not ids:
+        return []
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        marks = ",".join("?" * len(ids))
+        rows = conn.execute(
+            f"SELECT * FROM trades WHERE id IN ({marks}) ORDER BY id",
+            [int(i) for i in ids]).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
 # ─── Mutators (only call after backup_db) ──────────────────────────────────
 
 def backup_db(db_path: Path) -> Path:
@@ -154,6 +171,23 @@ def apply_close_orphans(db_path: Path, orphans: list[dict]) -> int:
         conn.close()
 
 
+def apply_delete_ids(db_path: Path, ids: list[int]) -> int:
+    """Delete exactly the listed row ids. Returns rows removed. Only call
+    after backup_db (the CLI enforces this)."""
+    if not ids:
+        return 0
+    conn = sqlite3.connect(str(db_path))
+    try:
+        marks = ",".join("?" * len(ids))
+        cur = conn.execute(
+            f"DELETE FROM trades WHERE id IN ({marks})",
+            [int(i) for i in ids])
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
 def vacuum_db(db_path: Path) -> None:
     conn = sqlite3.connect(str(db_path))
     try:
@@ -186,6 +220,10 @@ def main(argv=None) -> int:
     parser.add_argument("--close-orphans", action="store_true",
                         help="Close whale rows in journal but absent from state.json")
     parser.add_argument("--vacuum", action="store_true", help="Run SQLite VACUUM")
+    parser.add_argument("--delete-ids", type=str, default="",
+                        help="Comma-separated row ids to delete (e.g. '412,413'). "
+                             "Dry-run prints the full rows first; --apply removes "
+                             "them after a backup.")
     parser.add_argument("--apply", action="store_true",
                         help="Actually mutate. Default is dry-run (no changes).")
     args = parser.parse_args(argv)
@@ -196,8 +234,12 @@ def main(argv=None) -> int:
         logger.error("DB not found: %s", args.db)
         return 1
 
-    if not (args.purge_phantom_10 or args.close_orphans or args.vacuum):
-        parser.error("Specify at least one of: --purge-phantom-10, --close-orphans, --vacuum")
+    if not (args.purge_phantom_10 or args.close_orphans or args.vacuum
+            or args.delete_ids):
+        parser.error("Specify at least one of: --purge-phantom-10, "
+                     "--close-orphans, --vacuum, --delete-ids")
+
+    delete_ids = [int(x) for x in args.delete_ids.split(",") if x.strip()]
 
     state_keys = _load_state_keys(args.state) if args.close_orphans else set()
 
@@ -231,6 +273,18 @@ def main(argv=None) -> int:
         else:
             print("ORPHAN whale rows: none.")
 
+    if delete_ids:
+        doomed = find_rows_by_ids(args.db, delete_ids)
+        missing = set(delete_ids) - {r["id"] for r in doomed}
+        print(f"DELETE-IDS ({len(doomed)} matching rows):")
+        for r in doomed:
+            print(f"  id={r['id']:4d} {r.get('symbol', '?'):12s} "
+                  f"{r.get('direction', '?'):5s} strategy='{r.get('strategy', '')}' "
+                  f"entry={r.get('entry_price')} exit={r.get('exit_price')} "
+                  f"opened={r.get('date_opened')}")
+        if missing:
+            print(f"  (ids not found, skipped: {sorted(missing)})")
+
     if not args.apply:
         print("\nDry-run only. Pass --apply to actually mutate.")
         return 0
@@ -246,6 +300,10 @@ def main(argv=None) -> int:
     if args.close_orphans and orphans:
         n = apply_close_orphans(args.db, orphans)
         print(f"Closed orphans: {n}")
+
+    if delete_ids:
+        n = apply_delete_ids(args.db, delete_ids)
+        print(f"Deleted rows: {n}")
 
     if args.vacuum:
         vacuum_db(args.db)

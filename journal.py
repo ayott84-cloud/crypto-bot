@@ -102,6 +102,11 @@ def _bot_tag(strategy: str) -> str:
         return "Whale"
     if strategy.startswith("Funding Fade"):
         return "Funding"
+    if strategy.startswith("Pair "):
+        # Legacy prefix form ("Pair ETHBTC") written by pair_main before
+        # Jul 16 2026 — evaded the endswith chain below, so 216 pair legs
+        # journaled as bot="Momentum". retag_bot_column repairs them.
+        return "Pair"
     if strategy.endswith("Scalp"):
         return "Scalp"
     if strategy.endswith("Crossover"):

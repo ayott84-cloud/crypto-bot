@@ -86,6 +86,10 @@ def _bot_of(strategy: str) -> str:
         return "whale"
     if strategy.startswith("Funding Fade"):
         return "funding"
+    if strategy.startswith("Pair "):
+        # Legacy prefix form ("Pair ETHBTC") written before Jul 16 2026 —
+        # evaded the endswith chain, charging pair losses to momentum.
+        return "pair"
     # Per-asset names are like "BTC 5m Scalp" / "ETH 1h Crossover" /
     # "BTC 4H Breakout" / "ETHBTC Pair" / "BTC 1D Reversal". The bare
     # tags ("Scalp", "Crossover", "Breakout", "Pair", "Reversal") are

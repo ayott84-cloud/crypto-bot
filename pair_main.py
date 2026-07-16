@@ -66,6 +66,39 @@ def leg_keys(pair_name: str) -> tuple[str, str]:
     )
 
 
+def strategy_tag_for(pair_name: str) -> str:
+    """Suffix form ("ETHBTC Pair") — the shape every other bot uses, and
+    the shape journal._bot_tag / kill_switch._bot_of classify by endswith.
+    The prefix form ("Pair ETHBTC") written before Jul 16 2026 evaded
+    both classifiers, journaling every pair leg as bot="Momentum"."""
+    return f"{pair_name} {PAIR_STRATEGY_TAG}"
+
+
+_INTERVAL_SECONDS = {
+    "1m": 60, "5m": 300, "15m": 900, "30m": 1800,
+    "1h": 3600, "4h": 14400, "1d": 86400, "1w": 604800,
+}
+
+
+def _bars_held(pos: dict, interval: str, now: Optional[datetime] = None) -> int:
+    """Whole interval-bars elapsed since the position's entry_time.
+
+    Replaces the per-POLL-cycle counter that made max_hold_bars=5 fire
+    "Time Stop" after 25 minutes (5 × 300s polls) instead of 5 daily
+    bars — the open→Time Stop→re-enter thrash of Jul 2-16 2026.
+    Positions without a parseable entry_time fall back to the legacy
+    counter (incremented), never raise."""
+    try:
+        entry = datetime.fromisoformat(pos["entry_time"])
+        if entry.tzinfo is None:
+            entry = entry.replace(tzinfo=timezone.utc)
+        now = now or datetime.now(timezone.utc)
+        secs = _INTERVAL_SECONDS[interval.lower()]
+        return max(0, int((now - entry).total_seconds() // secs))
+    except (KeyError, TypeError, ValueError):
+        return int(pos.get("bars_held") or 0) + 1
+
+
 def _pair_is_open(state: dict, pair_name: str = "ETHBTC") -> bool:
     """Is the named pair currently holding legs? Defaults to ETHBTC for
     backwards compat with the original single-pair API."""
@@ -124,7 +157,7 @@ def open_pair_position(
         return
 
     reason = f"{pair_name} pair entry z={z:.2f} ratio={current_ratio:.6f}"
-    strategy_tag = f"{PAIR_STRATEGY_TAG} {pair_name}"
+    strategy_tag = strategy_tag_for(pair_name)
     register_entry(
         state, long_k,
         entry_price=eth_price, atr_at_entry=0.0,
@@ -242,7 +275,7 @@ def close_pair_position(executor: Executor, state: dict, reason: str,
             tp1_price=entry,
             tp2_price=entry,
             exit_reason=reason,
-            strategy=f"{PAIR_STRATEGY_TAG} {pair_name}",
+            strategy=strategy_tag_for(pair_name),
             portfolio_value=portfolio_value,
         )
     except Exception as e:
@@ -278,7 +311,7 @@ def _run_one_pair(executor: Executor, state: dict, pair_name: str,
     # 1. Exit-management for an open pair
     if _pair_is_open(state, pair_name):
         long_leg = state.get("positions", {}).get(long_k) or {}
-        bars_held = int(long_leg.get("bars_held") or 0) + 1
+        bars_held = _bars_held(long_leg, interval)
         entry_ratio = float(long_leg.get("entry_ratio") or 0.0)
         pos_dir = ("LONG_ETH_SHORT_BTC"
                     if long_leg.get("direction") == "LONG"
