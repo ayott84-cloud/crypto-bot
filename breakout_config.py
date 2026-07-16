@@ -85,6 +85,12 @@ BREAKOUT_ASSETS = {
         "use_trend_filter":      True,    # G.2 — require 1D EMA20/50 agree   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
         "allow_short":          True,    # G.2: enabled — strategy is symmetric, restricting to LONG-only kills it in downtrends
         "sl_atr_mult_short":    1.0,
+        # Jul 16 2026 trailing A/B (same-window, 4 arms, n=71, ~4.9y):
+        # early_arm won decisively — PF 1.04→1.54, DD 64.3%→22.2%,
+        # total +6.3%→+71.0%. Arms at 1.0×ATR favorable, trails 1.0×ATR.
+        "use_trailing_exit":    True,
+        "trail_arm_atr_mult":   1.0,
+        "trail_atr_mult":       1.0,
         "strategy_name":        "ETH 4H Breakout",
         "use_btc_filter":       False,
     },
@@ -462,6 +468,22 @@ for _k in _STEP2_DEMOTED:
         BREAKOUT_CANDIDATE_ASSETS[_k] = BREAKOUT_ASSETS.pop(_k)
 
 
+# ─── Jul 16 2026 — trailing-exit A/B flips (tools/ab_breakout_trailing) ───
+# Same-window 4-arm replays; switch rule: challenger PF >= live + 0.10,
+# n >= 5. The A/B also exposed that NO live asset had use_trailing_exit
+# set (live == no_trail identically) — the knob only existed in the
+# candidate factory. ETH_4H flipped inline in its dict (early_arm won:
+# PF 1.04->1.54, DD 64.3->22.2, n=71). INJ_1H below (wide_trail won:
+# PF 1.05->1.17, total +8.7%->+30.8%, n=79). ETH_1H / DOGE_1H KEEP —
+# early-armed trails whipsaw 1h noise (PF 0.91 / 0.89). SOL_4H HOLD
+# pending a clean-window rerun (its A/B window truncated to 1.4y).
+BREAKOUT_ASSETS["INJ_1H"].update({
+    "use_trailing_exit":  True,
+    "trail_arm_atr_mult": 1.5,
+    "trail_atr_mult":     2.0,
+})
+
+
 # ─── Phase J.6 — backtest stats for projection table ──────────────────────
 # P4 Step-2 refresh (Jul 4 2026): every row now cites the long-window
 # HONEST replay (intra-bar fills, 0.15% costs, trailing + breakeven
@@ -473,14 +495,18 @@ BREAKOUT_BACKTEST_STATS = {
     # ── Live set (Step-2 keeps) ──
     "SOL_4H":  {"pf": 1.43, "trades":  46, "pnl_pct":  74.7, "dd_pct": 29.9,
                  "wr": 47.8, "years": 5.0, "source": _BK_4H_SOURCE},
-    "ETH_4H":  {"pf": 1.25, "trades":  83, "pnl_pct":  60.4, "dd_pct": 64.3,
-                 "wr": 38.6, "years": 7.8, "source": _BK_4H_SOURCE},
+    "ETH_4H":  {"pf": 1.54, "trades":  71, "pnl_pct":  71.0, "dd_pct": 22.2,
+                 "wr": 60.6, "years": 4.9,
+                 "source": "Jul 16 trailing A/B winning arm (early_arm, "
+                            "10799-bar 4h Coinbase honest replay)"},
     "DOGE_1H": {"pf": 1.41, "trades":  90, "pnl_pct":  49.3, "dd_pct": 27.7,
                  "wr": 34.4, "years": 1.9, "source": _BK_1H_SOURCE},
     "ETH_1H":  {"pf": 1.24, "trades":  93, "pnl_pct":  32.6, "dd_pct": 31.4,
                  "wr": 31.2, "years": 1.9, "source": _BK_1H_SOURCE},
-    "INJ_1H":  {"pf": 1.23, "trades":  75, "pnl_pct":  36.3, "dd_pct": 37.5,
-                 "wr": 33.3, "years": 1.9, "source": _BK_1H_SOURCE},
+    "INJ_1H":  {"pf": 1.17, "trades":  79, "pnl_pct":  30.8, "dd_pct": 35.9,
+                 "wr": 35.4, "years": 1.9,
+                 "source": "Jul 16 trailing A/B winning arm (wide_trail, "
+                            "17000-bar 1h Coinbase honest replay)"},
     # ── Demoted at Step-2 (kept for candidate-table honesty) ──
     "BTC_4H":  {"pf": 1.16, "trades":  78, "pnl_pct":  32.3, "dd_pct": 57.6,
                  "wr": 38.5, "years": 7.8,

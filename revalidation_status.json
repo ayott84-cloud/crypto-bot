@@ -5,7 +5,7 @@
   },
   "breakout": {
     "step": 2,
-    "note": "5 long-run positives paper-only; regime-gate A/B FALSIFIED Jul 4 (gate structurally redundant for Donchian-55)"
+    "note": "Jul 16 trailing A/B: ETH_4H -> early_arm trail (PF 1.04->1.54, DD 64->22), INJ_1H -> wide trail (1.05->1.17); ETH_1H/DOGE_1H keep; SOL_4H rerun pending (truncated window); regime-gate FALSIFIED Jul 4"
   },
   "momentum": {
     "step": 2,
