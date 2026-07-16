@@ -187,12 +187,32 @@ def test_funding_tab_renders_universe_mode_banner():
     assert ("OI" in html or "TOP100" in html)
 
 
-def test_funding_tab_renders_awaiting_signal_banner_when_no_trades():
+def _pin_pause_flags(monkeypatch):
+    """Make the banner tests host-independent. Every non-funding bot's
+    AWAITING SIGNAL banner renders when its *_PAUSED env flag is false
+    and it has zero trades in the fixture ctx — true on the droplet's
+    .env, false on a dev box. Pin: others PAUSED, funding LIVE, so the
+    assertions exercise ONLY the funding tab's banner logic. (This test
+    failed on the droplet on Jul 16 2026 for exactly this env leak.)"""
+    import breakout_config, crossover_config, pair_config
+    import reversal_config, scalp_config, funding_config
+    for mod, flag in ((breakout_config, "BREAKOUT_PAUSED"),
+                       (crossover_config, "CROSSOVER_PAUSED"),
+                       (pair_config, "PAIR_PAUSED"),
+                       (reversal_config, "REVERSAL_PAUSED"),
+                       (scalp_config, "SCALP_PAUSED")):
+        monkeypatch.setattr(mod, flag, True)
+    monkeypatch.setattr(funding_config, "FUNDING_PAUSED", False)
+
+
+def test_funding_tab_renders_awaiting_signal_banner_when_no_trades(monkeypatch):
+    _pin_pause_flags(monkeypatch)
     html = render("base.html.j2", _ctx(trades=[]))
     assert "AWAITING SIGNAL" in html
 
 
-def test_funding_tab_omits_awaiting_banner_when_trades_exist():
+def test_funding_tab_omits_awaiting_banner_when_trades_exist(monkeypatch):
+    _pin_pause_flags(monkeypatch)
     html = render("base.html.j2", _ctx(trades=[
         _trade("Funding", 120, 10.0, "WIN"),
     ]))
