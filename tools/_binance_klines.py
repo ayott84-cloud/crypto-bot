@@ -40,6 +40,45 @@ _KLINES_PATH = "/products/{product_id}/candles"
 _PER_CALL_LIMIT = 300        # Coinbase's hard cap per call
 _RATE_LIMIT_SLEEP_S = 0.15   # Coinbase public 10 req/s — well under
 
+# Transient-transport retry policy (Jul 16 2026): sustained chunk chains
+# provoke occasional SSLEOFError connection drops from Coinbase. Before
+# this, ONE dropped request ended the whole chain as if history were
+# exhausted — the momentum re-window and trailing A/B ran on silently
+# truncated windows (SOL's chain died at Feb 2025, mid-history).
+_RETRY_SLEEPS = (2.0, 5.0)          # attempt + 2 retries
+_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+
+
+class TransientFetchError(Exception):
+    """A transport-level failure that persisted through all retries.
+    fetch_klines_chained catches it to stop the chain LOUDLY."""
+
+
+def _get_with_retries(url: str, params: dict, symbol: str, interval: str):
+    """requests.get with backoff on transport errors + retryable HTTP
+    statuses. Returns the Response (any status outside the retryable
+    set, including 200 and 404). Raises TransientFetchError when every
+    attempt failed transiently."""
+    last_err = None
+    for i, sleep_s in enumerate((0.0,) + _RETRY_SLEEPS):
+        if sleep_s:
+            logger.warning("Coinbase retry %d/%d for %s %s in %.0fs: %s",
+                             i, len(_RETRY_SLEEPS), symbol, interval,
+                             sleep_s, last_err)
+            time.sleep(sleep_s)
+        try:
+            r = requests.get(url, params=params, timeout=15.0,
+                              headers={"User-Agent": "crypto-bot-backtest/1.0"})
+        except requests.RequestException as e:
+            last_err = e
+            continue
+        if r.status_code in _RETRYABLE_STATUS:
+            last_err = f"HTTP {r.status_code}"
+            continue
+        return r
+    raise TransientFetchError(
+        f"{symbol} {interval}: all retries exhausted ({last_err})")
+
 # Coinbase uses granularity in SECONDS. Allowed: 60, 300, 900, 3600, 21600, 86400
 _INTERVAL_GRANULARITY = {
     "1m": 60, "5m": 300, "15m": 900,
@@ -189,10 +228,12 @@ def _one_call(symbol: str, interval: str, end_time_ms: Optional[int],
     }
 
     try:
-        r = requests.get(_COINBASE_BASE + _KLINES_PATH.format(product_id=product_id),
-                          params=params, timeout=15.0,
-                          headers={"User-Agent": "crypto-bot-backtest/1.0"})
+        r = _get_with_retries(
+            _COINBASE_BASE + _KLINES_PATH.format(product_id=product_id),
+            params, symbol, interval)
         if r.status_code != 200:
+            # Non-retryable status (e.g. 404 unknown product) — a data
+            # answer, not a transport failure. No retry storm.
             logger.warning("Coinbase klines HTTP %d for %s %s: %s",
                               r.status_code, symbol, interval, r.text[:200])
             return []
@@ -269,9 +310,18 @@ def fetch_klines_chained(symbol: str, interval: str, total_bars: int) -> list:
 
     while remaining > 0:
         chunk_limit = min(_PER_CALL_LIMIT, remaining)
-        chunk = _one_call(symbol, interval, end_time_ms, chunk_limit)
+        try:
+            chunk = _one_call(symbol, interval, end_time_ms, chunk_limit)
+        except TransientFetchError as e:
+            oldest = (datetime.fromtimestamp(int(accumulated[0][0]) / 1000,
+                                                tz=timezone.utc).isoformat()
+                       if accumulated else "n/a")
+            logger.warning(
+                "%s %s chain TRUNCATED: %d of %d bars fetched (oldest %s) — %s",
+                symbol, interval, len(accumulated), total_bars, oldest, e)
+            break
         if not chunk:
-            break   # empty chunk = history exhausted (or hard error)
+            break   # empty chunk = history genuinely exhausted
         oldest_open_time = int(chunk[0][0])
         # No-progress guard BEFORE accumulating: a payload that doesn't
         # reach further back (static mock, API echo) would otherwise be

@@ -9,7 +9,7 @@
   },
   "momentum": {
     "step": 2,
-    "note": "long-window passers: BTC 1.57, ADA_4H 1.41, NEAR_1D 1.69, INJ_4H 1.31 marginal; alts rerun pending (symbol map extended); needs exchange-native brackets before Step 3"
+    "note": "long-window passers: BTC 1.57, ADA_4H 1.41, NEAR_1D 1.69, INJ_4H 1.31 marginal; Jul 16 re-window: ETH_1D full-history n=9 (PF 8.11) — genuine rare-signal config, unpromotable on sample; SOL/SHIB_1D rerun pending (window may have been truncated pre retry-fix)"
   },
   "crossover": {
     "step": 0,

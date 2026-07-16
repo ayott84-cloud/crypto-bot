@@ -32,6 +32,12 @@ if str(BOT_DIR) not in sys.path:
 
 STALE_AFTER_SECONDS = 30 * 60
 
+# Cycle-aware overrides (Jul 16 2026): funding cycles HOURLY, so its
+# heartbeat is legitimately 30-60 min old for the back half of every
+# cycle — the global 30-min bar flagged a healthy bot as STALE twice
+# and triggered a pointless restart. ~2.5x the owner's cycle interval.
+_STALE_AFTER_BY_OWNER = {"funding": 150 * 60}
+
 
 def _parked_owners() -> set:
     """Bots at revalidation step 0 (PARKED) — their services may be
@@ -68,14 +74,15 @@ def classify_heartbeats(paths, stale_after_s: int = STALE_AFTER_SECONDS,
         # ".reversal_heartbeat" → owner "reversal"
         owner = p.name.lstrip(".").removesuffix("_heartbeat")
         age = now - p.stat().st_mtime
+        threshold = _STALE_AFTER_BY_OWNER.get(owner, stale_after_s)
         if owner in parked:
-            if age > stale_after_s:
+            if age > threshold:
                 continue  # relic of a stopped service — expected
             out.append({"name": p.name, "age_s": int(age),
                          "stale": False, "parked_alive": True})
             continue
         out.append({"name": p.name, "age_s": int(age),
-                     "stale": age > stale_after_s})
+                     "stale": age > threshold})
     return out
 
 
