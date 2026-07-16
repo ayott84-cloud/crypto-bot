@@ -997,10 +997,31 @@ def replay_pair(bars: int = 500, asset_name: str | None = None,
 
 # ─── CLI ───────────────────────────────────────────────────────────────────
 
-def _run_momentum(bars: int, source: str = "weex") -> List[BacktestReport]:
-    from config import ASSETS
+def _momentum_universe(include_candidates: bool = False) -> dict:
+    """Live momentum set, optionally merged with the Step-2 demoted
+    candidates (MOMENTUM_CANDIDATE_ASSETS) — the re-window runs replay
+    demoted configs like ETH_1D/SOL/SHIB_1D on longer windows."""
+    from config import ASSETS, MOMENTUM_CANDIDATE_ASSETS
+    if include_candidates:
+        return {**ASSETS, **MOMENTUM_CANDIDATE_ASSETS}
+    return dict(ASSETS)
+
+
+def _filter_universe(universe: dict, assets) -> dict:
+    """Restrict a bot universe to a comma-separated key list. None/empty
+    string keeps the full universe."""
+    if not assets or not str(assets).strip():
+        return universe
+    want = {a.strip() for a in str(assets).split(",") if a.strip()}
+    return {k: v for k, v in universe.items() if k in want}
+
+
+def _run_momentum(bars: int, source: str = "weex",
+                    include_candidates: bool = False,
+                    assets=None) -> List[BacktestReport]:
+    universe = _filter_universe(_momentum_universe(include_candidates), assets)
     return [replay_momentum(name, cfg, bars=bars, source=source)
-            for name, cfg in ASSETS.items()]
+            for name, cfg in universe.items()]
 
 
 def _run_scalp(bars: int, source: str = "weex") -> List[BacktestReport]:
@@ -1055,6 +1076,12 @@ def main() -> None:
                         help="Breakout A/B arm: activate the L.2 regime "
                               "gate in the replay (live is gate-inert; see "
                               "docs/BREAKOUT_REGIME_GATE_TICKET.md)")
+    parser.add_argument("--include-candidates", action="store_true",
+                        help="Momentum: also replay the Step-2 demoted "
+                              "MOMENTUM_CANDIDATE_ASSETS configs")
+    parser.add_argument("--assets", type=str, default="",
+                        help="Momentum: comma-separated asset keys to "
+                              "replay (e.g. 'ETH_1D,SOL,SHIB_1D')")
     args = parser.parse_args()
 
     runners = {
@@ -1076,6 +1103,11 @@ def main() -> None:
             if bot == "breakout":
                 reports = runners[bot](args.bars, source=args.source,
                                          regime_gate=args.regime_gate)
+            elif bot == "momentum":
+                reports = runners[bot](
+                    args.bars, source=args.source,
+                    include_candidates=args.include_candidates,
+                    assets=args.assets or None)
             elif bot in _source_aware:
                 reports = runners[bot](args.bars, source=args.source)
             else:

@@ -13,15 +13,15 @@
   },
   "crossover": {
     "step": 0,
-    "note": "PARKED — structurally dead over 2yr (all 8 assets PF 0.15-0.72)"
+    "note": "PARKED — structurally dead over 2yr (all 8 assets PF 0.15-0.72); service found still running Jul 16, stopped+disabled"
   },
   "pair": {
     "step": 0,
-    "note": "PARKED Jul 4 — 5.5yr honest replay PF 0.63, -81%, DD 94.5% with two-leg costs; old PF 4.96 was a short-window cost-free artifact"
+    "note": "PARKED Jul 4 — 5.5yr honest replay PF 0.63, -81%, DD 94.5% with two-leg costs; Jul 16: service found still running (215-leg Time-Stop thrash, bars_held bug since fixed), stopped+disabled"
   },
   "whale": {
-    "step": 1,
-    "note": "paused; rebuilt filter stack awaiting paper-soak evidence"
+    "step": 4,
+    "note": "30-day paper-soak started Jul 16 2026 (W.3a gate: PF>=1.0, n>=10 at day 30); rebuilt filter stack; steps 1-3 N/A (no historical leaderboard data to replay)"
   },
   "funding": {
     "step": 1,
