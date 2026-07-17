@@ -111,6 +111,14 @@ BREAKOUT_ASSETS = {
         "use_trend_filter":      True,    # G.2 — require 1D EMA20/50 agree   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
         "allow_short":          True,    # G.2: enabled — strategy is symmetric, restricting to LONG-only kills it in downtrends
         "sl_atr_mult_short":    1.0,
+        # Jul 17 2026 trailing A/B clean-window rerun (11132 bars ~5.1y,
+        # full SOL Coinbase history): early_arm won — PF 1.43→1.90,
+        # total +74.7%→+123.2%, DD 29.9%→22.1%, n=59. Same arm as
+        # ETH_4H; both 4h configs favor early-armed trails, both 1h
+        # configs reject them.
+        "use_trailing_exit":    True,
+        "trail_arm_atr_mult":   1.0,
+        "trail_atr_mult":       1.0,
         "strategy_name":        "SOL 4H Breakout",
         "use_btc_filter":       False,
     },
@@ -475,8 +483,9 @@ for _k in _STEP2_DEMOTED:
 # candidate factory. ETH_4H flipped inline in its dict (early_arm won:
 # PF 1.04->1.54, DD 64.3->22.2, n=71). INJ_1H below (wide_trail won:
 # PF 1.05->1.17, total +8.7%->+30.8%, n=79). ETH_1H / DOGE_1H KEEP —
-# early-armed trails whipsaw 1h noise (PF 0.91 / 0.89). SOL_4H HOLD
-# pending a clean-window rerun (its A/B window truncated to 1.4y).
+# early-armed trails whipsaw 1h noise (PF 0.91 / 0.89). SOL_4H flipped
+# inline in its dict after the Jul 17 clean-window rerun (early_arm:
+# PF 1.43->1.90, n=59, full 5.1y history).
 BREAKOUT_ASSETS["INJ_1H"].update({
     "use_trailing_exit":  True,
     "trail_arm_atr_mult": 1.5,
@@ -493,8 +502,10 @@ _BK_1H_SOURCE = "17000-bar 1h Coinbase honest replay (~2yr, deployed exits)"
 _BK_4H_SOURCE = "17000-bar 4h Coinbase honest replay (multi-yr, deployed exits)"
 BREAKOUT_BACKTEST_STATS = {
     # ── Live set (Step-2 keeps) ──
-    "SOL_4H":  {"pf": 1.43, "trades":  46, "pnl_pct":  74.7, "dd_pct": 29.9,
-                 "wr": 47.8, "years": 5.0, "source": _BK_4H_SOURCE},
+    "SOL_4H":  {"pf": 1.90, "trades":  59, "pnl_pct": 123.2, "dd_pct": 22.1,
+                 "wr": 67.8, "years": 5.1,
+                 "source": "Jul 17 trailing A/B winning arm (early_arm, "
+                            "11132-bar 4h Coinbase honest replay)"},
     "ETH_4H":  {"pf": 1.54, "trades":  71, "pnl_pct":  71.0, "dd_pct": 22.2,
                  "wr": 60.6, "years": 4.9,
                  "source": "Jul 16 trailing A/B winning arm (early_arm, "

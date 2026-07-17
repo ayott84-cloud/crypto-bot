@@ -73,7 +73,10 @@ def test_breakout_demotions_are_candidates():
 
 def test_breakout_stats_are_honest_long_window():
     from breakout_config import BREAKOUT_BACKTEST_STATS
-    assert BREAKOUT_BACKTEST_STATS["SOL_4H"]["pf"] == pytest.approx(1.43)
+    # SOL_4H superseded Jul 17 2026: the trailing A/B flipped its exit
+    # stack to early_arm, and the stats row must describe the DEPLOYED
+    # stack (still an honest long-window replay — 11132 bars, ~5.1y).
+    assert BREAKOUT_BACKTEST_STATS["SOL_4H"]["pf"] == pytest.approx(1.90)
     assert BREAKOUT_BACKTEST_STATS["ETH_1H"]["pf"] == pytest.approx(1.24)
     for k in ("SOL_4H", "ETH_4H", "DOGE_1H", "ETH_1H", "INJ_1H"):
         assert BREAKOUT_BACKTEST_STATS[k]["years"] >= 1.5, k

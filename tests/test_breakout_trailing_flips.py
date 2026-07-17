@@ -50,10 +50,14 @@ def test_keep_verdicts_stay_trail_free():
         assert not BREAKOUT_ASSETS[key].get("use_trailing_exit"), key
 
 
-def test_sol_4h_held_pending_clean_window():
-    """SOL_4H's A/B window was truncated to 1.4y — no flip until the
-    rerun on the retry-hardened fetcher confirms."""
-    assert not BREAKOUT_ASSETS["SOL_4H"].get("use_trailing_exit")
+def test_sol_4h_switched_to_early_arm_trailing():
+    """Jul 17 clean-window rerun (11132 bars, ~5.1y — full SOL Coinbase
+    history; live arm matched the Jul 4 stats row exactly): early_arm
+    won — PF 1.43->1.90, total +74.7%->+123.2%, DD 29.9%->22.1%, n=59."""
+    cfg = BREAKOUT_ASSETS["SOL_4H"]
+    assert cfg.get("use_trailing_exit") is True
+    assert cfg.get("trail_arm_atr_mult") == 1.0
+    assert cfg.get("trail_atr_mult") == 1.0
 
 
 def test_stats_rows_updated_for_flipped_assets():
@@ -68,3 +72,8 @@ def test_stats_rows_updated_for_flipped_assets():
     assert inj["pf"] == 1.17
     assert inj["trades"] == 79
     assert "A/B" in inj["source"]
+    sol = BREAKOUT_BACKTEST_STATS["SOL_4H"]
+    assert sol["pf"] == 1.90
+    assert sol["trades"] == 59
+    assert sol["dd_pct"] == 22.1
+    assert "A/B" in sol["source"]
