@@ -29,6 +29,23 @@ from config import (
 )
 from btc_context import _build_btc_context
 
+# Jul 17 2026: momentum was the ONLY bot without a heartbeat — the risk
+# sentinel (tools/risk_check.py) was blind to a wedged momentum process.
+# Same touch pattern as breakout_main._write_heartbeat.
+from pathlib import Path as _Path
+
+_HEARTBEAT_FILE = _Path(__file__).resolve().parent / ".momentum_heartbeat"
+
+
+def _write_heartbeat() -> None:
+    try:
+        _HEARTBEAT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _HEARTBEAT_FILE.touch()
+    except Exception as e:  # noqa: BLE001
+        import logging
+        logging.getLogger("crypto_bot").warning(
+            "Failed to write heartbeat: %s", e)
+
 
 def _fetch_btc_eth_corr(executor, window: int = 30):
     """P3.6 — 30d BTC-ETH rolling-returns correlation, computed once per
@@ -239,6 +256,7 @@ def run():
         cycle_count += 1
         trade_occurred = False
         cycle_start = time.time()
+        _write_heartbeat()
 
         # B.1: Pre-fetch BTC context keyed by (interval, ema_period). Each
         # asset's BTC correlation filter uses its OWN btc_ema_period; the

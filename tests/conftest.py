@@ -49,4 +49,42 @@ def _hermetic_data_paths(tmp_path, monkeypatch):
                           tmp_path / "control_flags.json")
     monkeypatch.setattr(routine_stamps, "_STAMPS_PATH",
                           tmp_path / ".routine_stamps.json")
+
+    # Jul 17 2026 extension: the Jul 16 droplet pytest run recreated
+    # 0-byte .pair_heartbeat / .reversal_heartbeat relics in BOT_DIR —
+    # heartbeats, signal logs, and notifier credentials were not covered.
+    # Bot mains import heavy deps (pandas); skip any that can't import.
+    _file_globals = [
+        ("main",           "_HEARTBEAT_FILE",    ".momentum_heartbeat"),
+        ("scalp_main",     "_HEARTBEAT_FILE",    ".scalp_heartbeat"),
+        ("breakout_main",  "_HEARTBEAT_FILE",    ".breakout_heartbeat"),
+        ("crossover_main", "_HEARTBEAT_FILE",    ".crossover_heartbeat"),
+        ("pair_main",      "_HEARTBEAT_FILE",    ".pair_heartbeat"),
+        ("reversal_main",  "_HEARTBEAT_FILE",    ".reversal_heartbeat"),
+        ("whale_main",     "_HEARTBEAT_FILE",    ".whale_heartbeat"),
+        ("funding_main",   "FUNDING_HEARTBEAT",  ".funding_heartbeat"),
+        ("whale_main",     "WHALE_SIGNAL_LOG",   "whale_signals.jsonl"),
+        ("funding_main",   "FUNDING_SIGNAL_LOG", "funding_signals.jsonl"),
+    ]
+    import importlib
+    for mod_name, attr, fname in _file_globals:
+        try:
+            mod = importlib.import_module(mod_name)
+        except Exception:
+            continue
+        if hasattr(mod, attr):
+            monkeypatch.setattr(mod, attr, tmp_path / fname)
+
+    # Notifier: a dev box has no .env (both send paths already no-op);
+    # the droplet's .env carries the REAL webhook + SMTP creds. Blank
+    # them so the suite behaves identically everywhere — tests exercising
+    # send paths patch their own fakes, which override this.
+    try:
+        import notifier
+        monkeypatch.setattr(notifier, "DISCORD_WEBHOOK_URL", "")
+        for cred in ("SMTP_HOST", "SMTP_USER", "SMTP_PASS", "NOTIFY_EMAIL"):
+            if hasattr(notifier, cred):
+                monkeypatch.setattr(notifier, cred, "")
+    except Exception:
+        pass
     yield
