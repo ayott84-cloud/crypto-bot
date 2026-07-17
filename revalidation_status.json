@@ -9,7 +9,7 @@
   },
   "momentum": {
     "step": 2,
-    "note": "long-window passers: BTC 1.57, ADA_4H 1.41, NEAR_1D 1.69, INJ_4H 1.31 marginal; Jul 16 re-window: ETH_1D full-history n=9 (PF 8.11) — genuine rare-signal config, unpromotable on sample; SOL/SHIB_1D rerun pending (window may have been truncated pre retry-fix)"
+    "note": "long-window passers: BTC 1.57, ADA_4H 1.41, NEAR_1D 1.69, INJ_4H 1.31 marginal; Jul 16 re-window CLOSED: ETH_1D n=9/decade, SOL n=5/~5yr, SHIB_1D n=5 — all confirmed rare-signal on full clean windows (loud-truncation fetcher), unpromotable samples, stay candidates"
   },
   "crossover": {
     "step": 0,
