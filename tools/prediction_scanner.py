@@ -74,6 +74,28 @@ def normalize_polymarket(raw: dict):
         return None
 
 
+def _kalshi_price(raw: dict, base: str):
+    """Dollar price for e.g. base='yes_bid' from either schema.
+
+    Jul 24 2026 field dump (schema-drift warning's first catch):
+    Kalshi migrated to *_dollars decimal fields, served as strings
+    ("0.42"); the legacy bare fields were integer CENTS. Prefer the
+    unambiguous dollars field when both coexist mid-migration."""
+    v = raw.get(f"{base}_dollars")
+    if v is not None:
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+    v = raw.get(base)
+    if v is not None:
+        try:
+            return float(v) / 100.0
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
 def normalize_kalshi(raw: dict):
     """Kalshi market row (cent prices) → common shape, or None.
 
@@ -87,17 +109,17 @@ def normalize_kalshi(raw: dict):
                   or raw.get("ticker"))
         if not title:
             return None
-        bid_c, ask_c = raw.get("yes_bid"), raw.get("yes_ask")
-        if bid_c is not None and ask_c is not None:
-            bid = float(bid_c) / 100.0
-            ask = float(ask_c) / 100.0
+        bid = _kalshi_price(raw, "yes_bid")
+        ask = _kalshi_price(raw, "yes_ask")
+        if bid is not None and ask is not None:
             yes_price = (bid + ask) / 2.0
             spread = ask - bid
-        elif raw.get("last_price") is not None:
-            bid = ask = spread = None
-            yes_price = float(raw["last_price"]) / 100.0
         else:
-            return None
+            last = _kalshi_price(raw, "last_price")
+            if last is None:
+                return None
+            bid = ask = spread = None
+            yes_price = last
         return {
             "venue":      "kalshi",
             "title":      title,
@@ -118,7 +140,7 @@ def normalize_report(venue: str, raw_rows: list, rows: list) -> None:
     Dumps the first raw row's field names so the next scheduled run
     self-diagnoses schema drift without an operator round-trip."""
     if raw_rows and not rows:
-        keys = ", ".join(sorted(raw_rows[0].keys())[:14])
+        keys = ", ".join(sorted(raw_rows[0].keys()))
         print(f"WARN: {venue} returned {len(raw_rows)} raw rows but 0 "
                f"normalized — schema drift? First-row fields: {keys}")
 

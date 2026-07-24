@@ -65,6 +65,37 @@ def test_normalize_kalshi_truly_unusable_returns_none():
     assert normalize_kalshi({}) is None
 
 
+# ─── Jul 24 drift confirmed by the field dump: dollars-suffixed schema ──
+# WARN showed last_price_dollars / liquidity_dollars — Kalshi moved from
+# integer-cent fields to *_dollars decimals (served as strings).
+
+def test_normalize_kalshi_dollars_schema():
+    row = normalize_kalshi({"title": "Will X happen?",
+                              "yes_bid_dollars": "0.40",
+                              "yes_ask_dollars": "0.44",
+                              "volume_24h": 10})
+    assert row is not None
+    assert row["yes_price"] == pytest.approx(0.42)
+    assert row["spread"] == pytest.approx(0.04)
+
+
+def test_normalize_kalshi_dollars_last_price_fallback():
+    row = normalize_kalshi({"ticker": "KXFOO-26",
+                              "last_price_dollars": "0.37"})
+    assert row is not None
+    assert row["yes_price"] == pytest.approx(0.37)
+    assert row["bid"] is None and row["ask"] is None
+
+
+def test_normalize_kalshi_dollars_field_wins_over_cents():
+    """When both schemas coexist during a migration, the unambiguous
+    dollars field must win."""
+    row = normalize_kalshi({"title": "T", "yes_bid_dollars": "0.40",
+                              "yes_bid": 99, "yes_ask_dollars": "0.44",
+                              "yes_ask": 99})
+    assert row["yes_price"] == pytest.approx(0.42)
+
+
 def test_normalize_report_flags_total_kill(capsys):
     raw = [{"ticker": "T1", "weird_field": 1, "another": 2}]
     normalize_report("kalshi", raw, [])
