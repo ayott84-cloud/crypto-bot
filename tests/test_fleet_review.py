@@ -8,7 +8,7 @@ Run: python -m pytest tests/test_fleet_review.py -v
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -61,3 +61,42 @@ def test_symbol_breakdown_filters_bot_and_window():
     assert by_sym["ETHUSDT"]["net"] == pytest.approx(1.0)
     assert by_sym["BTCUSDT"]["n"] == 1
     assert "Breakout" not in str(rows)
+
+
+# ─── Entry-blocker histogram (Jul 24 — momentum's 3-week silence needs
+#     an at-a-glance answer in every review, not a dashboard visit) ─────────
+
+def _sig(blocked_by, hours_ago=1.0, would_enter=False):
+    checked = (datetime.now(timezone.utc)
+                - timedelta(hours=hours_ago)).isoformat()
+    return {"blocked_by": blocked_by, "would_enter": would_enter,
+            "checked_at": checked}
+
+
+def test_blocked_by_rows_groups_and_sorts():
+    from tools.fleet_review import blocked_by_rows
+    rows = blocked_by_rows({
+        "BTC":     _sig("btc_filter"),
+        "ADA_4H":  _sig("btc_filter"),
+        "INJ_4H":  _sig("trend"),
+        "SUI_1D":  _sig(None, would_enter=True),
+    })
+    by_reason = {r["reason"]: r for r in rows}
+    assert by_reason["btc_filter"]["n"] == 2
+    assert set(by_reason["btc_filter"]["assets"]) == {"BTC", "ADA_4H"}
+    assert by_reason["trend"]["n"] == 1
+    assert by_reason["WOULD_ENTER"]["n"] == 1
+    assert rows[0]["reason"] == "btc_filter"      # sorted by count desc
+
+
+def test_blocked_by_rows_drops_stale_entries():
+    """Relic signal_status rows from parked bots' assets must not
+    pollute the histogram — only recently-checked entries count."""
+    from tools.fleet_review import blocked_by_rows
+    rows = blocked_by_rows({
+        "BTC":    _sig("btc_filter", hours_ago=1.0),
+        "OLD_1H": _sig("trend", hours_ago=200.0),
+    }, max_age_h=24.0)
+    reasons = {r["reason"] for r in rows}
+    assert "trend" not in reasons
+    assert "btc_filter" in reasons

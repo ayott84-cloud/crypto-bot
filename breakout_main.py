@@ -198,6 +198,13 @@ def open_breakout_position(
         entry_reason=f"Donchian break {direction}",
         symbol=symbol,
         direction=direction,
+        # P5a marker fields (added Jul 24 — the DOGE_1H short showed
+        # "SL — TP —" in fleet_review): the exchange SL above must also
+        # be persisted, or the risk sentinel skips this position as
+        # legacy and can never flag a missing bracket.
+        bracket_kind="atr_sl",
+        sl_price=float(sl_str),
+        tp_price=None,
     )
 
     # Email open notification (fire-and-forget; failures logged in notifier)

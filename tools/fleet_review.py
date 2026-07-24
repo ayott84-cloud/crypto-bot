@@ -71,6 +71,36 @@ def symbol_stats(trades: list, bot: str, days: int = 14) -> list:
     return rows
 
 
+def blocked_by_rows(signal_status: dict, max_age_h: float = 24.0,
+                      now=None) -> list:
+    """Group per-asset signal_status into [{reason, n, assets}] rows,
+    sorted by count desc. Entries checked more than max_age_h ago are
+    relics (parked bots' assets) and dropped. would_enter=True groups
+    under WOULD_ENTER — an asset that WANTS to trade but hasn't fired
+    an entry is a different conversation than a blocked one."""
+    now = now or datetime.now(timezone.utc)
+    groups: dict = defaultdict(list)
+    for asset, sig in (signal_status or {}).items():
+        if not isinstance(sig, dict):
+            continue
+        try:
+            checked = datetime.fromisoformat(sig.get("checked_at") or "")
+            if checked.tzinfo is None:
+                checked = checked.replace(tzinfo=timezone.utc)
+            age_h = (now - checked).total_seconds() / 3600.0
+        except ValueError:
+            continue
+        if age_h > max_age_h:
+            continue
+        reason = ("WOULD_ENTER" if sig.get("would_enter")
+                   else (sig.get("blocked_by") or "?"))
+        groups[reason].append(asset)
+    return sorted(
+        ({"reason": r, "n": len(a), "assets": sorted(a)}
+          for r, a in groups.items()),
+        key=lambda row: -row["n"])
+
+
 def step4_verdict(pf, n: int) -> dict:
     """The Step-4 paper-window gate: PF >= 1.3 over >= 10 closed trades."""
     if pf is None or n == 0:
@@ -210,6 +240,19 @@ def main() -> int:
                    f"phase={pos.get('phase', '—')}")
     except Exception as e:  # noqa: BLE001
         print(f"\n-- Open positions -- unavailable: {e}")
+
+    # 8.5. Entry blockers — why are quiet bots quiet?
+    try:
+        from position_manager import load_state as _ls
+        rows = blocked_by_rows((_ls().get("signal_status") or {}))
+        if rows:
+            print("\n-- Entry blockers (signal_status, checked <24h) --")
+            for r in rows:
+                names = ", ".join(r["assets"][:6])
+                extra = f" +{r['n'] - 6} more" if r["n"] > 6 else ""
+                print(f"  {r['reason']:22s} n={r['n']:2d}  {names}{extra}")
+    except Exception:  # noqa: BLE001
+        pass
 
     # 9. Pipeline stages
     try:
