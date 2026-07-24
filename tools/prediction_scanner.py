@@ -75,22 +75,52 @@ def normalize_polymarket(raw: dict):
 
 
 def normalize_kalshi(raw: dict):
-    """Kalshi market row (cent prices) → common shape, or None."""
+    """Kalshi market row (cent prices) → common shape, or None.
+
+    Jul 24 2026 hardening: 19 scanner runs logged 0 kalshi rows while
+    the endpoint served markets — every row died here. Two drift modes
+    now tolerated: yes_bid/yes_ask None on unquoted books (fall back to
+    last_price) and title absent (fall back yes_sub_title → ticker).
+    """
     try:
-        bid = float(raw["yes_bid"]) / 100.0
-        ask = float(raw["yes_ask"]) / 100.0
+        title = (raw.get("title") or raw.get("yes_sub_title")
+                  or raw.get("ticker"))
+        if not title:
+            return None
+        bid_c, ask_c = raw.get("yes_bid"), raw.get("yes_ask")
+        if bid_c is not None and ask_c is not None:
+            bid = float(bid_c) / 100.0
+            ask = float(ask_c) / 100.0
+            yes_price = (bid + ask) / 2.0
+            spread = ask - bid
+        elif raw.get("last_price") is not None:
+            bid = ask = spread = None
+            yes_price = float(raw["last_price"]) / 100.0
+        else:
+            return None
         return {
             "venue":      "kalshi",
-            "title":      raw["title"],
-            "yes_price":  (bid + ask) / 2.0,
+            "title":      title,
+            "yes_price":  yes_price,
             "bid":        bid,
             "ask":        ask,
-            "spread":     ask - bid,
+            "spread":     spread,
             "volume_24h": float(raw.get("volume_24h") or 0),
             "close_time": raw.get("close_time") or "",
         }
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def normalize_report(venue: str, raw_rows: list, rows: list) -> None:
+    """Loud when normalization kills EVERYTHING the API returned —
+    'venue rows: 0' must be distinguishable from 'API gave nothing'.
+    Dumps the first raw row's field names so the next scheduled run
+    self-diagnoses schema drift without an operator round-trip."""
+    if raw_rows and not rows:
+        keys = ", ".join(sorted(raw_rows[0].keys())[:14])
+        print(f"WARN: {venue} returned {len(raw_rows)} raw rows but 0 "
+               f"normalized — schema drift? First-row fields: {keys}")
 
 
 def find_overlaps(poly_rows: list, kalshi_rows: list,
@@ -159,6 +189,8 @@ def main() -> int:
 
     poly = [r for r in map(normalize_polymarket, poly_raw) if r]
     kalshi = [r for r in map(normalize_kalshi, kalshi_raw) if r]
+    normalize_report("polymarket", poly_raw, poly)
+    normalize_report("kalshi", kalshi_raw, kalshi)
 
     log_rows(poly + kalshi)
     overlaps = find_overlaps(poly, kalshi)
