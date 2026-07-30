@@ -142,6 +142,20 @@ Any hard-stop trip resets the ladder one rung.
 
 ---
 
+## Research-run hygiene (Jul 30 2026 incident)
+
+Running three long-window replay jobs concurrently on the droplet
+OOM-killed not just one of the jobs but a LIVE BOT service repeatedly
+(dmesg: python ~326MB RSS killed 3x at ~5-min intervals — a systemd
+restart loop while the box was saturated). Rules:
+
+- **One research job at a time** on the droplet. `nohup ... &` then wait.
+- Use `python -u` for long runs — full buffering under nohup means an
+  OOM-killed job leaves an EMPTY log (no traceback; SIGKILL flushes
+  nothing). Silent log + dead process = check `dmesg | grep -i oom`.
+- After any OOM event, verify all five live services + heartbeats
+  before trusting the next review's numbers.
+
 ## Standing rules (all steps)
 
 - `DRY_RUN=True` until Step 5's explicit operator flip.
