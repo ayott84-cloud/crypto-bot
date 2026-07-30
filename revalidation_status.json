@@ -5,7 +5,7 @@
   },
   "breakout": {
     "step": 2,
-    "note": "trailing A/B CLOSED Jul 17: ETH_4H + SOL_4H -> early_arm trail (PF 1.04->1.54, 1.43->1.90), INJ_1H -> wide trail (1.05->1.17); ETH_1H/DOGE_1H keep (trails whipsaw 1h); regime-gate FALSIFIED Jul 4"
+    "note": "Jul 30 Gate-A round: plateau CONFIRMED for ETH_4H (all 9 cells 1.43-1.61, full 7.8y) + SOL_4H (1.63-1.92); cost-stress 0.30%: SOL 1.82 / ETH_4H 1.37 robust, DOGE_1H 1.16 / ETH_1H 1.10 thin, INJ_1H 0.65 DD79% -> FEE-FRAGILE flag (cannot advance gates; n-anomaly vs A/B needs same-window baseline); trailing flips Jul 16-17; regime-gate FALSIFIED Jul 4"
   },
   "momentum": {
     "step": 2,
