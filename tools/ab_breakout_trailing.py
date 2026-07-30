@@ -1,8 +1,12 @@
 """Per-asset trailing-exit A/B for the breakout bot (Step-2 research).
 
-Every live breakout asset runs the offset-armed trailing exit (arms at
-1.5xATR favorable, trails 1.0xATR off the water mark). This harness
-replays each asset's SAME long window through four exit-stack arms:
+(Jul 16 finding: the original premise here — that every live asset ran
+the trailing exit — was WRONG; live == no_trail identically because the
+knob only existed in the candidate factory. The A/B exposed that and
+drove the Jul 16-17 flips: ETH_4H + SOL_4H early_arm, INJ_1H wide.)
+
+This harness replays each asset's SAME long window through four
+exit-stack arms:
 
   live       — as configured (trailing ON, arm 1.5 / trail 1.0)
   no_trail   — use_trailing_exit=False (Donchian/ADX/SL stack only)

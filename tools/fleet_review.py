@@ -101,6 +101,30 @@ def blocked_by_rows(signal_status: dict, max_age_h: float = 24.0,
         key=lambda row: -row["n"])
 
 
+def symbol_exposure(positions: dict) -> list:
+    """Cross-bot open exposure per symbol (fleet-audit W5 step 7:
+    bots holding the same asset are one bot with extra failure modes).
+    [{symbol, n, multi_bot, holders}] sorted by n desc."""
+    by_sym: dict = defaultdict(list)
+    for key, pos in (positions or {}).items():
+        sym = (pos or {}).get("symbol") or "?"
+        by_sym[sym].append(f"{key} {(pos or {}).get('direction', '?')}")
+    return sorted(
+        ({"symbol": s, "n": len(h), "multi_bot": len(h) > 1,
+           "holders": sorted(h)}
+          for s, h in by_sym.items()),
+        key=lambda r: -r["n"])
+
+
+def btc_benchmark(closes) -> dict | None:
+    """Buy-and-hold BTC return over the window (fleet-audit W4 step 3:
+    is the alpha real or is it beta). None when insufficient data."""
+    closes = [float(c) for c in (closes or [])]
+    if len(closes) < 2 or closes[0] == 0:
+        return None
+    return {"pct": (closes[-1] / closes[0] - 1.0) * 100.0}
+
+
 def step4_verdict(pf, n: int) -> dict:
     """The Step-4 paper-window gate: PF >= 1.3 over >= 10 closed trades."""
     if pf is None or n == 0:
@@ -138,6 +162,19 @@ def main() -> int:
         print(f"  {bot:10s} n={s['n']:3d}  WR={s['wr']:5.1f}%  "
                f"PF={s['pf']:5.2f}  net={s['net']:+8.2f}  "
                f"best={s['best']:+7.2f}  worst={s['worst']:+7.2f}")
+
+    # 1b. Benchmark honesty — what did just holding BTC return?
+    try:
+        from tools._binance_klines import fetch_klines_chained
+        rows = fetch_klines_chained("BTCUSDT", "1d", days + 1)
+        bench = btc_benchmark([r[4] for r in rows])
+        fleet_net = sum(s["net"] for s in stats.values())
+        if bench:
+            print(f"\n-- Benchmark -- BTC buy-hold {days}d: "
+                   f"{bench['pct']:+.1f}%  |  fleet net: ${fleet_net:+,.2f} "
+                   "(dollars on small paper margins — directional read only)")
+    except Exception:  # noqa: BLE001
+        pass
 
     # 2. Per-asset for the live bots
     for bot in ("Scalp", "Momentum", "Breakout", "Funding"):
@@ -238,6 +275,13 @@ def main() -> int:
                    f"SL {f'{sl:,.4f}' if sl else '—'} "
                    f"TP {f'{tp:,.4f}' if tp else '—'} "
                    f"phase={pos.get('phase', '—')}")
+        exposure = symbol_exposure(positions)
+        shared = [r for r in exposure if r["multi_bot"]]
+        if shared:
+            print("  ⚠ cross-bot same-symbol exposure:")
+            for r in shared:
+                print(f"    {r['symbol']:10s} x{r['n']}: "
+                       + "; ".join(r["holders"]))
     except Exception as e:  # noqa: BLE001
         print(f"\n-- Open positions -- unavailable: {e}")
 

@@ -388,34 +388,49 @@ def hl_coin_to_weex_symbol(coin: str, weex_whitelist: Optional[set] = None,
     return candidate
 
 
+def _bump(funnel, key: str) -> None:
+    if funnel is not None:
+        funnel[key] = funnel.get(key, 0) + 1
+
+
 def classify(
     coin: str,
     smart: CoinStats,
     rekt: CoinStats,
     weex_symbol: str,
+    funnel: Optional[dict] = None,
 ) -> Optional[WhaleSignal]:
     """Classify a coin's cohort stats into a signal (or None).
 
     Applies: min-trader floor, consensus/divergence thresholds, crowded-trade filter,
     edge-decay guard.
+
+    `funnel` (Jul 30 audit item #4): optional counter dict — each early
+    return bumps its rejection reason so a zero-signal soak month is
+    diagnosable instead of silent (the W.4 filter-pass-rate telemetry
+    that was specified but never built).
     """
     if smart.total_traders < MIN_SMART_TRADERS_PER_COIN:
+        _bump(funnel, "min_traders")
         return None
 
     # Crowded trade guard: everyone agrees → fragile, skip
     if smart.long_pct >= CROWDED_TRADE_PCT and rekt.long_pct >= CROWDED_TRADE_PCT:
         logger.debug("%s: crowded LONG (smart %.0f%%, rekt %.0f%%) — skip",
                      coin, smart.long_pct, rekt.long_pct)
+        _bump(funnel, "crowded")
         return None
     if smart.short_pct >= CROWDED_TRADE_PCT and rekt.short_pct >= CROWDED_TRADE_PCT:
         logger.debug("%s: crowded SHORT (smart %.0f%%, rekt %.0f%%) — skip",
                      coin, smart.short_pct, rekt.short_pct)
+        _bump(funnel, "crowded")
         return None
 
     # Edge-decay guard: skip if smart money is currently losing on this coin
     if REQUIRE_SMART_WINNING and smart.upnl_sum < 0:
         logger.debug("%s: smart money underwater (uPnL $%.0f) — skip",
                      coin, smart.upnl_sum)
+        _bump(funnel, "smart_underwater")
         return None
 
     # Classify
@@ -435,7 +450,9 @@ def classify(
         signal_type, direction = CONSENSUS_SHORT, "SHORT"
 
     if signal_type == NONE:
+        _bump(funnel, "below_thresholds")
         return None
+    _bump(funnel, "signal")
 
     dominant_pct = smart.long_pct if direction == "LONG" else smart.short_pct
     divergence_bonus = 25 if signal_type.startswith("DIVERGENCE") else 0
@@ -740,6 +757,10 @@ def enrich_signal(
 
 # ─── End-to-end signal generation ────────────────────────────────────────────
 
+# Last cycle's rejection funnel — read by whale_main.log_signals_jsonl so
+# every cycle (including zero-signal ones) leaves an analyzable trace.
+LAST_FUNNEL: dict = {}
+
 def generate_signals(weex_whitelist: Optional[set] = None) -> List[WhaleSignal]:
     """Fetch, aggregate, classify — returns signals ranked by score desc.
 
@@ -753,20 +774,26 @@ def generate_signals(weex_whitelist: Optional[set] = None) -> List[WhaleSignal]:
     # Union of all coins in either cohort
     all_coins = set(smart_stats.keys()) | set(rekt_stats.keys())
 
+    funnel: dict = {"coins": len(all_coins)}
     signals: List[WhaleSignal] = []
     for coin in all_coins:
         weex_sym = hl_coin_to_weex_symbol(coin, weex_whitelist)
         if weex_sym is None:
+            _bump(funnel, "not_on_weex")
             continue
         smart = smart_stats.get(coin, CoinStats(coin=coin))
         rekt = rekt_stats.get(coin, CoinStats(coin=coin))
-        sig = classify(coin, smart, rekt, weex_sym)
+        sig = classify(coin, smart, rekt, weex_sym, funnel=funnel)
         if sig:
             signals.append(sig)
 
+    global LAST_FUNNEL
+    LAST_FUNNEL = funnel
     signals.sort(key=lambda s: s.score, reverse=True)
     logger.info("Generated %d whale signals (after WEEX filter + classify)",
                 len(signals))
+    logger.info("Whale funnel: %s",
+                ", ".join(f"{k}:{v}" for k, v in funnel.items()))
     for s in signals[:10]:
         logger.info("  [%s] %s %s conf=%d/10 score=%.1f — %s",
                     s.signal, s.coin, s.direction, s.confidence, s.score, s.reasoning)

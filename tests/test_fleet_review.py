@@ -89,6 +89,42 @@ def test_blocked_by_rows_groups_and_sorts():
     assert rows[0]["reason"] == "btc_filter"      # sorted by count desc
 
 
+# ─── Jul 30 fleet-audit additions (algo-trading-master W5) ─────────────────
+
+def test_symbol_exposure_groups_across_bots():
+    """W5 step 7: bots on the same asset are one bot with extra failure
+    modes — cross-bot same-symbol exposure must be visible per review."""
+    from tools.fleet_review import symbol_exposure
+    rows = symbol_exposure({
+        "SCALP_BTC_5M":    {"symbol": "BTCUSDT", "direction": "LONG"},
+        "BREAKOUT_BTC_4H": {"symbol": "BTCUSDT", "direction": "LONG"},
+        "BREAKOUT_DOGE_1H": {"symbol": "DOGEUSDT", "direction": "SHORT"},
+    })
+    by_sym = {r["symbol"]: r for r in rows}
+    assert by_sym["BTCUSDT"]["n"] == 2
+    assert by_sym["BTCUSDT"]["multi_bot"] is True
+    assert "SCALP_BTC_5M LONG" in by_sym["BTCUSDT"]["holders"]
+    assert by_sym["DOGEUSDT"]["n"] == 1
+    assert by_sym["DOGEUSDT"]["multi_bot"] is False
+    assert rows[0]["symbol"] == "BTCUSDT"        # sorted by n desc
+
+
+def test_symbol_exposure_empty_positions():
+    from tools.fleet_review import symbol_exposure
+    assert symbol_exposure({}) == []
+    assert symbol_exposure(None) == []
+
+
+def test_btc_benchmark_pct_change():
+    """W4 step 3: is the alpha real or is it beta — every review shows
+    what BTC buy-hold returned over the same window."""
+    from tools.fleet_review import btc_benchmark
+    out = btc_benchmark([100.0, 105.0, 110.0])
+    assert out["pct"] == pytest.approx(10.0)
+    assert btc_benchmark([]) is None
+    assert btc_benchmark([100.0]) is None
+
+
 def test_blocked_by_rows_drops_stale_entries():
     """Relic signal_status rows from parked bots' assets must not
     pollute the histogram — only recently-checked entries count."""

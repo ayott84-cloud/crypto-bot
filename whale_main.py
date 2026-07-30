@@ -708,13 +708,22 @@ def manage_open_positions(executor: Executor, state: dict,
 
 
 def log_signals_jsonl(signals: list) -> None:
-    """Append every poll's signals to a JSONL file for offline analysis."""
+    """Append every poll's signals to a JSONL file for offline analysis.
+
+    Jul 30 audit item #4: also appends the cycle's rejection funnel —
+    a 30-day soak that ends at n=0 must be diagnosable from this log
+    (which filter starved it), not just observable."""
     try:
         ts = datetime.now(timezone.utc).isoformat()
         with open(WHALE_SIGNAL_LOG, "a", encoding="utf-8") as f:
             for s in signals:
                 record = {"timestamp": ts, **s.to_dict()}
                 f.write(json.dumps(record) + "\n")
+            import whale_signals as _ws
+            funnel = getattr(_ws, "LAST_FUNNEL", None)
+            if funnel:
+                f.write(json.dumps({"timestamp": ts, "type": "funnel",
+                                      **funnel}) + "\n")
     except Exception as e:
         logger.warning("Signal log write failed: %s", e)
 

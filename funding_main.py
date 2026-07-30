@@ -392,6 +392,22 @@ def manage_open_positions(executor: Executor, state: dict,
         close_funding_position(executor, state, key, reason)
 
 
+def nearest_extreme(rows) -> dict | None:
+    """[(coin, percentile)] → the candidate closest to either tail.
+
+    Jul 30 audit item #4: 'Generated 0 signals' doesn't say whether the
+    nearest candidate was at the 60th or 96th percentile — this does.
+    Extremity = max(pct, 100-pct); a p8 candidate is extremity 92."""
+    best = None
+    for coin, pct in rows or []:
+        if pct is None:
+            continue
+        ext = max(float(pct), 100.0 - float(pct))
+        if best is None or ext > best["extremity"]:
+            best = {"coin": coin, "percentile": float(pct), "extremity": ext}
+    return best
+
+
 # ─── Per-cycle orchestration ─────────────────────────────────────────────────
 
 def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
@@ -439,7 +455,10 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
                 len(candidates), in_window)
 
     signals = []
+    proximity = []
     for coin, weex_sym, hl_ctx, history in candidates:
+        proximity.append((coin, percentile_of(hl_ctx.funding_rate, history)
+                                 if history else None))
         # Pull klines once for ATR + EMA
         klines = executor.get_klines(weex_sym, FUNDING_ATR_INTERVAL, 100)
         atr, atr_sma = compute_atr_and_sma(
@@ -477,6 +496,12 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
 
     log_signals_jsonl([s for s, _ in signals])
     logger.info("Generated %d funding-fade signals", len(signals))
+    if not signals:
+        near = nearest_extreme(proximity)
+        if near:
+            logger.info("Nearest extreme: %s at p%.0f (extremity %.0f vs "
+                         "threshold p%.0f)", near["coin"], near["percentile"],
+                         near["extremity"], FUNDING_PERCENTILE_THRESHOLD)
 
     # Gate: pause flag, trading enabled, kill switch, execution window
     if not TRADING_ENABLED:

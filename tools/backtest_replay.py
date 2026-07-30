@@ -1016,17 +1016,26 @@ def _filter_universe(universe: dict, assets) -> dict:
     return {k: v for k, v in universe.items() if k in want}
 
 
+def _cost_kw(cost_pct) -> dict:
+    """Forward a --cost-pct override only when given, so the replay
+    functions' standard 0.15% default stays the single source of truth."""
+    return {} if cost_pct is None else {"round_trip_cost_pct": float(cost_pct)}
+
+
 def _run_momentum(bars: int, source: str = "weex",
                     include_candidates: bool = False,
-                    assets=None) -> List[BacktestReport]:
+                    assets=None, cost_pct=None) -> List[BacktestReport]:
     universe = _filter_universe(_momentum_universe(include_candidates), assets)
-    return [replay_momentum(name, cfg, bars=bars, source=source)
+    return [replay_momentum(name, cfg, bars=bars, source=source,
+                              **_cost_kw(cost_pct))
             for name, cfg in universe.items()]
 
 
-def _run_scalp(bars: int, source: str = "weex") -> List[BacktestReport]:
+def _run_scalp(bars: int, source: str = "weex",
+                 cost_pct=None) -> List[BacktestReport]:
     from scalp_config import SCALP_ASSETS
-    return [replay_scalp(name, cfg, bars=bars, source=source)
+    return [replay_scalp(name, cfg, bars=bars, source=source,
+                           **_cost_kw(cost_pct))
             for name, cfg in SCALP_ASSETS.items()]
 
 
@@ -1038,10 +1047,12 @@ def _run_crossover(bars: int, source: str = "weex") -> List[BacktestReport]:
 
 
 def _run_breakout(bars: int, source: str = "weex",
-                    regime_gate: bool = False) -> List[BacktestReport]:
+                    regime_gate: bool = False,
+                    cost_pct=None) -> List[BacktestReport]:
     from breakout_config import BREAKOUT_ASSETS
     return [replay_breakout(name, cfg, bars=bars, source=source,
-                              regime_gate_active=regime_gate)
+                              regime_gate_active=regime_gate,
+                              **_cost_kw(cost_pct))
             for name, cfg in BREAKOUT_ASSETS.items()]
 
 
@@ -1082,6 +1093,10 @@ def main() -> None:
     parser.add_argument("--assets", type=str, default="",
                         help="Momentum: comma-separated asset keys to "
                               "replay (e.g. 'ETH_1D,SOL,SHIB_1D')")
+    parser.add_argument("--cost-pct", type=float, default=None,
+                        help="Round-trip cost override (Gate A stress arm: "
+                              "run live passers at 0.30 = 2x fees; default "
+                              "0.15). Scalp/breakout/momentum only.")
     args = parser.parse_args()
 
     runners = {
@@ -1102,12 +1117,17 @@ def main() -> None:
         try:
             if bot == "breakout":
                 reports = runners[bot](args.bars, source=args.source,
-                                         regime_gate=args.regime_gate)
+                                         regime_gate=args.regime_gate,
+                                         cost_pct=args.cost_pct)
             elif bot == "momentum":
                 reports = runners[bot](
                     args.bars, source=args.source,
                     include_candidates=args.include_candidates,
-                    assets=args.assets or None)
+                    assets=args.assets or None,
+                    cost_pct=args.cost_pct)
+            elif bot == "scalp":
+                reports = runners[bot](args.bars, source=args.source,
+                                         cost_pct=args.cost_pct)
             elif bot in _source_aware:
                 reports = runners[bot](args.bars, source=args.source)
             else:

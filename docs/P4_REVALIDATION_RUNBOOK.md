@@ -113,6 +113,27 @@ Exit gate: **10 closed live trades with live PF ≥ 1.0 AND per-trade
 fill-vs-paper deviation ≤ 0.1%** (this verifies the fee/slippage model
 against real WEEX statements — the last untested assumption).
 
+### Pre-flip build checklist (Jul 30 2026 fleet audit, algo-trading-master W5)
+
+Four gaps that are moot in paper but REQUIRED before `DRY_RUN=False`.
+None of these exist yet — build and verify each during Step-5 prep:
+
+1. **Venue-side order reconciliation** — a periodic check that every
+   position's SL recorded in state ALSO exists as a live order at WEEX
+   (and no orphaned venue orders exist without state). In paper there is
+   no venue book; live, a failed SL placement is an unbounded position.
+2. **Realized-slippage capture** — log signal price vs actual fill per
+   live trade from day one. Paper fills are simulated at signal price
+   (slippage zero by construction), so the Step-5 exit gate's 0.1%
+   deviation test has no baseline until this exists.
+3. **Cumulative-drawdown halt** — the kill switch is daily-only
+   (−$150/day); a slow bleed never trips it. Wire the −$150 cumulative
+   revert-to-paper stop named above into kill_switch so it is enforced,
+   not just documented.
+4. **Build-sha drift check** — heartbeats should carry the running
+   commit sha so the sentinel can flag a service running code older
+   than the deployed config (the Jul 16 pair incident was this class).
+
 ## Step 6 — Scale ladder
 
 After 2 clean micro-live weeks: add ONE bot **or** double sizing — never
