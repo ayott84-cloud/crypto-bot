@@ -61,6 +61,20 @@ def test_run_breakout_forwards_cost_pct(monkeypatch):
     assert all(kw.get("round_trip_cost_pct") == 0.30 for kw in calls)
 
 
+def test_run_breakout_assets_filter(monkeypatch):
+    """--assets now applies to breakout too (added for the Jul 30 solo
+    INJ_1H stress rerun — no need to replay all five assets)."""
+    calls = []
+
+    def fake(name, cfg, bars=None, source=None, regime_gate_active=False, **kw):
+        calls.append(name)
+        return br.BacktestReport(bot="breakout", asset=name, bars_seen=0)
+
+    monkeypatch.setattr(br, "replay_breakout", fake)
+    br._run_breakout(bars=100, source="weex", assets="INJ_1H")
+    assert calls == ["INJ_1H"]
+
+
 def test_run_momentum_forwards_cost_pct(monkeypatch):
     calls = []
     monkeypatch.setattr(br, "replay_momentum", _capture(calls))

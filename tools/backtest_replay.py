@@ -57,6 +57,10 @@ class BacktestReport:
     asset:       str
     bars_seen:   int
     trades:      List[TradeResult] = field(default_factory=list)
+    # Jul 30: non-fatal integrity notes (e.g. a gate replayed OFF because
+    # its data series was unavailable). A report with warnings is NOT
+    # live-parity and must say so everywhere it's displayed.
+    warnings:    List[str] = field(default_factory=list)
 
     @property
     def n_trades(self) -> int: return len(self.trades)
@@ -112,7 +116,7 @@ class BacktestReport:
         return sum(wins) / len(wins)
 
     def summary_line(self) -> str:
-        return (
+        line = (
             f"{self.bot:9s} {self.asset:10s}  "
             f"trades={self.n_trades:4d}  WR={self.win_rate:5.1f}%  "
             f"PF={self.profit_factor:5.2f}  "
@@ -120,6 +124,9 @@ class BacktestReport:
             f"maxDD={self.max_drawdown_pct:5.1f}%  "
             f"E[trade]={self.expectancy_pct:+5.2f}%"
         )
+        if self.warnings:
+            line += f"  ⚠ {'; '.join(self.warnings)}"
+        return line
 
 
 # ─── P2.1 — conservative intra-bar exit evaluator ──────────────────────────
@@ -771,16 +778,31 @@ def replay_breakout(asset_name: str, cfg: dict, bars: int = 500,
         df["ema_slow"] = df["close"].ewm(span=50, adjust=False).mean()
         df["ema200"]   = df["close"].ewm(span=200, adjust=False).mean()
 
-    # G.2: fetch 1D series for the trend gate
+    report = BacktestReport(bot="breakout", asset=asset_name, bars_seen=len(df))
+
+    # G.2: fetch 1D series for the trend gate.
+    # Jul 30 hardening: this fetch is SEPARATE from the base window, and
+    # a failure used to degrade the gate to pass SILENTLY — the replay
+    # then ran a gateless strategy while claiming live-parity (the
+    # INJ_1H 0.71-vs-1.29 contradiction: its 1d fetch was rate-limited
+    # during concurrent research runs). Degraded gates are now loud.
     df_1d_full = None
     if cfg.get("use_trend_filter", False):
-        df_1d_full = _fetch_klines(cfg["symbol"], "1d", min(bars, 365),
-                                     source=source)
-        if df_1d_full is not None and len(df_1d_full) >= 50:
+        try:
+            df_1d_full = _fetch_klines(cfg["symbol"], "1d", min(bars, 365),
+                                         source=source)
+        except Exception:  # noqa: BLE001
+            df_1d_full = None
+        if df_1d_full is None or len(df_1d_full) < 50:
+            got = 0 if df_1d_full is None else len(df_1d_full)
+            msg = (f"1D trend-gate series unavailable ({got} rows) — "
+                    "replayed GATE-OFF, NOT live-parity")
+            report.warnings.append(msg)
+            print(f"  WARN [{asset_name}]: {msg}")
+            df_1d_full = None
+        else:
             df_1d_full["ema_fast"] = df_1d_full["close"].ewm(span=20, adjust=False).mean()
             df_1d_full["ema_slow"] = df_1d_full["close"].ewm(span=50, adjust=False).mean()
-
-    report = BacktestReport(bot="breakout", asset=asset_name, bars_seen=len(df))
 
     start = cfg.get("donchian_period", 20) + cfg.get("atr_sma_period", 20) + 5
     position = None
@@ -1048,12 +1070,13 @@ def _run_crossover(bars: int, source: str = "weex") -> List[BacktestReport]:
 
 def _run_breakout(bars: int, source: str = "weex",
                     regime_gate: bool = False,
-                    cost_pct=None) -> List[BacktestReport]:
+                    cost_pct=None, assets=None) -> List[BacktestReport]:
     from breakout_config import BREAKOUT_ASSETS
+    universe = _filter_universe(BREAKOUT_ASSETS, assets)
     return [replay_breakout(name, cfg, bars=bars, source=source,
                               regime_gate_active=regime_gate,
                               **_cost_kw(cost_pct))
-            for name, cfg in BREAKOUT_ASSETS.items()]
+            for name, cfg in universe.items()]
 
 
 def _run_reversal(bars: int) -> List[BacktestReport]:
@@ -1118,7 +1141,8 @@ def main() -> None:
             if bot == "breakout":
                 reports = runners[bot](args.bars, source=args.source,
                                          regime_gate=args.regime_gate,
-                                         cost_pct=args.cost_pct)
+                                         cost_pct=args.cost_pct,
+                                         assets=args.assets or None)
             elif bot == "momentum":
                 reports = runners[bot](
                     args.bars, source=args.source,
