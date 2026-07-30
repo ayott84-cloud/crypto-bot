@@ -5,7 +5,7 @@
   },
   "breakout": {
     "step": 2,
-    "note": "Jul 30 Gate-A round: plateaus CONFIRMED (ETH_4H 1.43-1.61 full 7.8y; SOL_4H 1.63-1.92); cost-stress 0.30%: SOL 1.82 / ETH_4H 1.37 robust, DOGE_1H 1.16 / ETH_1H 1.10 thin; INJ_1H fee-fragile flag RETRACTED — its CLI runs replayed GATE-OFF (1d trend fetch rate-limited during concurrent jobs, silent degrade now fixed loud); gate-intact A/B: PF 1.29 n=78 today, KEEP flip; clean solo stress pending"
+    "note": "Jul 30 STATIC-GATE BUG found in replay_breakout (trend gate used run-day 1D EMA state for ALL historical bars + 1d fetch only spanned 365d of a 708d window) — ALL prior breakout replay absolutes are suspect incl. Jul 4 Step-2, Jul 16-17 A/B PFs, plateau, cost-stress; relative arm comparisons shared the distortion so the trailing flips PROVISIONALLY stand pending as-of rerun; fixed + tested Jul 30 eve; full re-validation queue: baseline -> A/B x3 -> plateau -> stress"
   },
   "momentum": {
     "step": 2,

@@ -788,8 +788,16 @@ def replay_breakout(asset_name: str, cfg: dict, bars: int = 500,
     # during concurrent research runs). Degraded gates are now loud.
     df_1d_full = None
     if cfg.get("use_trend_filter", False):
+        # Jul 30 as-of fix (2/2): the fetch must SPAN the base window —
+        # min(bars, 365) left a 17000-bar 1h window (~708 days) with no
+        # gate data for its older half. +60d buffer for EMA warmup.
         try:
-            df_1d_full = _fetch_klines(cfg["symbol"], "1d", min(bars, 365),
+            from tools._binance_klines import _INTERVAL_MS as _IV_MS
+            iv_ms = _IV_MS.get(str(cfg.get("interval", "1h")).lower(),
+                                 3_600_000)
+            days_needed = int(bars * iv_ms / 86_400_000) + 60
+            df_1d_full = _fetch_klines(cfg["symbol"], "1d",
+                                         min(days_needed, 3000),
                                          source=source)
         except Exception:  # noqa: BLE001
             df_1d_full = None
@@ -810,8 +818,21 @@ def replay_breakout(asset_name: str, cfg: dict, bars: int = 500,
     for i in range(start, len(df)):
         window = df.iloc[: i + 1]
         if position is None:
-            # Use whatever 1D bars are available; live bot does the same
-            sig = analyze_breakout_entry(window, cfg, df_1d=df_1d_full)
+            # Jul 30 as-of fix (1/2): slice the 1D series to bars at or
+            # before THIS bar's timestamp — the analyzer reads iloc[-1],
+            # and passing the full run-day series made the trend gate
+            # evaluate TODAY'S EMA state against historical entries (a
+            # static gate that flipped whole replays with the forming
+            # daily bar: the INJ_1H n=78-vs-101 contradiction). Same
+            # as-of pattern scalp/crossover already use. Daily rows are
+            # stamped at day-open, so <= ts includes the forming day —
+            # matching live, which fetches 1D fresh each cycle.
+            df_1d_i = None
+            if df_1d_full is not None:
+                df_1d_i = df_1d_full.loc[df_1d_full.index <= df.index[i]]
+                if len(df_1d_i) == 0:
+                    df_1d_i = None
+            sig = analyze_breakout_entry(window, cfg, df_1d=df_1d_i)
             if sig["would_enter"] and regime_gate_active:
                 # A/B arm — same call order as live run_cycle's L.2 gate
                 import regime
