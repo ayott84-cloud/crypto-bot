@@ -1,11 +1,11 @@
 {
   "scalp": {
-    "step": 3,
-    "note": "PARK ACCEPTED Jul 30 (operator): 2.85yr honest replay at standard cost — BTC 0.69, ETH 0.95, XRP 0.91, all below 1.0; the 1yr window (ETH 1.54) was a favorable slice. SCALP_PAUSED=true, service running-paused to exit-manage open positions; step -> 0 once flat + service stopped (avoids parked-but-alive sentinel alarm meanwhile). Future research (unscheduled): regime-gated variant"
+    "step": 0,
+    "note": "PARKED Jul 31 (operator-accepted Jul 30): 2.85yr honest replay at standard cost — BTC 0.69, ETH 0.95, XRP 0.91, all below 1.0; the 1yr validation window (ETH 1.54) was a favorable slice. Flat, service stopped+disabled. Future research (unscheduled): regime-gated variant"
   },
   "breakout": {
     "step": 2,
-    "note": "Jul 30 trailing round CLOSED by as-of A/B: flips were static-gate artifacts, REVERTED — ETH_4H no_trail 1.87 n107 7.8y, SOL_4H no_trail 2.11 n67 5.1y (wide 1.93/DD28 is Calmar alt), DOGE_1H 1.83, ETH_1H 1.16; INJ_1H DEMOTED (all 4 arms < 1.0, best 0.84); remaining: cost-stress 0.30% on final trail-free stacks"
+    "note": "Gate-A re-validation COMPLETE Jul 31 (as-of harness): honest/2x-fee-stressed PFs — ETH_4H 1.87/1.79, SOL_4H 2.11/2.05 (DD ~60% caveat), DOGE_1H 1.83/1.69 all fee-robust; ETH_1H 1.16/1.05 marginal (watch, no flag); INJ_1H DEMOTED Jul 30; trailing flips reverted (static-gate artifacts); live set 4 trail-free configs"
   },
   "momentum": {
     "step": 2,
