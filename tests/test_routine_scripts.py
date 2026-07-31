@@ -64,9 +64,11 @@ def test_parked_bots_heartbeats_are_ignored(tmp_path, monkeypatch):
 def test_parked_owners_reads_status_file():
     from tools.risk_check import _parked_owners
     parked = _parked_owners()
-    # revalidation_status.json marks these step 0 as of Jul 2026
-    assert {"reversal", "crossover", "pair"} <= parked
-    assert "scalp" not in parked
+    # step-0 set as of Jul 31 2026 — scalp joined after its 2.85yr
+    # long-window fail (operator-accepted park)
+    assert {"reversal", "crossover", "pair", "scalp"} <= parked
+    assert "breakout" not in parked
+    assert "momentum" not in parked
 
 
 def test_positions_missing_sl_detector():
