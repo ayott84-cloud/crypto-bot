@@ -85,12 +85,10 @@ BREAKOUT_ASSETS = {
         "use_trend_filter":      True,    # G.2 — require 1D EMA20/50 agree   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
         "allow_short":          True,    # G.2: enabled — strategy is symmetric, restricting to LONG-only kills it in downtrends
         "sl_atr_mult_short":    1.0,
-        # Jul 16 2026 trailing A/B (same-window, 4 arms, n=71, ~4.9y):
-        # early_arm won decisively — PF 1.04→1.54, DD 64.3%→22.2%,
-        # total +6.3%→+71.0%. Arms at 1.0×ATR favorable, trails 1.0×ATR.
-        "use_trailing_exit":    True,
-        "trail_arm_atr_mult":   1.0,
-        "trail_atr_mult":       1.0,
+        # Jul 30 2026: trailing exit REVERTED. The Jul 16 early_arm flip
+        # was fit to the static-gate replay bug; the as-of A/B shows
+        # no_trail dominant — PF 1.87 vs 1.32, DD 31.9% vs 41.7%,
+        # +264.9% vs +97.9% over 7.8y (n=107).
         "strategy_name":        "ETH 4H Breakout",
         "use_btc_filter":       False,
     },
@@ -111,14 +109,11 @@ BREAKOUT_ASSETS = {
         "use_trend_filter":      True,    # G.2 — require 1D EMA20/50 agree   # widened from 1.5 after 2C.3 backtest showed noise-stop-outs
         "allow_short":          True,    # G.2: enabled — strategy is symmetric, restricting to LONG-only kills it in downtrends
         "sl_atr_mult_short":    1.0,
-        # Jul 17 2026 trailing A/B clean-window rerun (11132 bars ~5.1y,
-        # full SOL Coinbase history): early_arm won — PF 1.43→1.90,
-        # total +74.7%→+123.2%, DD 29.9%→22.1%, n=59. Same arm as
-        # ETH_4H; both 4h configs favor early-armed trails, both 1h
-        # configs reject them.
-        "use_trailing_exit":    True,
-        "trail_arm_atr_mult":   1.0,
-        "trail_atr_mult":       1.0,
+        # Jul 30 2026: trailing exit REVERTED (same static-gate-artifact
+        # story as ETH_4H). As-of A/B: no_trail PF 2.11/+293.8%/DD 56.4
+        # vs deployed 1.69 — reverted per the pre-registered PF rule.
+        # wide_trail (1.93, DD 27.9) is the Calmar alternative if DD
+        # control ever outranks raw PF here.
         "strategy_name":        "SOL 4H Breakout",
         "use_btc_filter":       False,
     },
@@ -476,21 +471,17 @@ for _k in _STEP2_DEMOTED:
         BREAKOUT_CANDIDATE_ASSETS[_k] = BREAKOUT_ASSETS.pop(_k)
 
 
-# ─── Jul 16 2026 — trailing-exit A/B flips (tools/ab_breakout_trailing) ───
-# Same-window 4-arm replays; switch rule: challenger PF >= live + 0.10,
-# n >= 5. The A/B also exposed that NO live asset had use_trailing_exit
-# set (live == no_trail identically) — the knob only existed in the
-# candidate factory. ETH_4H flipped inline in its dict (early_arm won:
-# PF 1.04->1.54, DD 64.3->22.2, n=71). INJ_1H below (wide_trail won:
-# PF 1.05->1.17, total +8.7%->+30.8%, n=79). ETH_1H / DOGE_1H KEEP —
-# early-armed trails whipsaw 1h noise (PF 0.91 / 0.89). SOL_4H flipped
-# inline in its dict after the Jul 17 clean-window rerun (early_arm:
-# PF 1.43->1.90, n=59, full 5.1y history).
-BREAKOUT_ASSETS["INJ_1H"].update({
-    "use_trailing_exit":  True,
-    "trail_arm_atr_mult": 1.5,
-    "trail_atr_mult":     2.0,
-})
+# ─── Jul 30 2026 — trailing round CLOSED by the as-of rerun ──────────────
+# The Jul 16-17 flips (ETH_4H/SOL_4H early_arm, INJ_1H wide) were fit to
+# the static-gate replay bug (run-day 1D EMA state applied to all
+# historical bars). The as-of A/B inverted every verdict: no_trail
+# dominates both 4h assets (reverted inline in their dicts above), and
+# INJ_1H fails on ALL FOUR arms (best 0.84) — the asset, not the exit
+# stack. Demoted below with the other Step-2 failures.
+_STEP2_DEMOTED.append("INJ_1H")
+for _k in ("INJ_1H",):
+    if _k in BREAKOUT_ASSETS:
+        BREAKOUT_CANDIDATE_ASSETS[_k] = BREAKOUT_ASSETS.pop(_k)
 
 
 # ─── Phase J.6 — backtest stats for projection table ──────────────────────
@@ -502,22 +493,28 @@ _BK_1H_SOURCE = "17000-bar 1h Coinbase honest replay (~2yr, deployed exits)"
 _BK_4H_SOURCE = "17000-bar 4h Coinbase honest replay (multi-yr, deployed exits)"
 BREAKOUT_BACKTEST_STATS = {
     # ── Live set (Step-2 keeps) ──
-    "SOL_4H":  {"pf": 1.90, "trades":  59, "pnl_pct": 123.2, "dd_pct": 22.1,
-                 "wr": 67.8, "years": 5.1,
-                 "source": "Jul 17 trailing A/B winning arm (early_arm, "
-                            "11132-bar 4h Coinbase honest replay)"},
-    "ETH_4H":  {"pf": 1.54, "trades":  71, "pnl_pct":  71.0, "dd_pct": 22.2,
-                 "wr": 60.6, "years": 4.9,
-                 "source": "Jul 16 trailing A/B winning arm (early_arm, "
-                            "10799-bar 4h Coinbase honest replay)"},
-    "DOGE_1H": {"pf": 1.41, "trades":  90, "pnl_pct":  49.3, "dd_pct": 27.7,
-                 "wr": 34.4, "years": 1.9, "source": _BK_1H_SOURCE},
-    "ETH_1H":  {"pf": 1.24, "trades":  93, "pnl_pct":  32.6, "dd_pct": 31.4,
-                 "wr": 31.2, "years": 1.9, "source": _BK_1H_SOURCE},
-    "INJ_1H":  {"pf": 1.17, "trades":  79, "pnl_pct":  30.8, "dd_pct": 35.9,
-                 "wr": 35.4, "years": 1.9,
-                 "source": "Jul 16 trailing A/B winning arm (wide_trail, "
+    # Jul 30 refresh: all rows re-measured on the as-of harness (the
+    # static-gate bug distorted every prior breakout replay absolute).
+    "SOL_4H":  {"pf": 2.11, "trades":  67, "pnl_pct": 293.8, "dd_pct": 56.4,
+                 "wr": 41.8, "years": 5.1,
+                 "source": "Jul 30 as-of A/B (no_trail, 11219-bar 4h "
+                            "Coinbase honest replay)"},
+    "ETH_4H":  {"pf": 1.87, "trades": 107, "pnl_pct": 264.9, "dd_pct": 31.9,
+                 "wr": 42.1, "years": 7.8,
+                 "source": "Jul 30 as-of A/B (no_trail, 17000-bar 4h "
+                            "Coinbase honest replay)"},
+    "DOGE_1H": {"pf": 1.83, "trades":  95, "pnl_pct": 120.4, "dd_pct": 36.3,
+                 "wr": 37.9, "years": 1.9,
+                 "source": "Jul 30 as-of baseline (deployed exits, "
                             "17000-bar 1h Coinbase honest replay)"},
+    "ETH_1H":  {"pf": 1.16, "trades": 100, "pnl_pct":  23.7, "dd_pct": 37.2,
+                 "wr": 30.0, "years": 1.9,
+                 "source": "Jul 30 as-of baseline (deployed exits, "
+                            "17000-bar 1h Coinbase honest replay)"},
+    "INJ_1H":  {"pf": 0.84, "trades": 103, "pnl_pct": -34.0, "dd_pct": 50.0,
+                 "wr": 34.0, "years": 1.9,
+                 "source": "Jul 30 as-of baseline — ALL exit arms < 1.0, "
+                            "DEMOTED"},
     # ── Demoted at Step-2 (kept for candidate-table honesty) ──
     "BTC_4H":  {"pf": 1.16, "trades":  78, "pnl_pct":  32.3, "dd_pct": 57.6,
                  "wr": 38.5, "years": 7.8,

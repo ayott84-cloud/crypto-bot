@@ -62,8 +62,8 @@ def test_run_breakout_forwards_cost_pct(monkeypatch):
 
 
 def test_run_breakout_assets_filter(monkeypatch):
-    """--assets now applies to breakout too (added for the Jul 30 solo
-    INJ_1H stress rerun — no need to replay all five assets)."""
+    """--assets applies to breakout too (added Jul 30 for solo reruns).
+    Uses a live asset — INJ_1H was demoted later the same day."""
     calls = []
 
     def fake(name, cfg, bars=None, source=None, regime_gate_active=False, **kw):
@@ -71,8 +71,8 @@ def test_run_breakout_assets_filter(monkeypatch):
         return br.BacktestReport(bot="breakout", asset=name, bars_seen=0)
 
     monkeypatch.setattr(br, "replay_breakout", fake)
-    br._run_breakout(bars=100, source="weex", assets="INJ_1H")
-    assert calls == ["INJ_1H"]
+    br._run_breakout(bars=100, source="weex", assets="DOGE_1H")
+    assert calls == ["DOGE_1H"]
 
 
 def test_run_momentum_forwards_cost_pct(monkeypatch):

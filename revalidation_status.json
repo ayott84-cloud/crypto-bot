@@ -5,7 +5,7 @@
   },
   "breakout": {
     "step": 2,
-    "note": "Jul 30 as-of baseline (first honest numbers, 0.15%): ETH_4H 1.32 n147, SOL_4H 1.69 n91, ETH_1H 1.16, DOGE_1H 1.83 (best in fleet), INJ_1H 0.84 -34% FAIL at standard cost; static-gate bug fixed same day; queue: A/B x3 (settles provisional flips + INJ revert-vs-demote) -> plateau -> stress"
+    "note": "Jul 30 trailing round CLOSED by as-of A/B: flips were static-gate artifacts, REVERTED — ETH_4H no_trail 1.87 n107 7.8y, SOL_4H no_trail 2.11 n67 5.1y (wide 1.93/DD28 is Calmar alt), DOGE_1H 1.83, ETH_1H 1.16; INJ_1H DEMOTED (all 4 arms < 1.0, best 0.84); remaining: cost-stress 0.30% on final trail-free stacks"
   },
   "momentum": {
     "step": 2,
