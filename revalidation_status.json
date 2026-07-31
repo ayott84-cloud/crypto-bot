@@ -1,11 +1,11 @@
 {
   "scalp": {
     "step": 3,
-    "note": "ETH_5M shakedown (PF 1.54/1yr honest); BTC+XRP observation; DOGE/LINK demoted"
+    "note": "Jul 30 LONG-WINDOW FAIL: 2.85yr honest replay at standard 0.15% cost — BTC 0.69, ETH 0.95, XRP 0.91, ALL below 1.0; the 1yr window (ETH 1.54) was a favorable slice. PARK recommended (same evidence class as crossover/pair); operator decision pending; Step-4 ETH gate moot if parked"
   },
   "breakout": {
     "step": 2,
-    "note": "Jul 30 STATIC-GATE BUG found in replay_breakout (trend gate used run-day 1D EMA state for ALL historical bars + 1d fetch only spanned 365d of a 708d window) — ALL prior breakout replay absolutes are suspect incl. Jul 4 Step-2, Jul 16-17 A/B PFs, plateau, cost-stress; relative arm comparisons shared the distortion so the trailing flips PROVISIONALLY stand pending as-of rerun; fixed + tested Jul 30 eve; full re-validation queue: baseline -> A/B x3 -> plateau -> stress"
+    "note": "Jul 30 as-of baseline (first honest numbers, 0.15%): ETH_4H 1.32 n147, SOL_4H 1.69 n91, ETH_1H 1.16, DOGE_1H 1.83 (best in fleet), INJ_1H 0.84 -34% FAIL at standard cost; static-gate bug fixed same day; queue: A/B x3 (settles provisional flips + INJ revert-vs-demote) -> plateau -> stress"
   },
   "momentum": {
     "step": 2,
