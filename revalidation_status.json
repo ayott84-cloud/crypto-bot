@@ -1,7 +1,7 @@
 {
   "scalp": {
     "step": 3,
-    "note": "Jul 30 LONG-WINDOW FAIL: 2.85yr honest replay at standard 0.15% cost — BTC 0.69, ETH 0.95, XRP 0.91, ALL below 1.0; the 1yr window (ETH 1.54) was a favorable slice. PARK recommended (same evidence class as crossover/pair); operator decision pending; Step-4 ETH gate moot if parked"
+    "note": "PARK ACCEPTED Jul 30 (operator): 2.85yr honest replay at standard cost — BTC 0.69, ETH 0.95, XRP 0.91, all below 1.0; the 1yr window (ETH 1.54) was a favorable slice. SCALP_PAUSED=true, service running-paused to exit-manage open positions; step -> 0 once flat + service stopped (avoids parked-but-alive sentinel alarm meanwhile). Future research (unscheduled): regime-gated variant"
   },
   "breakout": {
     "step": 2,
