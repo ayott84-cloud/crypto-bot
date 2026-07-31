@@ -66,11 +66,47 @@ _ADHOC_CLOSURES = frozenset({
     _dt.date(2025, 1, 9),                            # Carter funeral
 })
 
-# Unscheduled/irregular EARLY closes (1pm unless noted). Recurring
-# half-days are computed below; these are the one-offs.
+# Unscheduled/irregular EARLY closes (1pm). Recurring half-days are
+# computed below; these are the one-offs that no rule can derive.
+#
+# 2003-12-26 must be TABULATED, not ruled: the NYSE did NOT early-close
+# on Dec 26 in 2008 or 2014, both also Fridays after Christmas.
 _ADHOC_HALF_DAYS = frozenset({
-    _dt.date(2001, 9, 17),      # reopen day after 9/11 (13:00)
+    _dt.date(2003, 12, 26),     # Friday after Christmas Day (13:00)
 })
+
+# Sessions that opened LATE. Adversarial verification (Jul 31 2026)
+# caught 2001-09-17 encoded above as an early close: the 9/11 reopen was
+# a full session to 16:00 that merely started at 09:33 — calling it a
+# 13:00 close silently deleted the last three hours of a record-volume
+# day. 2002-09-11 is the materially large one: a noon open makes a
+# 4-hour session, shorter than any half day this module models.
+_ADHOC_LATE_OPENS = {
+    _dt.date(2001, 9, 17):  _dt.time(9, 33),   # 9/11 reopen
+    _dt.date(2001, 10, 8):  _dt.time(9, 31),
+    _dt.date(2002, 9, 11):  _dt.time(12, 0),   # 1yr memorial
+    _dt.date(2003, 3, 20):  _dt.time(9, 32),
+    _dt.date(2004, 6, 7):   _dt.time(9, 32),
+    _dt.date(2006, 12, 27): _dt.time(9, 32),
+}
+
+# Hard floor for the builtin engine. Below this the recurring rules are
+# not merely incomplete but WRONG: the Monday-ized Washington's Birthday
+# and Memorial Day date from the 1971 Uniform Monday Holiday Act,
+# Election Day closures ran through 1980, and Saturday sessions ran to
+# June 1952. Returning a confident wrong answer is precisely the failure
+# mode this project keeps killing, so we raise instead. (The binding
+# constraint is the MLK >= 1998 gate.)
+EARLIEST_SUPPORTED = _dt.date(1998, 1, 1)
+
+# Year floors for the recurring half-day series, verified against the
+# NYSE's own closings document. Without these the engine projects modern
+# conventions arbitrarily far back and invents half days.
+_DAY_AFTER_THANKSGIVING_FROM = 1993
+_CHRISTMAS_EVE_HALF_FROM = 1999
+_JULY3_FROM = 1995          # Mon/Tue/Thu placements
+_JULY3_WEDNESDAY_FROM = 2013   # the Wednesday convention is modern
+_JULY5_FRIDAY_RULE = (1996, 2012)   # pre-2013: Thu Jul 4 shifted to Fri
 
 
 def _easter(year: int) -> _dt.date:
@@ -112,7 +148,19 @@ def _observed(d: _dt.date) -> _dt.date:
 
 @lru_cache(maxsize=64)
 def _holidays(year: int) -> frozenset:
-    """Full-closure dates for a year, observance applied."""
+    """Full-closure dates for a year, observance applied.
+
+    LATENT-HAZARD NOTE (adversarial verification, Jul 31 2026): a
+    Saturday Jan 1 back-shifts to Dec 31 of the PRIOR year, so that date
+    would appear in _holidays(year) while belonging to year-1. Today
+    that is unreachable — every public entry point resolves membership
+    via _holidays(d.year) — but it becomes a real bug the moment anyone
+    unions _holidays() across a range (the natural vectorized refactor).
+    The result is filtered to the requested year so the hazard cannot
+    survive that refactor. NYSE observes no New Year holiday when Jan 1
+    falls on a Saturday, which the filter also makes correct by
+    construction.
+    """
     days = {
         _observed(_dt.date(year, 1, 1)),                     # New Year's Day
         _nth_weekday(year, 1, 0, 3),                          # MLK (from 1998)
@@ -128,7 +176,7 @@ def _holidays(year: int) -> frozenset:
         days.add(_observed(_dt.date(year, 6, 19)))
     if year < 1998:
         days.discard(_nth_weekday(year, 1, 0, 3))
-    return frozenset(days)
+    return frozenset(d for d in days if d.year == year)
 
 
 @lru_cache(maxsize=64)
@@ -145,17 +193,33 @@ def _half_days(year: int) -> frozenset:
     out = set()
 
     day_after_thanksgiving = _nth_weekday(year, 11, 3, 4) + _dt.timedelta(days=1)
-    if day_after_thanksgiving not in hol:
+    if (year >= _DAY_AFTER_THANKSGIVING_FROM
+            and day_after_thanksgiving not in hol):
         out.add(day_after_thanksgiving)
 
     xmas_eve = _dt.date(year, 12, 24)
-    if xmas_eve.weekday() < 5 and xmas_eve not in hol:
+    if (year >= _CHRISTMAS_EVE_HALF_FROM
+            and xmas_eve.weekday() < 5 and xmas_eve not in hol):
         out.add(xmas_eve)
 
+    # July: the early close attaches to the trading day ADJACENT to
+    # Independence Day, and which side it lands on changed in 2013.
+    # Pre-2013 a Thursday Jul 4 pushed the early close to Friday Jul 5;
+    # the "Wednesday before" convention is modern. Getting this wrong
+    # makes 2002 incorrect in both directions at once.
     july_3 = _dt.date(year, 7, 3)
     july_4 = _dt.date(year, 7, 4)
-    if july_3.weekday() < 5 and july_3 not in hol and july_4.weekday() < 5:
-        out.add(july_3)
+    if july_3 not in hol and july_4.weekday() < 5:
+        wd = july_3.weekday()
+        if wd in (0, 1, 3) and year >= _JULY3_FROM:            # Mon/Tue/Thu
+            out.add(july_3)
+        elif wd == 2 and year >= _JULY3_WEDNESDAY_FROM:        # Wed
+            out.add(july_3)
+
+    july_5 = _dt.date(year, 7, 5)
+    lo, hi = _JULY5_FRIDAY_RULE
+    if lo <= year <= hi and july_5.weekday() == 4 and july_5 not in hol:
+        out.add(july_5)
 
     return frozenset(out)
 
@@ -180,7 +244,11 @@ def backend_note() -> str:
         return ("pandas_market_calendars (NYSE) — authoritative schedule "
                  "incl. ad-hoc closures")
     return ("builtin rule engine — recurring holidays computed + "
-             f"{len(_ADHOC_CLOSURES)} known ad-hoc closures; install "
+             f"{len(_ADHOC_CLOSURES)} ad-hoc closures, "
+             f"{len(_ADHOC_HALF_DAYS)} ad-hoc early closes, "
+             f"{len(_ADHOC_LATE_OPENS)} late opens; verified against the "
+             f"NYSE closings record for 2004-2028; supported from "
+             f"{EARLIEST_SUPPORTED} (earlier dates raise). Install "
              "pandas_market_calendars for the authoritative schedule")
 
 
@@ -203,8 +271,20 @@ def _pmc_schedule(d: _dt.date):
 
 # ─── Public API ───────────────────────────────────────────────────────────
 
+def _guard_range(d: _dt.date) -> None:
+    """The builtin engine refuses dates it would answer wrongly."""
+    if _PMC is None and d < EARLIEST_SUPPORTED:
+        raise ValueError(
+            f"{d} precedes the builtin calendar's supported range "
+            f"(from {EARLIEST_SUPPORTED}) — pre-1998 NYSE rules differ "
+            "(Uniform Monday Holiday Act, Election Day closures, "
+            "Saturday sessions). Install pandas_market_calendars for the "
+            "authoritative historical schedule.")
+
+
 def is_trading_day(d) -> bool:
     d = _as_date(d)
+    _guard_range(d)
     if _PMC is not None:
         return _pmc_schedule(d) is not None
     if d.weekday() >= 5:
@@ -216,6 +296,7 @@ def is_trading_day(d) -> bool:
 
 def is_half_day(d) -> bool:
     d = _as_date(d)
+    _guard_range(d)
     if not is_trading_day(d):
         return False
     if _PMC is not None:
@@ -239,7 +320,8 @@ def session_bounds(d) -> Tuple[_dt.datetime, _dt.datetime]:
         if sched is not None:
             return sched
     close_t = HALF_DAY_CLOSE if is_half_day(d) else REGULAR_CLOSE
-    return (_dt.datetime.combine(d, REGULAR_OPEN, tzinfo=ET),
+    open_t = _ADHOC_LATE_OPENS.get(d, REGULAR_OPEN)
+    return (_dt.datetime.combine(d, open_t, tzinfo=ET),
              _dt.datetime.combine(d, close_t, tzinfo=ET))
 
 
