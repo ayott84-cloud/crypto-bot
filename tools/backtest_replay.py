@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -143,6 +144,53 @@ class BacktestReport:
 # call; set 0.0 to reproduce legacy gross numbers.
 DEFAULT_ROUND_TRIP_COST_PCT = 0.15
 
+# ─── Per-asset-class round-trip cost (Module 2) ───────────────────────────
+# 0.15% is a WEEX taker figure and is WRONG for equities in the
+# dangerous direction — it would over-charge an ETF strategy 3x and can
+# fail a real edge. US equities are commission-free at Alpaca; the
+# honest cost is spread + slippage + sell-side regulatory fees:
+#   SEC Section 31: $20.60 per $1M of SELL proceeds = 0.206 bps
+#     (re-set annually — it was $0.00/M for part of FY2025, so this is a
+#      config value, never a hardcoded constant of nature)
+#   FINRA TAF: $0.000195/share on sells, capped $9.79 — per SHARE, so
+#     its bps cost rises as price falls (0.003 bps on a $650 SPY,
+#     0.39 bps on a $5 stock)
+# Gate-case figures below already fold in spread + slippage + those fees.
+EQUITY_ETF_COST_PCT = 0.05        # SPY/QQQ/IWM-class liquidity
+EQUITY_SINGLE_COST_PCT = 0.10     # mega-cap single names
+
+_COST_BY_CLASS = {
+    "crypto":        DEFAULT_ROUND_TRIP_COST_PCT,
+    "equity_etf":    EQUITY_ETF_COST_PCT,
+    "equity_single": EQUITY_SINGLE_COST_PCT,
+}
+
+# Index/sector ETFs whose spreads are consistently sub-bp. Anything not
+# listed rounds UP to the single-name rate: guessing cheap is how a
+# backtest flatters a strategy that cannot pay its own costs.
+_LIQUID_ETFS = frozenset({
+    "SPY", "QQQ", "IWM", "DIA", "EFA", "EEM", "AGG", "BND", "TLT", "IEF",
+    "VNQ", "GSG", "GLD", "SLV", "VEU", "VTI", "VOO", "IVV", "SHY", "BIL",
+    "SGOV", "XLK", "XLF", "XLE", "XLV", "XLI", "XLY", "XLP", "XLU", "XLB",
+    "XLRE", "XLC",
+})
+
+# Provider for source="equity" replays (env-overridable so the droplet
+# can switch vendors without a code change).
+_EQUITY_PROVIDER = os.getenv("EQUITY_BARS_PROVIDER", "tiingo")
+
+
+def default_cost_pct(asset_class: str) -> float:
+    """Round-trip cost for an asset class. Unknown classes get the
+    crypto rate — the most conservative of the three."""
+    return _COST_BY_CLASS.get(asset_class, DEFAULT_ROUND_TRIP_COST_PCT)
+
+
+def cost_pct_for_symbol(symbol: str) -> float:
+    """Equity round-trip cost inferred from the symbol's liquidity tier."""
+    return (EQUITY_ETF_COST_PCT if str(symbol).upper() in _LIQUID_ETFS
+             else EQUITY_SINGLE_COST_PCT)
+
 
 def check_intrabar_exit(entry_price: float, direction: str,
                           bar_high: float, bar_low: float,
@@ -196,12 +244,19 @@ def _fetch_klines(symbol: str, interval: str, count: int,
                   cap (e.g. 5m scalp needing ~5000 bars for n>=20).
                   Top-10 perp prices are arbitraged tight enough that
                   Binance klines are a clean proxy for WEEX backtests.
+      "equity"  — Module 2. Tiingo/Alpaca adjusted daily bars via
+                  tools._equity_bars, converted to the same positional
+                  shape. `count` is a count of SESSIONS, so the calendar
+                  span requested is ~365/252 wider — asking for 252
+                  calendar days would silently return only ~174 bars.
 
-    Both sources return positional kline rows (the first 6 columns —
+    All sources return positional kline rows (the first 6 columns —
     open_time, open, high, low, close, volume — match), so
-    signals.build_dataframe handles either layout identically.
+    signals.build_dataframe handles any layout identically.
     """
     from signals import build_dataframe
+    if source == "equity":
+        return _fetch_equity_klines(symbol, interval, count)
     if source == "binance":
         from tools._binance_klines import fetch_klines_chained
         raw = fetch_klines_chained(symbol, interval, count)
@@ -220,6 +275,45 @@ def _fetch_klines(symbol: str, interval: str, count: int,
     # in BOTH replay_crossover AND replay_scalp. Dropping NaN closes via
     # .dropna preserves the index.
     return df.dropna(subset=["close"])
+
+
+def _fetch_equity_klines(symbol: str, interval: str,
+                           count: int) -> pd.DataFrame:
+    """Module 2 — adjusted equity bars in the harness's positional shape.
+
+    Two things this must get right that the crypto path never faced:
+      1. `count` counts SESSIONS, not calendar days. 252 sessions span
+         ~365 calendar days; requesting 252 days back would return ~174
+         bars and quietly shrink the window by a third.
+      2. The fetcher's completeness verdict has to survive the trip.
+         `df.attrs` is dropped by most pandas operations, so it is
+         re-attached explicitly — a replay must be able to refuse a
+         frame with interior holes.
+    """
+    from datetime import date as _date, timedelta as _td
+    from signals import build_dataframe
+    import market_calendar as _mc
+    from tools import _equity_bars as _eb
+
+    end = _date.today()
+    # 365/252 = 1.45 sessions->calendar, +15 sessions of slack for
+    # holiday clusters, then a floor so tiny requests still span a week.
+    span_days = max(7, int(count * 365.0 / 252.0) + 21)
+    start = end - _td(days=span_days)
+
+    frame = _eb.fetch_daily(symbol, start, end, provider=_EQUITY_PROVIDER)
+    incomplete = bool(getattr(frame, "attrs", {}).get("incomplete"))
+    completeness = getattr(frame, "attrs", {}).get("completeness")
+
+    if len(frame) > count:
+        frame = frame.iloc[-count:]
+    rows = _eb.to_positional_rows(frame, interval=interval)
+    df = build_dataframe(rows).dropna(subset=["close"])
+    # attrs do not survive build_dataframe — reattach the verdict.
+    df.attrs["incomplete"] = incomplete
+    df.attrs["completeness"] = completeness
+    df.attrs["calendar_backend"] = _mc.backend_note()
+    return df
 
 
 # ─── Momentum replay ───────────────────────────────────────────────────────
