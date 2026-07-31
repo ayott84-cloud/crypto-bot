@@ -52,6 +52,11 @@ _PAIR_PREFIX = "PAIR_"
 _REVERSAL_PREFIX = "REVERSAL_"
 _SCALP_PREFIX = "SCALP_"
 _CROSSOVER_PREFIX = "CROSSOVER_"
+# Module 2: ONE prefix for all stock sleeves. The daily sleeves share a
+# single daemon (and therefore a single save_state owner); per-sleeve
+# granularity lives on the journal/kill_switch axis, not here. Keys look
+# like STOCK_TREND_SPY / STOCK_DUAL_VEU / STOCK_REV_QQQ.
+_STOCK_PREFIX = "STOCK_"
 
 # Ordered (prefix, bot) — first match wins. Add new bots here.
 BOT_PREFIXES = (
@@ -62,6 +67,7 @@ BOT_PREFIXES = (
     (_REVERSAL_PREFIX, "reversal"),
     (_SCALP_PREFIX, "scalp"),
     (_CROSSOVER_PREFIX, "crossover"),
+    (_STOCK_PREFIX, "stock"),
 )
 DEFAULT_BOT = "momentum"
 
@@ -77,6 +83,10 @@ _REVERSAL_TOPLEVEL: set = set()
 _SCALP_TOPLEVEL = {"scalp_cooldowns"}
 # Phase N: crossover owns its own per-asset re-entry cooldown map
 _CROSSOVER_TOPLEVEL = {"crossover_cooldowns"}
+# Module 2: stock daemon's own re-entry cooldowns + per-sleeve signal
+# diagnostics (kept separate from momentum's "signal_status" so the two
+# modules never overwrite each other's why-silent panel)
+_STOCK_TOPLEVEL = {"stock_cooldowns", "stock_signal_status"}
 
 # Per-bot top-level key sets — used by _merge_state to preserve other bots'
 # top-level state when one bot saves.
@@ -89,6 +99,7 @@ _TOPLEVEL_BY_BOT = {
     "reversal": _REVERSAL_TOPLEVEL,
     "scalp": _SCALP_TOPLEVEL,
     "crossover": _CROSSOVER_TOPLEVEL,
+    "stock": _STOCK_TOPLEVEL,
 }
 
 

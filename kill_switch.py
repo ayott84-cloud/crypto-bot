@@ -106,6 +106,14 @@ def _bot_of(strategy: str) -> str:
         return "pair"
     if strategy.endswith("Reversal"):
         return "reversal"
+    # Module 2 (stocks) — mirrors journal._bot_tag; both classifiers must
+    # stay in lockstep or per-owner stats and per-owner pausing disagree.
+    if strategy.endswith("StockTrend"):
+        return "stocktrend"
+    if strategy.endswith("StockDual"):
+        return "stockdual"
+    if strategy.endswith("StockRev"):
+        return "stockrev"
     return "momentum"
 
 
@@ -115,6 +123,7 @@ def _bot_of(strategy: str) -> str:
 _RECOGNIZED_OWNERS = (
     "whale", "funding", "momentum",
     "scalp", "crossover", "breakout", "pair", "reversal",
+    "stocktrend", "stockdual", "stockrev",
 )
 
 
@@ -248,7 +257,8 @@ def status_summary() -> dict:
     """Returns a dashboard-friendly snapshot for all bots + global state."""
     out = {}
     for owner in ("momentum", "whale", "funding",
-                    "scalp", "crossover", "breakout", "pair", "reversal"):
+                    "scalp", "crossover", "breakout", "pair", "reversal",
+                    "stocktrend", "stockdual", "stockrev"):
         s = should_pause(owner)
         out[owner] = {"paused": s.paused, "reason": s.reason}
     return out

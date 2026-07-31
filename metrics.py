@@ -79,7 +79,7 @@ def _equity_from_pnls(pnls: Sequence[float], initial_equity: float) -> List[floa
 
 
 def calmar(pnls: Sequence[float], initial_equity: float,
-           days: int = 90) -> float:
+           days: int = 90, periods_per_year: float = 365.0) -> float:
     """Annualized return / max drawdown over the supplied window.
 
     Convention: returns 999 if max drawdown is zero (would be div-by-zero).
@@ -88,14 +88,21 @@ def calmar(pnls: Sequence[float], initial_equity: float,
     The `days` parameter is informational (annualizes return based on the
     window length); the caller is responsible for trimming pnls to the
     window first if a rolling-90d is desired.
+
+    `periods_per_year` names the unit `days` is counted in (Module 2):
+    365.0 when `days` is CALENDAR days (crypto default, unchanged), or
+    252.0 when the caller counts NYSE TRADING days. Mixing the two
+    over-annualizes an equity window by 365/252 = 1.45x — the parameter
+    exists so the convention is stated at the call site rather than
+    assumed.
     """
     if not pnls:
         return 0.0
     equity = _equity_from_pnls(pnls, initial_equity)
     total_return = (equity[-1] - initial_equity) / initial_equity
-    if days <= 0:
+    if days <= 0 or periods_per_year <= 0:
         return 0.0
-    annual_return = total_return * (365.0 / days)
+    annual_return = total_return * (periods_per_year / days)
     dd = max_drawdown(equity) / 100.0  # max_drawdown returns percent
     if dd == 0:
         return 999.0 if annual_return > 0 else 0.0
@@ -146,7 +153,8 @@ def time_to_recovery(equity_curve: Sequence[float]) -> int:
 
 # ─── Annualized Sharpe with observed trade frequency ──────────────────────
 
-def annualized_sharpe(pnls: Sequence[float], days_observed: int) -> float:
+def annualized_sharpe(pnls: Sequence[float], days_observed: int,
+                        periods_per_year: float = 365.0) -> float:
     """Sharpe ratio annualized using the OBSERVED trade frequency.
 
     Replaces dashboard.py:118's hardcoded `(72 ** 0.5)` (which assumed
@@ -155,8 +163,14 @@ def annualized_sharpe(pnls: Sequence[float], days_observed: int) -> float:
     the old constant. For a 365-day window with 6 trades it gives 6/yr,
     a 3.5x lower annualization factor. The peer-review flagged this as
     inaccurate across bots with different cadences.
+
+    `periods_per_year` (Module 2) names the unit `days_observed` is
+    counted in — 365.0 for calendar days (crypto default, unchanged),
+    252.0 for NYSE trading days. Deriving the rate from observed
+    frequency is already asset-class agnostic when the units match;
+    this parameter exists to stop them silently mismatching.
     """
-    if not pnls or days_observed <= 0:
+    if not pnls or days_observed <= 0 or periods_per_year <= 0:
         return 0.0
     if len(pnls) < 2:
         return 0.0
@@ -164,7 +178,7 @@ def annualized_sharpe(pnls: Sequence[float], days_observed: int) -> float:
     std_p = statistics.stdev(pnls)
     if std_p == 0:
         return 999.0 if mean_p > 0 else 0.0
-    trades_per_year = len(pnls) * 365.0 / days_observed
+    trades_per_year = len(pnls) * periods_per_year / days_observed
     sharpe = mean_p / std_p * math.sqrt(trades_per_year)
     return round(max(-999.0, min(999.0, sharpe)), 2)
 

@@ -117,6 +117,16 @@ def _bot_tag(strategy: str) -> str:
         return "Pair"
     if strategy.endswith("Reversal"):
         return "Reversal"
+    # Module 2 (stocks). Per-sleeve tags so each gets its own gate step,
+    # loss streak and fleet_review row. Checked before the Momentum sink
+    # for the same reason the crypto arms are: an unclassified strategy
+    # silently pollutes momentum's stats (the Jul 16 pair mis-attribution).
+    if strategy.endswith("StockTrend"):
+        return "StockTrend"
+    if strategy.endswith("StockDual"):
+        return "StockDual"
+    if strategy.endswith("StockRev"):
+        return "StockRev"
     return "Momentum"
 
 

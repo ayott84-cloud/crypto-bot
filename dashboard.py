@@ -1036,10 +1036,20 @@ def _v2_kill_switch_panel() -> dict:
                                             / abs(thr) * 100))))
         owners = []
         for owner, s in summary.items():
+            # kill_switch.status_summary() reports every RECOGNIZED owner
+            # — including owners wired up before their bot is deployed
+            # (Module 2's stock sleeves land in the classifier during
+            # Phase S0, but the daemon and its dashboard tab come in
+            # S3/S4). The panel is a VIEW: show only owners we have a
+            # label for, so a half-built module never renders as three
+            # mystery bots. Adding the label in S4 is what makes them
+            # appear — a deliberate switch, not an accident.
+            if owner not in _KS_OWNER_LABELS:
+                continue
             paused = bool(s.get("paused"))
             owners.append({
                 "owner":       owner,
-                "label":       _KS_OWNER_LABELS.get(owner, owner.capitalize()),
+                "label":       _KS_OWNER_LABELS[owner],
                 "paused":      paused,
                 "state_label": "TRIPPED" if paused else "ARMED",
                 "state_class": "is-down" if paused else "is-up",

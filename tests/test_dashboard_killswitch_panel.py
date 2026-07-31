@@ -30,8 +30,22 @@ from dashboard_renderer import render
 
 # ─── Tier 1.1 — kill-switch panel context ──────────────────────────────────
 
+# The panel shows only LABELLED owners. kill_switch recognizes Module 2's
+# stock sleeves from Phase S0 onward, but they must not surface here until
+# S4 gives them labels + a tab — otherwise a half-built module renders as
+# three mystery bots on the crypto dashboard.
 _OWNERS = {"momentum", "whale", "funding", "scalp", "crossover",
             "breakout", "pair", "reversal"}
+
+
+def test_unlabelled_owners_are_hidden_from_the_panel():
+    import kill_switch
+    summary = kill_switch.status_summary()
+    assert {"stocktrend", "stockdual", "stockrev"} <= set(summary), \
+        "kill_switch should recognize the stock sleeves"
+    shown = {o["owner"] for o in dashboard._v2_kill_switch_panel()["owners"]}
+    assert not (shown & {"stocktrend", "stockdual", "stockrev"}), \
+        "unlabelled owners leaked into the panel"
 
 
 def test_kill_switch_panel_shape():
