@@ -112,6 +112,63 @@ def _fmt_gate(ok: bool) -> str:
     return "PASS" if ok else "fail"
 
 
+def slice_since(frames: dict, since, min_bars: int = 250) -> dict:
+    """Trim every frame to bars on/after `since`.
+
+    The decay question the literature poses directly: short-term
+    reversion is documented as weakening since ~2013, and a window that
+    opens in 2001 can hide a dead recent decade inside a great headline.
+    That is the scalp failure exactly — PF 1.54 on one year, 0.95 over
+    the full 2.85.
+
+    Symbols left with too few bars are DROPPED rather than shortened: a
+    sleeve that cannot form its 200-day SMA would report zero trades,
+    and a zero-trade row reads like a verdict when it is really absent
+    data.
+    """
+    if since is None:
+        return frames
+    cutoff = pd.Timestamp(since)
+    out = {}
+    for sym, df in frames.items():
+        sub = df.loc[df.index >= cutoff]
+        if len(sub) >= min_bars:
+            sub.attrs.update(getattr(df, "attrs", {}))
+            out[sym] = sub
+        else:
+            print(f"  {sym:6s} dropped from window: {len(sub)} bars "
+                   f"(< {min_bars} needed)")
+    return out
+
+
+def buy_and_hold(df) -> dict:
+    """What simply owning the thing would have returned.
+
+    The 'is it alpha or beta' question. A strategy that trails
+    buy-and-hold while claiming a Sharpe edge is making a DRAWDOWN
+    argument, and that argument should be stated out loud rather than
+    left implied by a big-looking total return.
+    """
+    if df is None or len(df) < 2:
+        return {"total_return_pct": 0.0, "max_dd_pct": 0.0}
+    close = df["close"].astype(float).to_numpy()
+    total = (close[-1] / close[0] - 1.0) * 100.0
+    peak, dd = close[0], 0.0
+    for v in close:
+        peak = max(peak, v)
+        if peak > 0:
+            dd = max(dd, (peak - v) / peak * 100.0)
+    return {"total_return_pct": round(total, 1), "max_dd_pct": round(dd, 1)}
+
+
+def benchmark_symbol(sleeve: str, asset: str) -> str:
+    """The instrument an operator would otherwise simply have held."""
+    if sleeve == "dual":
+        from stock_config import STOCK_DUAL_CONFIG
+        return STOCK_DUAL_CONFIG["risk_assets"][0]
+    return str(asset).rsplit("_", 1)[0]
+
+
 def validate_trend(frames, cost_pct=None) -> list:
     from tools.backtest_replay import replay_stock_trend
     from stock_config import STOCK_TREND_ASSETS
@@ -208,10 +265,13 @@ def validate_dual(frames, cost_pct=None) -> list:
               "years": mc.bars_to_years(rep.bars_seen, "1d")}]
 
 
-def report(rows) -> int:
+def report(rows, frames=None, since=None) -> int:
     import metrics
     print("\n" + "=" * 78)
-    print("STOCK SLEEVE VALIDATION — pre-registered gates")
+    hdr = "STOCK SLEEVE VALIDATION — pre-registered gates"
+    if since:
+        hdr += f"  [window from {since}]"
+    print(hdr)
     print("=" * 78)
     any_pass = False
     for r in rows:
@@ -254,6 +314,20 @@ def report(rows) -> int:
         print("       " + "  ".join(
             f"{n}={v}{'✓' if ok else '✗'}({bar})" for n, v, ok, bar in checks))
 
+        # Alpha-or-beta: what holding the thing would have done instead.
+        bsym = benchmark_symbol(r["sleeve"], r["asset"])
+        if frames and bsym in frames:
+            bh = buy_and_hold(frames[bsym])
+            beat_ret = rep.total_return_pct > bh["total_return_pct"]
+            beat_dd = dd < bh["max_dd_pct"]
+            note = ("beats buy-hold on both" if beat_ret and beat_dd else
+                     "lower drawdown, LOWER return — a drawdown argument"
+                     if beat_dd else
+                     "higher return, deeper drawdown" if beat_ret else
+                     "loses on BOTH — no case")
+            print(f"       vs hold {bsym}: {bh['total_return_pct']:+.1f}% "
+                   f"maxDD {bh['max_dd_pct']:.1f}%  →  {note}")
+
     print("\n" + "-" * 78)
     print("PF is deliberately NOT a gate for trend/dual: a few trades a year")
     print("means PF is decided by a handful of them. Those sleeves are judged")
@@ -273,8 +347,13 @@ def main() -> int:
                      help="Round-trip cost override (stress arm: 0.10 = 2x "
                           "the 5bps ETF gate case)")
     ap.add_argument("--refresh", action="store_true",
-                     help="Ignore the Parquet cache and refetch")
+                     help="Ignore the cache and refetch")
+    ap.add_argument("--since", type=str, default=None,
+                     help="Restrict to bars on/after YYYY-MM-DD. The decay "
+                          "test: reversion is documented as weakening since "
+                          "~2013, and a 25yr window can hide a dead decade.")
     args = ap.parse_args()
+    since = date.fromisoformat(args.since) if args.since else None
 
     from stock_config import all_symbols
     print(f"Credentials: {eb.credential_status()}")
@@ -284,6 +363,12 @@ def main() -> int:
     if not frames:
         print("No data — cannot validate.")
         return 2
+    if since:
+        print(f"Restricting to bars on/after {since} …")
+        frames = slice_since(frames, since)
+        if not frames:
+            print("No symbol has enough history in that window.")
+            return 2
 
     rows = []
     if args.sleeve in ("trend", "all"):
@@ -295,7 +380,7 @@ def main() -> int:
     if not rows:
         print("No sleeve produced a result.")
         return 2
-    return report(rows)
+    return report(rows, frames=frames, since=since)
 
 
 if __name__ == "__main__":
