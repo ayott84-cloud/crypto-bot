@@ -58,9 +58,61 @@ logger = logging.getLogger("crypto_bot.tools._equity_bars")
 TIINGO_BASE = "https://api.tiingo.com/tiingo/daily"
 ALPACA_DATA_BASE = "https://data.alpaca.markets/v2/stocks"
 
+
+def _load_env() -> None:
+    """Load .env the way config.py does.
+
+    Every crypto module gets dotenv loading as a side effect of
+    importing config.py. The equity modules deliberately do NOT import
+    config (so Module 3 can reuse them without dragging in the crypto
+    universe), which means they must do it themselves — the first real
+    droplet run reported "TIINGO_API_KEY not set" on a box where the key
+    was sitting in .env.
+
+    load_dotenv does not override variables already in the real
+    environment, so a systemd EnvironmentFile still wins.
+    """
+    try:
+        from dotenv import load_dotenv
+    except ImportError:      # dotenv absent: real env vars still work
+        return
+    try:
+        load_dotenv(BOT_DIR / ".env")
+        load_dotenv(BOT_DIR.parent / ".env")
+    except OSError:
+        pass
+
+
+_load_env()
+
+# Captured at import for test monkeypatching; the accessors below fall
+# back to a live os.getenv so import ORDER can never decide whether a
+# credential is visible.
 TIINGO_API_KEY = os.getenv("TIINGO_API_KEY", "")
 ALPACA_API_KEY = os.getenv("ALPACA_API_KEY", "")
 ALPACA_API_SECRET = os.getenv("ALPACA_API_SECRET", "")
+
+
+def tiingo_key() -> str:
+    return TIINGO_API_KEY or os.getenv("TIINGO_API_KEY", "")
+
+
+def alpaca_keys() -> tuple:
+    return (ALPACA_API_KEY or os.getenv("ALPACA_API_KEY", ""),
+             ALPACA_API_SECRET or os.getenv("ALPACA_API_SECRET", ""))
+
+
+def credential_status() -> dict:
+    """Which credentials are visible — masked, never the values.
+
+    Lets an operator tell 'not set' from 'set but not loaded' without
+    ever echoing a secret into a terminal or a paste."""
+    ak, asec = alpaca_keys()
+    return {
+        "TIINGO_API_KEY": "set" if tiingo_key() else "MISSING",
+        "ALPACA_API_KEY": "set" if ak else "MISSING",
+        "ALPACA_API_SECRET": "set" if asec else "MISSING",
+    }
 
 CACHE_DIR = BOT_DIR / "data" / "equity"
 
@@ -240,26 +292,33 @@ def fetch_daily(symbol: str, start: date, end: date,
 
 
 def _fetch_tiingo_daily(symbol: str, start: date, end: date) -> pd.DataFrame:
-    if not TIINGO_API_KEY:
+    key = tiingo_key()
+    if not key:
         raise CredentialsMissing(
-            "TIINGO_API_KEY not set — add it to .env (free tier at "
-            "tiingo.com covers 30+ years of daily bars)")
+            "TIINGO_API_KEY not visible to this process. It is read from "
+            f"the real environment or from {BOT_DIR / '.env'} / "
+            f"{BOT_DIR.parent / '.env'}. Verify without printing the key:\n"
+            "  grep -c '^TIINGO_API_KEY=' .env      (expect 1)\n"
+            "  venv/bin/python -c \"import sys; sys.path.insert(0,'.'); "
+            "from tools._equity_bars import credential_status; "
+            "print(credential_status())\"")
     rows = _http_get_json(
         f"{TIINGO_BASE}/{symbol.lower()}/prices",
         headers={"Content-Type": "application/json",
-                  "Authorization": f"Token {TIINGO_API_KEY}"},
+                  "Authorization": f"Token {key}"},
         params={"startDate": start.isoformat(), "endDate": end.isoformat(),
                  "format": "json", "resampleFreq": "daily"})
     return tiingo_rows_to_frame(rows)
 
 
 def _fetch_alpaca_daily(symbol: str, start: date, end: date) -> pd.DataFrame:
-    if not (ALPACA_API_KEY and ALPACA_API_SECRET):
+    ak, asec = alpaca_keys()
+    if not (ak and asec):
         raise CredentialsMissing(
-            "ALPACA_API_KEY / ALPACA_API_SECRET not set — paper keys are "
-            "instant at alpaca.markets and need no funding")
-    headers = {"APCA-API-KEY-ID": ALPACA_API_KEY,
-                "APCA-API-SECRET-KEY": ALPACA_API_SECRET}
+            "ALPACA_API_KEY / ALPACA_API_SECRET not visible to this "
+            f"process (checked the environment and {BOT_DIR / '.env'}). "
+            "Paper keys are instant at alpaca.markets and need no funding.")
+    headers = {"APCA-API-KEY-ID": ak, "APCA-API-SECRET-KEY": asec}
     frames, token, guard = [], None, 0
     while True:
         guard += 1

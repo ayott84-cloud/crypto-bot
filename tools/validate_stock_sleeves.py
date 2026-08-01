@@ -266,6 +266,8 @@ def main() -> int:
     args = ap.parse_args()
 
     from stock_config import all_symbols
+    print(f"Credentials: {eb.credential_status()}")
+    print(f"Calendar:    {mc.backend_note()}")
     print(f"Fetching {args.years}yr daily bars ({args.provider}) …")
     frames = _fetch(all_symbols(), args.years, args.refresh, args.provider)
     if not frames:
