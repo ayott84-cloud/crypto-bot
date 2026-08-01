@@ -239,7 +239,12 @@ def test_exhausted_retries_raise_not_return_empty(monkeypatch):
 
 
 def test_missing_credentials_raise_clearly(monkeypatch):
+    """Clear BOTH the module constant and the environment: _load_env()
+    calls load_dotenv, which POPULATES os.environ, so a real .env on the
+    box would otherwise satisfy the accessor's fallback and this test
+    would pass or fail depending on the machine."""
     monkeypatch.setattr(eb, "TIINGO_API_KEY", "")
+    monkeypatch.delenv("TIINGO_API_KEY", raising=False)
     with pytest.raises(eb.CredentialsMissing):
         eb.fetch_daily("SPY", date(2026, 8, 3), date(2026, 8, 7),
                         provider="tiingo")
