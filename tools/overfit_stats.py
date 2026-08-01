@@ -100,7 +100,9 @@ def expected_max_sharpe(n_trials: int, trial_sharpe_var: float = 1.0) -> float:
     null. This is the bar an observed Sharpe must clear to mean anything
     after a search."""
     n = max(1, int(n_trials))
-    if n == 1:
+    if n == 1 or trial_sharpe_var <= 0:
+        # One trial means no selection happened, so there is nothing to
+        # deflate. Zero dispersion across trials means the same.
         return 0.0
     v = math.sqrt(max(trial_sharpe_var, 1e-12))
     g = _EULER_MASCHERONI
@@ -110,15 +112,34 @@ def expected_max_sharpe(n_trials: int, trial_sharpe_var: float = 1.0) -> float:
 
 def deflated_sharpe(returns: Sequence[float], n_trials: int = 1,
                       trial_sharpe_var: float = 1.0,
-                      benchmark_sharpe: Optional[float] = None) -> dict:
+                      benchmark_sharpe: Optional[float] = None,
+                      trial_sharpes: Optional[Sequence[float]] = None) -> dict:
     """P(true Sharpe > benchmark), corrected for selection bias and
     non-normality.
 
-    Non-normality matters and is the reason a plain t-test will not do:
+    PREFER `trial_sharpes`: the actual Sharpes the sweep produced. Both
+    the trial COUNT and their DISPERSION then come from the data, which
+    is what Bailey & Lopez de Prado specify.
+
+    THE SCALE TRAP (found on Module 2's first real run, Aug 1 2026):
+    `trial_sharpe_var` defaults to 1.0, which is only sane if Sharpes
+    are expressed in annualized units. These are PER-TRADE Sharpes of
+    order 0.08, so a variance of 1.0 puts the expected-max bar at 1.05
+    and EVERY strategy scores exactly 0.000 — ten different sleeves all
+    "failing" identically, which looks like rigor and is actually a
+    broken instrument. Passing the observed trial Sharpes makes the bar
+    commensurate with the thing it is judging.
+
+    Non-normality matters and is why a plain t-test will not do:
     negative skew and fat tails both inflate an observed Sharpe, and
-    equity strategies whose whole job is drawdown compression tend to
-    have exactly that shape.
+    equity strategies whose whole job is drawdown compression have
+    exactly that shape.
     """
+    if trial_sharpes is not None:
+        ts = [float(s) for s in trial_sharpes
+               if s is not None and abs(float(s)) < SHARPE_CAP]
+        n_trials = max(1, len(ts))
+        trial_sharpe_var = (float(np.var(ts, ddof=1)) if len(ts) > 1 else 0.0)
     r = np.asarray(list(returns), dtype=float)
     blank = {"dsr": 0.0, "sharpe": 0.0, "sr0": 0.0, "skew": 0.0,
               "kurtosis": 0.0, "n": int(r.size), "n_trials": int(n_trials),
@@ -199,14 +220,26 @@ def pbo_cscv(returns_matrix, n_splits: int = 8,
         best = int(np.argmax(is_scores))
         # Relative rank of the IS winner among OOS scores, in (0,1).
         rank = float((oos_scores < oos_scores[best]).sum()) / n
-        w = min(max(rank, 1.0 / (n + 1)), 1.0 - 1.0 / (n + 1))
+        # 1-based rank / (N+1) — the standard CSCV mapping, and the one
+        # the random_baseline below is computed against.
+        w = (int((oos_scores < oos_scores[best]).sum()) + 1) / (n + 1.0)
         logits.append(math.log(w / (1.0 - w)))
         oos_ranks.append(rank)
         if w <= 0.5:
             below += 1
 
+    # Random-selection baseline. With few specs the rank grid is coarse
+    # and random picking does NOT give 0.5: ranks are 1..N, w =
+    # rank/(N+1), and PBO counts w <= 0.5, so N=5 gives 0.6. Comparing a
+    # raw PBO against a remembered "0.5 means noise" would misread the
+    # result, so the baseline ships alongside it.
+    baseline = sum(1 for k in range(1, n + 1)
+                    if k / (n + 1) <= 0.5) / float(n)
+    pbo = below / len(combos)
     return {
-        "pbo": round(below / len(combos), 4),
+        "pbo": round(pbo, 4),
+        "random_baseline": round(baseline, 4),
+        "excess_over_baseline": round(pbo - baseline, 4),
         "n_combinations": len(combos),
         "n_strategies": int(n),
         "n_observations": int(t),

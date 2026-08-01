@@ -126,16 +126,20 @@ def validate_trend(frames, cost_pct=None) -> list:
         pnls = [t.pnl_pct for t in rep.trades]
         cost = cost_pct if cost_pct is not None else 0.05
 
-        # PBO over the SMA-period grid — the specs we would have chosen from
-        cols = []
+        # PBO over the SMA-period grid — the specs we would have chosen
+        # from. The SAME sweep supplies DSR's trial Sharpes, so the
+        # deflation bar is measured on the same scale as the thing it
+        # judges rather than assumed (the Aug 1 scale trap).
+        cols, trial_sharpes = [], []
         for p in _TREND_GRID:
             r = replay_stock_trend(name, {**cfg, "sma_period": p},
                                      pre_fetched_df=df,
                                      round_trip_cost_pct=cost_pct)
             cols.append(_bar_returns(df, r.trades, cost))
+            trial_sharpes.append(ofs.sharpe([t.pnl_pct for t in r.trades]))
         pbo = ofs.pbo_cscv(np.column_stack(cols)) if len(cols) > 1 else {}
 
-        dsr = ofs.deflated_sharpe(pnls, n_trials=len(_TREND_GRID))
+        dsr = ofs.deflated_sharpe(pnls, trial_sharpes=trial_sharpes)
         rows.append({"sleeve": "trend", "asset": name, "rep": rep,
                       "pnls": pnls, "dsr": dsr, "pbo": pbo,
                       "years": mc.bars_to_years(rep.bars_seen, "1d")})
@@ -156,16 +160,17 @@ def validate_rev(frames, cost_pct=None) -> list:
         pnls = [t.pnl_pct for t in rep.trades]
         cost = cost_pct if cost_pct is not None else 0.05
 
-        cols = []
+        cols, trial_sharpes = [], []
         for ibs_t, rsi_t in _REV_GRID:
             r = replay_stock_rev(name, {**cfg, "ibs_threshold": ibs_t,
                                           "rsi_threshold": rsi_t},
                                    pre_fetched_df=df,
                                    round_trip_cost_pct=cost_pct)
             cols.append(_bar_returns(df, r.trades, cost))
+            trial_sharpes.append(ofs.sharpe([t.pnl_pct for t in r.trades]))
         pbo = ofs.pbo_cscv(np.column_stack(cols)) if len(cols) > 1 else {}
 
-        dsr = ofs.deflated_sharpe(pnls, n_trials=len(_REV_GRID))
+        dsr = ofs.deflated_sharpe(pnls, trial_sharpes=trial_sharpes)
         rows.append({"sleeve": "rev", "asset": name, "rep": rep,
                       "pnls": pnls, "dsr": dsr, "pbo": pbo,
                       "years": mc.bars_to_years(rep.bars_seen, "1d")})
@@ -188,15 +193,16 @@ def validate_dual(frames, cost_pct=None) -> list:
     # is indistinguishable from luck, which is why we ship the ensemble.
     anchor = sub[CFG["risk_assets"][0]]
     cost = cost_pct if cost_pct is not None else 0.05
-    cols = []
+    cols, trial_sharpes = [], []
     for lb in CFG["lookbacks_months"]:
         r = replay_stock_dual("GEM", {**CFG, "lookbacks_months": [lb]},
                                 pre_fetched_frames=sub,
                                 round_trip_cost_pct=cost_pct)
         cols.append(_bar_returns(anchor, r.trades, cost))
+        trial_sharpes.append(ofs.sharpe([t.pnl_pct for t in r.trades]))
     pbo = ofs.pbo_cscv(np.column_stack(cols)) if len(cols) > 1 else {}
 
-    dsr = ofs.deflated_sharpe(pnls, n_trials=len(CFG["lookbacks_months"]))
+    dsr = ofs.deflated_sharpe(pnls, trial_sharpes=trial_sharpes)
     return [{"sleeve": "dual", "asset": "GEM", "rep": rep, "pnls": pnls,
               "dsr": dsr, "pbo": pbo,
               "years": mc.bars_to_years(rep.bars_seen, "1d")}]
@@ -232,8 +238,13 @@ def report(rows) -> int:
         checks.append(("DSR", f"{dsr.get('dsr', 0):.3f}",
                         dsr.get("dsr", 0) >= g["dsr_min"], f">={g['dsr_min']}"))
         if pbo.get("pbo") is not None:
-            checks.append(("PBO", f"{pbo['pbo']:.2f}",
-                            pbo["pbo"] <= g["pbo_max"], f"<={g['pbo_max']}"))
+            # Judge PBO against the RANDOM-SELECTION baseline for this
+            # spec count, not against a remembered 0.5: with 5 specs
+            # random picking already yields 0.6.
+            base = pbo.get("random_baseline", 0.5)
+            checks.append((f"PBO(base {base:.2f})", f"{pbo['pbo']:.2f}",
+                            pbo["pbo"] <= min(g["pbo_max"], base),
+                            f"<={min(g['pbo_max'], base):.2f}"))
 
         verdict = "PASS" if all(c[2] for c in checks) else "FAIL"
         any_pass = any_pass or verdict == "PASS"

@@ -96,6 +96,59 @@ def test_dsr_handles_degenerate_input():
     assert ofs.deflated_sharpe([1.0], n_trials=5)["dsr"] == 0.0
 
 
+# ─── The trial-variance defect (found on the first real run) ─────────────
+# Every sleeve scored DSR exactly 0.000 — including a 25-year, 562-trade
+# reversion strategy at PF 1.59. Cause: trial_sharpe_var defaulted to
+# 1.0, putting the expected-max-Sharpe bar at 1.05 in PER-TRADE units
+# while real per-trade Sharpes are ~0.08. A statistic that rejects every
+# strategy identically is not measuring anything.
+
+def test_trial_variance_default_of_one_is_wrong_for_per_trade_sharpes():
+    """Documents the scale trap: the bar must be comparable to the
+    Sharpes actually being compared."""
+    assert ofs.expected_max_sharpe(4, 1.0) > 1.0        # absurd for per-trade
+    assert ofs.expected_max_sharpe(4, 0.0004) < 0.05    # realistic
+
+
+def test_dsr_derives_the_bar_from_the_observed_trial_sharpes():
+    """The honest input is the set of Sharpes the sweep actually
+    produced — n_trials AND their dispersion come from the data."""
+    rng = np.random.default_rng(41)
+    r = list(rng.normal(0.22, 2.2, 562))               # PF ~ 1.6 shape
+    trials = [ofs.sharpe(list(rng.normal(0.20, 2.2, 562))) for _ in range(4)]
+    out = ofs.deflated_sharpe(r, trial_sharpes=trials)
+    assert out["n_trials"] == 4
+    assert out["sr0"] < 0.1, "bar still on the wrong scale"
+    assert out["dsr"] > 0.5, "a real 25yr edge still scored as noise"
+
+
+def test_dsr_with_trial_sharpes_still_kills_a_noise_winner():
+    """The correction must not defang the test it exists for."""
+    rng = np.random.default_rng(43)
+    trials_r = [rng.normal(0.0, 1.0, 750) for _ in range(400)]
+    sharpes = [ofs.sharpe(list(x)) for x in trials_r]
+    best = trials_r[int(np.argmax(sharpes))]
+    out = ofs.deflated_sharpe(list(best), trial_sharpes=sharpes)
+    assert out["passes"] is False, "deflation failed on a best-of-400 winner"
+
+
+def test_explicit_trial_sharpes_beat_the_scalar_fallback():
+    rng = np.random.default_rng(47)
+    r = list(rng.normal(0.2, 2.0, 400))
+    trials = [ofs.sharpe(list(rng.normal(0.19, 2.0, 400))) for _ in range(5)]
+    derived = ofs.deflated_sharpe(r, trial_sharpes=trials)
+    fallback = ofs.deflated_sharpe(r, n_trials=5)      # var=1.0 default
+    assert derived["dsr"] > fallback["dsr"]
+
+
+def test_single_trial_needs_no_variance_estimate():
+    rng = np.random.default_rng(53)
+    r = list(rng.normal(0.15, 1.0, 800))
+    out = ofs.deflated_sharpe(r, trial_sharpes=[ofs.sharpe(r)])
+    assert out["sr0"] == 0.0          # no selection happened
+    assert out["dsr"] > 0.9
+
+
 # ─── PBO / CSCV ───────────────────────────────────────────────────────────
 
 def test_pbo_is_low_when_one_strategy_genuinely_dominates():
@@ -129,6 +182,20 @@ def test_pbo_needs_at_least_two_strategies():
     out = ofs.pbo_cscv(rng.normal(0, 1, (100, 1)), n_splits=4)
     assert out["pbo"] is None
     assert "at least 2" in out["note"]
+
+
+def test_pbo_reports_its_random_selection_baseline():
+    """With few specs the rank grid is coarse and RANDOM selection does
+    not give 0.5 — with 5 specs it gives 0.6. Comparing a raw PBO to a
+    remembered '0.5 means noise' would misread the result, so the
+    baseline ships with the number."""
+    rng = np.random.default_rng(37)
+    out4 = ofs.pbo_cscv(rng.normal(0, 1, (600, 4)), n_splits=8)
+    out5 = ofs.pbo_cscv(rng.normal(0, 1, (600, 5)), n_splits=8)
+    assert out4["random_baseline"] == pytest.approx(0.5)
+    assert out5["random_baseline"] == pytest.approx(0.6)
+    # and the verdict is relative to the baseline, not to 0.5
+    assert "excess_over_baseline" in out5
 
 
 def test_pbo_reports_oos_degradation():
