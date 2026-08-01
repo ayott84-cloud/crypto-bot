@@ -987,6 +987,204 @@ def replay_breakout(asset_name: str, cfg: dict, bars: int = 500,
     return report
 
 
+# ─── Module 2: stock sleeve replays ──────────────────────────────────────
+
+def _stock_window(cfg: dict, bars: int, source: str, pre_fetched_df):
+    """Shared window prep + the incomplete-window refusal.
+
+    A frame the fetcher flagged as holed must never be scored silently —
+    that would launder a data defect into a strategy verdict, which is
+    exactly how the July window-truncation bug produced confident wrong
+    numbers for a fortnight.
+    """
+    if pre_fetched_df is not None:
+        df = pre_fetched_df
+    else:
+        df = _fetch_klines(cfg["symbol"], cfg.get("interval", "1d"), bars,
+                            source=source)
+    warn = None
+    if bool(getattr(df, "attrs", {}).get("incomplete")):
+        rep = (getattr(df, "attrs", {}).get("completeness") or {})
+        warn = (f"INCOMPLETE window: {rep.get('got', '?')} of "
+                 f"{rep.get('expected', '?')} sessions — verdict NOT "
+                 "live-parity")
+    return df, warn
+
+
+def _stock_cost(cfg: dict, override) -> float:
+    if override is not None:
+        return float(override)
+    return cost_pct_for_symbol(cfg.get("symbol", ""))
+
+
+def replay_stock_trend(asset_name: str, cfg: dict, bars: int = 5000,
+                         source: str = "equity", pre_fetched_df=None,
+                         round_trip_cost_pct=None) -> BacktestReport:
+    """S1 — Faber time-series momentum. Long while close > SMA, else flat.
+
+    Imports the LIVE analyzer so the replay cannot drift from the daemon.
+    Long/flat by construction: there is no short branch to get wrong.
+    """
+    from stock_signals import analyze_trend_entry, check_trend_exit
+
+    df, warn = _stock_window(cfg, bars, source, pre_fetched_df)
+    report = BacktestReport(bot="stocktrend", asset=asset_name,
+                              bars_seen=len(df))
+    if warn:
+        report.warnings.append(warn)
+    cost = _stock_cost(cfg, round_trip_cost_pct)
+
+    start = int(cfg.get("sma_period", 200)) + 2
+    position = None
+    for i in range(start, len(df)):
+        window = df.iloc[: i + 1]
+        if position is None:
+            if analyze_trend_entry(window, cfg)["would_enter"]:
+                position = {"entry_bar": i,
+                             "entry_price": float(df.iloc[i]["close"])}
+        else:
+            reason = check_trend_exit(window, cfg)
+            if reason:
+                exit_price = float(df.iloc[i]["close"])
+                pnl = ((exit_price - position["entry_price"])
+                        / position["entry_price"] * 100.0) - cost
+                report.trades.append(TradeResult(
+                    direction="LONG", entry_bar=position["entry_bar"],
+                    exit_bar=i, entry_price=position["entry_price"],
+                    exit_price=exit_price, exit_reason=reason, pnl_pct=pnl))
+                position = None
+    return report
+
+
+def replay_stock_rev(asset_name: str, cfg: dict, bars: int = 5000,
+                       source: str = "equity", pre_fetched_df=None,
+                       round_trip_cost_pct=None) -> BacktestReport:
+    """S3 — IBS / RSI(2) short-term reversion. Long/flat, index ETFs."""
+    from stock_signals import analyze_reversion_entry, check_reversion_exit
+
+    df, warn = _stock_window(cfg, bars, source, pre_fetched_df)
+    report = BacktestReport(bot="stockrev", asset=asset_name,
+                              bars_seen=len(df))
+    if warn:
+        report.warnings.append(warn)
+    cost = _stock_cost(cfg, round_trip_cost_pct)
+
+    start = int(cfg.get("sma_period", 200)) + 2
+    position = None
+    for i in range(start, len(df)):
+        window = df.iloc[: i + 1]
+        if position is None:
+            if analyze_reversion_entry(window, cfg)["would_enter"]:
+                position = {"entry_bar": i,
+                             "entry_price": float(df.iloc[i]["close"])}
+        else:
+            reason = check_reversion_exit(
+                window, cfg, bars_held=i - position["entry_bar"],
+                entry_price=position["entry_price"])
+            if reason:
+                exit_price = float(df.iloc[i]["close"])
+                pnl = ((exit_price - position["entry_price"])
+                        / position["entry_price"] * 100.0) - cost
+                report.trades.append(TradeResult(
+                    direction="LONG", entry_bar=position["entry_bar"],
+                    exit_bar=i, entry_price=position["entry_price"],
+                    exit_price=exit_price, exit_reason=reason, pnl_pct=pnl))
+                position = None
+    return report
+
+
+def replay_stock_dual(asset_name: str, cfg: dict, bars: int = 5000,
+                        source: str = "equity", pre_fetched_frames=None,
+                        round_trip_cost_pct=None) -> BacktestReport:
+    """S2 — dual-momentum ROTATION across a small ETF set.
+
+    Shaped unlike every crypto replay here: this strategy is ALWAYS
+    invested, so a "trade" is a holding period and each rebalance that
+    changes the winner costs exactly one round trip (sell A, buy B).
+    Charging zero per rotation — or charging per bar — is the easy way
+    to overstate a rotation system.
+    """
+    from stock_signals import dual_momentum_vote
+
+    needed = (list(cfg.get("risk_assets", []))
+               + [cfg.get("safe_asset"), cfg.get("cash_asset")])
+    needed = [s for s in needed if s]
+    frames = pre_fetched_frames
+    if frames is None:
+        frames = {s: _fetch_klines(s, cfg.get("interval", "1d"), bars,
+                                     source=source) for s in needed}
+
+    report = BacktestReport(bot="stockdual", asset=asset_name,
+                              bars_seen=min((len(f) for f in frames.values()),
+                                             default=0))
+    missing = [s for s in needed if s not in frames or len(frames[s]) == 0]
+    if missing:
+        report.warnings.append(f"missing data for {', '.join(missing)} — "
+                                 "no verdict")
+        return report
+    for s in needed:
+        if bool(getattr(frames[s], "attrs", {}).get("incomplete")):
+            report.warnings.append(f"INCOMPLETE window for {s} — verdict "
+                                     "NOT live-parity")
+
+    cost = (float(round_trip_cost_pct) if round_trip_cost_pct is not None
+             else EQUITY_ETF_COST_PCT)
+    n = min(len(f) for f in frames.values())
+    max_lb = max(cfg.get("lookbacks_months", [12])) * 21
+    start = max_lb + 2
+    if n <= start:
+        report.warnings.append("insufficient history for the longest lookback")
+        return report
+
+    held = None            # (symbol, entry_bar, entry_price)
+    rebalance_bars = _month_end_bars(frames[needed[0]].index[:n])
+
+    for i in range(start, n):
+        if i not in rebalance_bars:
+            continue
+        windows = {s: frames[s].iloc[: i + 1] for s in needed}
+        vote = dual_momentum_vote(windows, cfg)
+        winner = vote.get("winner")
+        if not winner:
+            continue
+        if held is not None and held[0] == winner:
+            continue
+        if held is not None:
+            sym, entry_bar, entry_px = held
+            exit_px = float(frames[sym].iloc[i]["close"])
+            pnl = ((exit_px - entry_px) / entry_px * 100.0) - cost
+            report.trades.append(TradeResult(
+                direction="LONG", entry_bar=entry_bar, exit_bar=i,
+                entry_price=entry_px, exit_price=exit_px,
+                exit_reason=f"Rotate {sym}->{winner}", pnl_pct=pnl))
+        held = (winner, i, float(frames[winner].iloc[i]["close"]))
+
+    # Close the final open holding so the last (often long) period is not
+    # silently dropped from the record.
+    if held is not None:
+        sym, entry_bar, entry_px = held
+        exit_px = float(frames[sym].iloc[n - 1]["close"])
+        pnl = ((exit_px - entry_px) / entry_px * 100.0) - cost
+        report.trades.append(TradeResult(
+            direction="LONG", entry_bar=entry_bar, exit_bar=n - 1,
+            entry_price=entry_px, exit_price=exit_px,
+            exit_reason=f"Final {sym}", pnl_pct=pnl))
+    return report
+
+
+def _month_end_bars(index) -> set:
+    """Positional indices of the last trading bar in each month."""
+    out, last_key, last_pos = set(), None, None
+    for pos, ts in enumerate(index):
+        key = (ts.year, ts.month)
+        if last_key is not None and key != last_key:
+            out.add(last_pos)
+        last_key, last_pos = key, pos
+    if last_pos is not None:
+        out.add(last_pos)
+    return out
+
+
 # ─── Reversal replay ──────────────────────────────────────────────────────
 
 def replay_reversal(asset_name: str, cfg: dict, bars: int = 500) -> BacktestReport:
@@ -1194,6 +1392,31 @@ def _run_breakout(bars: int, source: str = "weex",
             for name, cfg in universe.items()]
 
 
+def _run_stocktrend(bars: int, source: str = "equity",
+                      cost_pct=None, assets=None) -> List[BacktestReport]:
+    from stock_config import STOCK_TREND_ASSETS
+    universe = _filter_universe(STOCK_TREND_ASSETS, assets)
+    return [replay_stock_trend(name, cfg, bars=bars, source=source,
+                                 round_trip_cost_pct=cost_pct)
+            for name, cfg in universe.items()]
+
+
+def _run_stockrev(bars: int, source: str = "equity",
+                    cost_pct=None, assets=None) -> List[BacktestReport]:
+    from stock_config import STOCK_REV_ASSETS
+    universe = _filter_universe(STOCK_REV_ASSETS, assets)
+    return [replay_stock_rev(name, cfg, bars=bars, source=source,
+                               round_trip_cost_pct=cost_pct)
+            for name, cfg in universe.items()]
+
+
+def _run_stockdual(bars: int, source: str = "equity",
+                     cost_pct=None, assets=None) -> List[BacktestReport]:
+    from stock_config import STOCK_DUAL_CONFIG
+    return [replay_stock_dual("GEM", STOCK_DUAL_CONFIG, bars=bars,
+                                source=source, round_trip_cost_pct=cost_pct)]
+
+
 def _run_reversal(bars: int) -> List[BacktestReport]:
     from reversal_config import REVERSAL_ASSETS
     return [replay_reversal(name, cfg, bars=bars)
@@ -1212,11 +1435,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--bot",
                         choices=["momentum", "breakout", "pair", "reversal",
-                                  "scalp", "crossover", "all"],
-                        default="all", help="Which strategy to replay")
+                                  "scalp", "crossover",
+                                  "stocktrend", "stockdual", "stockrev",
+                                  "stocks", "all"],
+                        default="all",
+                        help="Which strategy to replay ('stocks' = all "
+                              "three Module 2 sleeves; 'all' stays crypto)")
     parser.add_argument("--bars", type=int, default=500,
                         help="How many historical bars to fetch per asset")
-    parser.add_argument("--source", choices=["weex", "binance"],
+    parser.add_argument("--source", choices=["weex", "binance", "equity"],
                         default="weex",
                         help="Kline source. weex caps at 1000 bars/asset; "
                               "binance chains 1500-bar chunks for long "
@@ -1244,10 +1471,26 @@ def main() -> None:
         "reversal":  _run_reversal,
         "scalp":     _run_scalp,
         "crossover": _run_crossover,
+        # Module 2 — stock sleeves
+        "stocktrend": _run_stocktrend,
+        "stockdual":  _run_stockdual,
+        "stockrev":   _run_stockrev,
     }
+    _CRYPTO_BOTS = ("momentum", "breakout", "pair", "reversal",
+                     "scalp", "crossover")
+    _STOCK_BOTS = ("stocktrend", "stockdual", "stockrev")
     # Replays that accept an alternate kline source for long windows
     _source_aware = {"scalp", "crossover", "breakout", "momentum", "pair"}
-    selected = list(runners) if args.bot == "all" else [args.bot]
+    if args.bot == "all":
+        selected = list(_CRYPTO_BOTS)     # 'all' stays crypto — Module 2
+    elif args.bot == "stocks":            # is opted into explicitly
+        selected = list(_STOCK_BOTS)
+    else:
+        selected = [args.bot]
+    # Stock sleeves default to the equity data source; asking for a
+    # crypto source would silently fetch the wrong market.
+    if any(b in _STOCK_BOTS for b in selected) and args.source != "equity":
+        args.source = "equity"
 
     all_reports: List[BacktestReport] = []
     for bot in selected:
@@ -1267,6 +1510,10 @@ def main() -> None:
             elif bot == "scalp":
                 reports = runners[bot](args.bars, source=args.source,
                                          cost_pct=args.cost_pct)
+            elif bot in _STOCK_BOTS:
+                reports = runners[bot](args.bars, source=args.source,
+                                         cost_pct=args.cost_pct,
+                                         assets=args.assets or None)
             elif bot in _source_aware:
                 reports = runners[bot](args.bars, source=args.source)
             else:
@@ -1281,9 +1528,18 @@ def main() -> None:
     print("\n=== ACTIVATION GATES ===")
     gates = {"breakout": 1.5, "pair": 1.5, "reversal": 1.3}
     for r in all_reports:
+        if r.bot in ("stocktrend", "stockdual"):
+            # PF on ~20-120 lifetime trades is dominated by a handful of
+            # them, so it is the WRONG gate for a strategy that trades a
+            # few times a year. These are judged on Sharpe / maxDD /
+            # cross-spec consistency by tools/validate_stock_sleeves.py.
+            print(f"  {r.bot:10s} {r.asset:12s}  PF={r.profit_factor:5.2f}  "
+                   f"trades={r.n_trades:3d}  maxDD={r.max_drawdown_pct:5.1f}%"
+                   f"  → see validate_stock_sleeves (low-frequency gate)")
+            continue
         gate = gates.get(r.bot, 1.0)
         verdict = "PASS" if r.profit_factor >= gate and r.n_trades >= 10 else "fail"
-        print(f"  {r.bot:9s} {r.asset:10s}  PF={r.profit_factor:5.2f}  "
+        print(f"  {r.bot:10s} {r.asset:12s}  PF={r.profit_factor:5.2f}  "
               f"trades={r.n_trades:3d}  gate=PF≥{gate}  → {verdict}")
 
 
