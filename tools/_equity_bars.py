@@ -135,6 +135,14 @@ class CredentialsMissing(Exception):
     """A provider was requested without its API key configured."""
 
 
+class ApiRefused(Exception):
+    """A non-retryable HTTP error, carrying the API's own explanation.
+
+    403/401/404 mean the vendor is telling us something specific; the
+    message is the fastest path to the fix and must not be swallowed.
+    """
+
+
 # ─── HTTP ─────────────────────────────────────────────────────────────────
 
 def _http_get_json_once(url: str, headers: dict, params: dict):
@@ -148,7 +156,17 @@ def _http_get_json_once(url: str, headers: dict, params: dict):
     except urllib.error.HTTPError as e:
         if e.code in _RETRYABLE_STATUS:
             raise TransientFetchError(f"HTTP {e.code}") from e
-        raise
+        # Non-retryable: the API is REFUSING us and its body says why
+        # ("you must accept the terms", "plan does not include this
+        # endpoint", "invalid token"). Discarding it turns a one-line
+        # answer into a guessing game — the same reason the Kalshi
+        # schema-drift warning dumps field names.
+        try:
+            detail = e.read().decode("utf-8", "replace")[:400]
+        except Exception:  # noqa: BLE001
+            detail = "<no body>"
+        raise ApiRefused(f"HTTP {e.code} from {url.split('?')[0]}: "
+                          f"{detail}") from e
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError,
              ConnectionError) as e:
         raise TransientFetchError(str(e)) from e
@@ -413,27 +431,71 @@ def cross_check(a: pd.DataFrame, b: pd.DataFrame,
 # ─── Parquet cache ────────────────────────────────────────────────────────
 
 def cache_path(symbol: str, interval: str = "1d",
-                 provider: str = "tiingo") -> Path:
-    return CACHE_DIR / provider / interval / f"{symbol.upper()}.parquet"
+                 provider: str = "tiingo", suffix: str = ".parquet") -> Path:
+    return CACHE_DIR / provider / interval / f"{symbol.upper()}{suffix}"
 
 
 def save_cache(df: pd.DataFrame, symbol: str, interval: str = "1d",
                  provider: str = "tiingo") -> Path:
+    """Cache bars, preferring Parquet but never REQUIRING it.
+
+    The droplet has neither pyarrow nor fastparquet, and adding ~100MB
+    of dependency to a 1GB box for a convenience cache is the wrong
+    trade. Gzipped CSV holds ~6,000 daily rows in a few dozen KB.
+    """
     p = cache_path(symbol, interval, provider)
     p.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(p)
-    return p
+    try:
+        df.to_parquet(p)
+        return p
+    except (ImportError, ValueError):
+        csv_p = cache_path(symbol, interval, provider, ".csv.gz")
+        df.to_csv(csv_p, compression="gzip")
+        if p.exists():          # drop a stale parquet so loads can't split
+            try:
+                p.unlink()
+            except OSError:
+                pass
+        return csv_p
 
 
 def load_cache(symbol: str, interval: str = "1d",
                  provider: str = "tiingo") -> Optional[pd.DataFrame]:
-    p = cache_path(symbol, interval, provider)
-    if not p.exists():
-        return None
-    try:
-        return pd.read_parquet(p)
-    except Exception:  # noqa: BLE001
-        return None
+    """Load cached bars and RESTORE the completeness verdict.
+
+    df.attrs survives no serializer, so a cached frame would come back
+    from disk looking clean even when the fetch had found interior
+    holes — turning a loud defect back into a silent one, which is the
+    failure class this module exists to prevent. Rather than persist the
+    verdict (which could then go stale), it is recomputed from the
+    calendar over the frame's own span: cheap and always current.
+    """
+    df = None
+    for suffix in (".parquet", ".csv.gz"):
+        p = cache_path(symbol, interval, provider, suffix)
+        if not p.exists():
+            continue
+        try:
+            if suffix == ".parquet":
+                df = pd.read_parquet(p)
+            else:
+                df = pd.read_csv(p, index_col=0, parse_dates=[0],
+                                   compression="gzip")
+            break
+        except Exception:  # noqa: BLE001
+            continue
+    if df is None or len(df) == 0:
+        return df if df is not None else None
+
+    df.index = pd.DatetimeIndex(df.index)
+    df = df.sort_index()
+    rep = completeness_report(symbol, df, df.index[0].date(),
+                                df.index[-1].date())
+    df.attrs["incomplete"] = not rep["complete"]
+    df.attrs["completeness"] = rep
+    df.attrs["provider"] = provider
+    df.attrs["from_cache"] = True
+    return df
 
 
 def _as_date(d) -> date:
