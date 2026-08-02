@@ -38,6 +38,46 @@ STALE_AFTER_SECONDS = 30 * 60
 # and triggered a pointless restart. ~2.5x the owner's cycle interval.
 _STALE_AFTER_BY_OWNER = {"funding": 150 * 60}
 
+# Module 2: owners bound to MARKET HOURS rather than a wall clock. The
+# stock daemon sleeps toward the next open instead of polling a shut
+# market, so its heartbeat is legitimately hours old overnight and all
+# weekend. Judging that by the 30-min bar would fire an hourly alert
+# from Friday close to Monday bell — the third time a staleness rule has
+# needed to know the cadence it is judging (parked relics, then
+# funding's hourly cycle, now the market itself).
+_MARKET_HOURS_OWNERS = {"stock"}
+
+# The daemon caps its closed-market sleep at 4h precisely so it keeps
+# beating. Past that it is genuinely dead, weekend or not.
+_CLOSED_MARKET_STALE_AFTER = 5 * 3600
+
+# Just after the bell the daemon may still be finishing a capped
+# overnight sleep. Without this grace window the sentinel would page
+# every single morning at 09:31.
+_OPEN_GRACE_SECONDS = 20 * 60
+
+
+def _market_is_open() -> bool:
+    try:
+        import market_calendar as mc
+        return bool(mc.is_market_open())
+    except Exception:  # noqa: BLE001
+        return True      # unknown -> apply the strict bar, never silence
+
+
+def _market_open_recently() -> bool:
+    """True within the grace window after today's opening bell."""
+    try:
+        import datetime as _dt
+        import market_calendar as mc
+        now = _dt.datetime.now(tz=mc.ET)
+        if not mc.is_trading_day(now.date()):
+            return False
+        open_ts, _close = mc.session_bounds(now.date())
+        return 0 <= (now - open_ts).total_seconds() <= _OPEN_GRACE_SECONDS
+    except Exception:  # noqa: BLE001
+        return False
+
 
 def _parked_owners() -> set:
     """Bots at revalidation step 0 (PARKED) — their services may be
@@ -75,6 +115,13 @@ def classify_heartbeats(paths, stale_after_s: int = STALE_AFTER_SECONDS,
         owner = p.name.lstrip(".").removesuffix("_heartbeat")
         age = now - p.stat().st_mtime
         threshold = _STALE_AFTER_BY_OWNER.get(owner, stale_after_s)
+        if owner in _MARKET_HOURS_OWNERS:
+            # Closed market: only the sleep cap matters. Open market:
+            # the normal bar, but not during the post-bell grace window.
+            if not _market_is_open():
+                threshold = _CLOSED_MARKET_STALE_AFTER
+            elif _market_open_recently():
+                threshold = _CLOSED_MARKET_STALE_AFTER
         if owner in parked:
             if age > threshold:
                 continue  # relic of a stopped service — expected
