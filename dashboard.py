@@ -932,6 +932,7 @@ def _build_v2_context(data: Dict[str, Any], state: dict | None = None,
         "reversal_meta":  _v2_reversal_meta(trades),
         "scalp_meta":     _v2_scalp_meta(trades),
         "crossover_meta": _v2_crossover_meta(trades),
+        "stock_meta":     _v2_stock_meta(trades),
         # J.5a: per-bot chart panels (asset dropdown + chart data per asset)
         "chart_panels_root": _v2_build_all_chart_panels(executor, trades),
         # J.10: per-bot recent activity log from journalctl
@@ -958,6 +959,11 @@ _KS_OWNER_LABELS = {
     "momentum": "Momentum", "whale": "Whale", "funding": "Funding",
     "scalp": "Scalp", "crossover": "Crossover", "breakout": "Breakout",
     "pair": "Pair", "reversal": "Reversal",
+    # Added in S4. These owners existed in kill_switch from S0, but the
+    # panel deliberately hid them until the module was real — labelling
+    # them here is the switch that reveals them.
+    "stockrev": "Stock · Reversion", "stockdual": "Stock · Dual",
+    "stocktrend": "Stock · Trend",
 }
 
 
@@ -1405,6 +1411,7 @@ def _v2_test_context(trades: list | None = None, **overrides) -> dict:
         "reversal_meta":  _v2_reversal_meta(trades),
         "scalp_meta":     _v2_scalp_meta(trades),
         "crossover_meta": _v2_crossover_meta(trades),
+        "stock_meta":     _v2_stock_meta(trades),
         # J.5a: chart panels (empty when no executor available in test context)
         "chart_panels_root": _v2_build_all_chart_panels(None, trades),
         # J.10: activity logs — test context returns empty lists per bot
@@ -2396,6 +2403,11 @@ _BOT_CLASS_TO_LABEL = {
     "reversal":  "Reversal",
     "scalp":     "Scalp",
     "crossover": "Crossover",
+    # Module 2 — kept as separate classes rather than one "Stock" bot so
+    # each sleeve keeps its own gate step, loss streak and journal rows.
+    "stockrev":   "Reversion",
+    "stockdual":  "Dual momentum",
+    "stocktrend": "Trend",
 }
 
 
@@ -3392,6 +3404,78 @@ def _v2_crossover_meta(trades: List[dict]) -> dict:
     }
 
 
+_STOCK_BOT_LABELS = ("StockRev", "StockDual", "StockTrend")
+
+
+def _v2_stock_meta(trades: list) -> dict:
+    """Module 2 panel context — the three sleeves, their S2 verdicts, and
+    the benchmark caveat.
+
+    That caveat is not decoration. These sleeves passed genuinely strict
+    gates AND lose badly to simply owning the index on absolute return
+    (QQQ +1694% vs QQQ_REV +173% over 25 years). A panel that showed
+    only the passing PF would be technically true and deeply
+    misleading, so the comparison travels with the number.
+
+    Watchdog philosophy, like every other _v2_*_meta: any failure
+    degrades to an empty panel rather than breaking the build.
+    """
+    rows = [t for t in (trades or [])
+             if (t.get("bot") or "") in _STOCK_BOT_LABELS]
+    closed = [t for t in rows if t.get("result") in ("WIN", "LOSS")]
+    pnls = [float(t.get("net_pnl") or 0) for t in closed]
+    wins = sum(1 for p in pnls if p > 0)
+
+    sleeves, paused, approved = [], True, ()
+    try:
+        from stock_config import (
+            STOCK_PAUSED, STOCK_BACKTEST_STATS, S3_APPROVED_SLEEVES,
+            STOCK_REV_ASSETS, STOCK_TREND_ASSETS, STOCK_DUAL_CONFIG,
+        )
+        paused, approved = STOCK_PAUSED, S3_APPROVED_SLEEVES
+        _spec = [
+            ("rev",   "Reversion",     [c["symbol"] for c in STOCK_REV_ASSETS.values()],
+              ("SPY_REV", "QQQ_REV")),
+            ("dual",  "Dual momentum", list(STOCK_DUAL_CONFIG["risk_assets"]),
+              ("GEM",)),
+            ("trend", "Trend",         [c["symbol"] for c in STOCK_TREND_ASSETS.values()],
+              ("SPY_TREND",)),
+        ]
+        for key, label, syms, stat_keys in _spec:
+            st = [STOCK_BACKTEST_STATS.get(k, {}) for k in stat_keys]
+            st = [s for s in st if s]
+            is_ok = key in approved
+            note = ""
+            if st and st[0].get("bh_pnl_pct"):
+                s0 = st[0]
+                note = (f"vs buy-hold {s0['bh_pnl_pct']:+.0f}% "
+                         f"(DD {s0['bh_dd_pct']:.0f}%) — the case is "
+                         "drawdown, not return")
+            sleeves.append({
+                "sleeve": key, "label": label, "symbols": syms,
+                "approved": bool(is_ok),
+                "verdict": ("S2 PASS — paper" if is_ok
+                             else "S2 FAIL — candidate, gate-refused"),
+                "stats": st,
+                "benchmark_note": note,
+            })
+    except Exception:  # noqa: BLE001
+        pass
+
+    return {
+        "paused": bool(paused),
+        "venue": "Alpaca paper",
+        "closed_count": len(closed),
+        "wins": wins,
+        "losses": len(closed) - wins,
+        "win_rate_display": (f"{wins / len(closed) * 100:.1f}%"
+                              if closed else "—"),
+        "net_pnl_display": f"${sum(pnls):,.2f}",
+        "sleeves": sleeves,
+        "approved_sleeves": list(approved),
+    }
+
+
 _PAUSE_FLAGS = {
     "whale":     ("whale_config",     "WHALE_PAUSED"),
     "breakout":  ("breakout_config",  "BREAKOUT_PAUSED"),
@@ -3399,6 +3483,10 @@ _PAUSE_FLAGS = {
     "reversal":  ("reversal_config",  "REVERSAL_PAUSED"),
     "scalp":     ("scalp_config",     "SCALP_PAUSED"),
     "crossover": ("crossover_config", "CROSSOVER_PAUSED"),
+    # One daemon runs all three sleeves, so they share a pause flag.
+    "stockrev":   ("stock_config", "STOCK_PAUSED"),
+    "stockdual":  ("stock_config", "STOCK_PAUSED"),
+    "stocktrend": ("stock_config", "STOCK_PAUSED"),
 }
 
 

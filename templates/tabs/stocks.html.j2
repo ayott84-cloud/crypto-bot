@@ -1,0 +1,101 @@
+{# Watchdog philosophy, same as every other panel: a context missing
+   stock_meta renders an empty tab rather than taking the whole page
+   down. Hand-built contexts (older tests, partial renders) hit this. #}
+{% set stock_meta = stock_meta | default({}, true) %}
+{% if not stock_meta %}
+<h1 class="tab-heading">Equity sleeves</h1>
+<p class="panel__note">Module 2 context unavailable.</p>
+{% else %}
+<h1 class="tab-heading">Equity sleeves <span class="tab-sub">Module 2 · {{ stock_meta.venue }}</span></h1>
+
+{% if stock_meta.paused %}
+<div class="banner banner--paused" role="status">
+  <span class="banner__label">PAUSED</span>
+  <span class="banner__msg">
+    <code>STOCK_PAUSED=true</code> — no new entries. Open positions are
+    still exit-managed every cycle.
+  </span>
+</div>
+{% elif stock_meta.closed_count == 0 %}
+<div class="banner banner--info" role="status">
+  <span class="banner__label">AWAITING SIGNAL</span>
+  <span class="banner__msg">
+    Live on paper, no closed trades yet. The reversion sleeve trades
+    ~20x/yr per symbol and the momentum sleeves act only at month-end,
+    so the first meaningful read is weeks out, not days.
+  </span>
+</div>
+{% endif %}
+
+<section class="panel">
+  <h2 class="panel__title">Performance</h2>
+  <div class="kv-grid">
+    <div class="kv-cell"><span class="kv-key">CLOSED</span><span class="kv-val">{{ stock_meta.closed_count }}</span></div>
+    <div class="kv-cell"><span class="kv-key">WIN RATE</span><span class="kv-val">{{ stock_meta.win_rate_display }}</span></div>
+    <div class="kv-cell"><span class="kv-key">NET PnL</span><span class="kv-val">{{ stock_meta.net_pnl_display }}</span></div>
+    <div class="kv-cell"><span class="kv-key">VENUE</span><span class="kv-val">{{ stock_meta.venue }}</span></div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2 class="panel__title">Sleeves &amp; gate verdicts</h2>
+  <p class="panel__note">
+    Gates were registered in code before the data existed. A sleeve that
+    failed is refused by the daemon even if the module is unpaused.
+  </p>
+  <table class="data-table" data-sortable>
+    <caption class="sr-only">Stock sleeve validation verdicts</caption>
+    <thead>
+      <tr>
+        <th scope="col">Sleeve</th><th scope="col">Symbols</th>
+        <th scope="col">Status</th><th scope="col">25yr evidence</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in stock_meta.sleeves %}
+      <tr>
+        <th scope="row">{{ s.label }}</th>
+        <td>{{ s.symbols | join(", ") }}</td>
+        <td>
+          <span class="confidence-pill {{ 'confidence-pill--high' if s.approved else 'confidence-pill--none' }}">
+            {{ s.verdict }}
+          </span>
+        </td>
+        <td>
+          {% for st in s.stats %}
+            {% if st.pf %}PF {{ '%.2f'|format(st.pf) }}{% elif st.sharpe %}Sharpe {{ '%.2f'|format(st.sharpe) }}{% endif %}
+            · DD {{ '%.1f'|format(st.dd_pct) }}%
+            {% if st.dsr %}· DSR {{ '%.3f'|format(st.dsr) }}{% endif %}
+            {% if st.pbo is defined and st.pbo %}· PBO {{ '%.2f'|format(st.pbo) }}{% endif %}<br>
+          {% endfor %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="panel">
+  <h2 class="panel__title">Read this before reading the numbers above</h2>
+  <p class="panel__note">
+    These sleeves passed strict, pre-registered gates — 25 years, Deflated
+    Sharpe ≈ 0.99, Probability of Backtest Overfitting near zero, and
+    consistent across both a full-cycle and a recent-decade window. They
+    also <strong>lose badly to simply owning the index on absolute
+    return</strong>. Their entire case is drawdown, and it only holds
+    across a full cycle including the crashes.
+  </p>
+  <ul class="bullet-list">
+    {% for s in stock_meta.sleeves %}{% if s.benchmark_note %}
+    <li><strong>{{ s.label }}</strong> — {{ s.benchmark_note }}</li>
+    {% endif %}{% endfor %}
+  </ul>
+</section>
+
+{% if bot_panels and bot_panels.stock %}
+  {% with panel = bot_panels.stock %}
+    {% include "components/bot_positions_panel.html.j2" %}
+    {% include "components/bot_trades_panel.html.j2" %}
+  {% endwith %}
+{% endif %}
+{% endif %}

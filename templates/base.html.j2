@@ -67,6 +67,13 @@
       </button>
     </div>
     <div class="sidebar__group">
+      <span class="sidebar__group-label">STOCKS</span>
+      <button role="tab" aria-selected="false"
+              aria-controls="tab-stocks"     data-tab="stocks"     class="sidebar__item">
+        <span class="sidebar__icon monogram--stock">E</span><span class="sidebar__label">Equity sleeves</span>
+      </button>
+    </div>
+    <div class="sidebar__group">
       <span class="sidebar__group-label">RESEARCH</span>
       <button role="tab" aria-selected="false"
               aria-controls="tab-projection" data-tab="projection" class="sidebar__item">
@@ -105,6 +112,9 @@
       </section>
       <section role="tabpanel" id="tab-scalping"   tabindex="0" hidden>
         {% include "tabs/scalping.html.j2" %}
+      </section>
+      <section role="tabpanel" id="tab-stocks"     tabindex="0" hidden>
+        {% include "tabs/stocks.html.j2" %}
       </section>
       <section role="tabpanel" id="tab-projection" tabindex="0" hidden>
         {% include "tabs/projection.html.j2" %}

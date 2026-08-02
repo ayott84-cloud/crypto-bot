@@ -115,6 +115,26 @@ def test_symbol_exposure_empty_positions():
     assert symbol_exposure(None) == []
 
 
+def test_benchmark_symbol_is_per_asset_class():
+    """A stock sleeve compared against BTC is meaningless. Each module
+    is measured against the thing an operator would otherwise have
+    simply held."""
+    from tools.fleet_review import benchmark_for_bots
+    assert benchmark_for_bots({"Scalp", "Breakout"})["symbol"] == "BTCUSDT"
+    assert benchmark_for_bots({"StockRev", "StockDual"})["symbol"] == "SPY"
+    assert benchmark_for_bots({"StockRev"})["source"] == "equity"
+    assert benchmark_for_bots({"Momentum"})["source"] == "binance"
+
+
+def test_mixed_fleet_reports_both_benchmarks():
+    """Once two modules trade, one number cannot describe the fleet."""
+    from tools.fleet_review import benchmark_for_bots
+    out = benchmark_for_bots({"Scalp", "StockRev"}, all_classes=True)
+    assert isinstance(out, list)
+    syms = {b["symbol"] for b in out}
+    assert syms == {"BTCUSDT", "SPY"}
+
+
 def test_btc_benchmark_pct_change():
     """W4 step 3: is the alpha real or is it beta — every review shows
     what BTC buy-hold returned over the same window."""

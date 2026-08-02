@@ -30,22 +30,23 @@ from dashboard_renderer import render
 
 # ─── Tier 1.1 — kill-switch panel context ──────────────────────────────────
 
-# The panel shows only LABELLED owners. kill_switch recognizes Module 2's
-# stock sleeves from Phase S0 onward, but they must not surface here until
-# S4 gives them labels + a tab — otherwise a half-built module renders as
-# three mystery bots on the crypto dashboard.
+# The panel shows only LABELLED owners. Between S0 and S4 the stock
+# sleeves were recognized by kill_switch but deliberately unlabelled, so
+# a half-built module could not render as three mystery bots. S4 gave
+# them labels and a tab, which is the switch that reveals them — the
+# earlier "must be hidden" assertion is superseded, not broken.
 _OWNERS = {"momentum", "whale", "funding", "scalp", "crossover",
-            "breakout", "pair", "reversal"}
+            "breakout", "pair", "reversal",
+            "stocktrend", "stockdual", "stockrev"}
 
 
-def test_unlabelled_owners_are_hidden_from_the_panel():
-    import kill_switch
-    summary = kill_switch.status_summary()
-    assert {"stocktrend", "stockdual", "stockrev"} <= set(summary), \
-        "kill_switch should recognize the stock sleeves"
+def test_labelling_an_owner_is_what_reveals_it():
+    """The label map is the deliberate gate between 'kill_switch knows
+    about this owner' and 'the operator sees it'."""
     shown = {o["owner"] for o in dashboard._v2_kill_switch_panel()["owners"]}
-    assert not (shown & {"stocktrend", "stockdual", "stockrev"}), \
-        "unlabelled owners leaked into the panel"
+    assert {"stockrev", "stockdual"} <= shown
+    assert shown <= set(dashboard._KS_OWNER_LABELS), \
+        "an owner with no label leaked into the panel"
 
 
 def test_kill_switch_panel_shape():

@@ -116,6 +116,36 @@ def symbol_exposure(positions: dict) -> list:
         key=lambda r: -r["n"])
 
 
+# Module 2 made the fleet multi-asset-class, and "is it alpha or beta"
+# only means something against the RIGHT beta. Comparing a stock sleeve
+# to BTC would be noise dressed as a benchmark.
+_STOCK_BOTS = {"StockTrend", "StockDual", "StockRev"}
+_BENCHMARKS = {
+    "crypto": {"symbol": "BTCUSDT", "interval": "1d", "source": "binance",
+                "label": "BTC buy-hold"},
+    "equity": {"symbol": "SPY", "interval": "1d", "source": "equity",
+                "label": "SPY buy-hold"},
+}
+
+
+def benchmark_for_bots(bots, all_classes: bool = False):
+    """Pick the benchmark(s) matching the bots that actually traded.
+
+    all_classes=True returns every benchmark the window touched — once
+    two modules are live, a single number cannot describe the fleet.
+    """
+    classes = []
+    if any(b in _STOCK_BOTS for b in (bots or set())):
+        classes.append("equity")
+    if any(b not in _STOCK_BOTS for b in (bots or set())):
+        classes.append("crypto")
+    if not classes:
+        classes = ["crypto"]
+    if all_classes:
+        return [_BENCHMARKS[c] for c in classes]
+    return _BENCHMARKS[classes[0]]
+
+
 def btc_benchmark(closes) -> dict | None:
     """Buy-and-hold BTC return over the window (fleet-audit W4 step 3:
     is the alpha real or is it beta). None when insufficient data."""
@@ -163,21 +193,36 @@ def main() -> int:
                f"PF={s['pf']:5.2f}  net={s['net']:+8.2f}  "
                f"best={s['best']:+7.2f}  worst={s['worst']:+7.2f}")
 
-    # 1b. Benchmark honesty — what did just holding BTC return?
-    try:
-        from tools._binance_klines import fetch_klines_chained
-        rows = fetch_klines_chained("BTCUSDT", "1d", days + 1)
-        bench = btc_benchmark([r[4] for r in rows])
-        fleet_net = sum(s["net"] for s in stats.values())
-        if bench:
-            print(f"\n-- Benchmark -- BTC buy-hold {days}d: "
-                   f"{bench['pct']:+.1f}%  |  fleet net: ${fleet_net:+,.2f} "
-                   "(dollars on small paper margins — directional read only)")
-    except Exception:  # noqa: BLE001
-        pass
+    # 1b. Benchmark honesty — what did simply HOLDING return? Per asset
+    # class, because a stock sleeve measured against BTC is noise.
+    fleet_net = sum(s["net"] for s in stats.values())
+    lines = []
+    for bench in benchmark_for_bots(set(stats), all_classes=True):
+        try:
+            if bench["source"] == "equity":
+                from datetime import date as _date, timedelta as _td
+                from tools import _equity_bars as _eb
+                end = _date.today()
+                df = _eb.fetch_daily(bench["symbol"], end - _td(days=days + 5),
+                                       end, verify_complete=False)
+                closes = [float(c) for c in df["close"]] if len(df) else []
+            else:
+                from tools._binance_klines import fetch_klines_chained
+                closes = [r[4] for r in
+                           fetch_klines_chained(bench["symbol"], "1d", days + 1)]
+            b = btc_benchmark(closes)
+            if b:
+                lines.append(f"{bench['label']} {days}d: {b['pct']:+.1f}%")
+        except Exception:  # noqa: BLE001
+            continue
+    if lines:
+        print(f"\n-- Benchmark -- " + "  |  ".join(lines)
+               + f"  |  fleet net: ${fleet_net:+,.2f} "
+               "(dollars on small paper margins — directional read only)")
 
     # 2. Per-asset for the live bots
-    for bot in ("Scalp", "Momentum", "Breakout", "Funding"):
+    for bot in ("Scalp", "Momentum", "Breakout", "Funding",
+                 "StockRev", "StockDual", "StockTrend"):
         rows = symbol_stats(trades, bot, days)
         if rows:
             print(f"\n-- {bot} per asset --")

@@ -92,17 +92,18 @@ def test_momentum_tab_now_exists_and_includes_momentum_meta_rows():
 
 def test_inactive_tabs_have_aria_selected_false():
     html = render("base.html.j2", dashboard._v2_test_context([]))
-    # 9 inactive tabs after Overview (scalp + crossover consolidated into
-    # a single Scalping tab → 10 total: Overview + 9 inactive)
-    assert html.count('aria-selected="false"') == 9
+    # 10 inactive tabs after Overview. Module 2 (S4) added the STOCKS
+    # group with one Equity-sleeves tab → 11 total: Overview + 10.
+    assert html.count('aria-selected="false"') == 10
 
 
 def test_all_panels_have_tabpanel_role_and_tabindex():
     html = render("base.html.j2", dashboard._v2_test_context([]))
-    # 10 tab panels — count the actual <section> opening tag, not the
-    # substring (which also appears in inlined JS selectors)
-    assert html.count('<section role="tabpanel"') == 10
-    assert html.count('tabindex="0"') >= 10
+    # 11 tab panels — count the actual <section> opening tag, not the
+    # substring (which also appears in inlined JS selectors). +1 in S4
+    # for the Module 2 equity-sleeves panel.
+    assert html.count('<section role="tabpanel"') == 11
+    assert html.count('tabindex="0"') >= 11
 
 
 # ─── Theme toggle ──────────────────────────────────────────────────────────
