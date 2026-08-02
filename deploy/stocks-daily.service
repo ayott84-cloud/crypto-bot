@@ -1,0 +1,28 @@
+[Unit]
+Description=Module 2 Stock Sleeves (stock_daily_main.py — daily ETF sleeves, Alpaca paper)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bot
+WorkingDirectory=/home/bot/crypto-bot
+EnvironmentFile=-/home/bot/crypto-bot/.env
+ExecStart=/home/bot/crypto-bot/venv/bin/python /home/bot/crypto-bot/stock_daily_main.py
+Restart=always
+RestartSec=30
+SyslogIdentifier=stocks-daily
+
+# Lighter than the crypto bots: daily bars, ~6k rows per symbol, and the
+# loop sleeps to the next market open instead of polling a shut market.
+MemoryMax=300M
+MemoryHigh=200M
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/bot/crypto-bot
+
+[Install]
+WantedBy=multi-user.target

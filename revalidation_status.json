@@ -27,6 +27,18 @@
     "step": 1,
     "note": "live-paper, no qualifying signals yet; replay N/A (event-driven)"
   },
+  "stockrev": {
+    "step": 3,
+    "note": "MODULE 2 — S2 PASSED Aug 1 2026: SPY PF 1.59 / QQQ PF 1.64 over 25yr, DSR 0.99, PBO 0.17-0.27, and STRONGER post-2013 (1.66/1.89) which falsified the predicted decay. IWM+EFA demoted (DD 25.7%, no edge). CAVEAT: buried by buy-and-hold on absolute return (QQQ +1694% vs +173%); the case is CAGR-per-drawdown across the full cycle (0.24 vs 0.22). Paper daemon built, STOCK_PAUSED=true pending operator flip"
+  },
+  "stockdual": {
+    "step": 3,
+    "note": "MODULE 2 — S2 PASSED Aug 1 2026: GEM ensemble Sharpe 0.60, maxDD 17.7%, DSR 0.987, PBO 0.26 over 19.1yr. Ensemble (not single spec) per ReSolve; cash leg mandatory after 2022. Same buy-and-hold caveat as stockrev. Paper daemon built, paused"
+  },
+  "stocktrend": {
+    "step": 1,
+    "note": "MODULE 2 — S2 FAILED Aug 1 2026: Sharpe 0.42-0.48 vs 0.50 bar (SPY/EFA/AGG marginal), VNQ 0.21 and GSG 0.03 broken. DSR was excellent (0.98-1.00) so the edge is REAL but small; PBO 0.74-0.90 vs a 0.60 baseline says selecting an SMA period actively HURTS out of sample — an argument never to tune it, not to trade it. NOT in S3_APPROVED_SLEEVES; daemon refuses it even if unpaused"
+  },
   "reversal": {
     "step": 0,
     "note": "PARKED — Phase I.X permanent deferral"

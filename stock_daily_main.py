@@ -1,0 +1,381 @@
+"""Module 2 Phase S3 — daily stock sleeve daemon.
+
+ONE process, THREE sleeves. All three decide on daily bars at or near
+the close, so they share a daemon (and one position_manager owner,
+"stock"). Per-sleeve identity lives on the strategy tag, so each still
+gets its own journal rows, kill switch and gate step.
+
+Follows breakout_main's shape deliberately — heartbeat first, exits
+before entries, pause check, capacity, save_state — so the shared
+machinery keeps working and anyone who knows the crypto bots can read
+this one.
+
+THREE THINGS NO CRYPTO DAEMON HAS TO DO:
+
+  * MARKET HOURS. `while True: run_cycle(); sleep(300)` against a market
+    that is shut 17 hours a day burns API quota on identical bars all
+    night and writes stale signal_status rows that then pollute
+    fleet_review's blocker histogram. The cycle short-circuits when
+    closed and sleeps to the next open.
+
+  * REBALANCE CADENCE. Trend and dual are MONTH-END strategies; only
+    the reversion sleeve is daily. Running the monthly sleeves every
+    session would multiply their trade count, and their costs, by ~21.
+
+  * LONG/FLAT ONLY. No short branch exists to get wrong; the executor
+    refuses shorts outright.
+
+Sleeves are PAUSED by default (STOCK_PAUSED=true), per the convention
+every crypto bot follows: nothing trades until it has earned it.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+BOT_DIR = Path(__file__).resolve().parent
+if str(BOT_DIR) not in sys.path:
+    sys.path.insert(0, str(BOT_DIR))
+
+import market_calendar as mc
+from journal import log_trade
+from kill_switch import should_pause
+from position_manager import load_state, save_state, register_entry, register_exit
+from signals import build_dataframe
+from stock_config import (
+    STOCK_PAUSED, STOCK_POLL_INTERVAL_SECONDS, STOCK_STATE_KEY_PREFIX,
+    STOCK_HEARTBEAT_FILE, STOCK_MARGIN_PER_TRADE, MAX_STOCK_POSITIONS,
+    STOCK_TREND_ASSETS, STOCK_REV_ASSETS, STOCK_DUAL_CONFIG,
+    S3_APPROVED_SLEEVES,
+)
+import stock_signals as ss
+
+logger = logging.getLogger("stock_bot")
+
+_HEARTBEAT_FILE = STOCK_HEARTBEAT_FILE
+
+# Sleeve -> kill_switch owner. The two axes are distinct on purpose:
+# position_manager owns "stock" (one daemon, one state namespace) while
+# kill_switch tracks each sleeve's own loss streak.
+_SLEEVE_OWNER = {"trend": "stocktrend", "dual": "stockdual", "rev": "stockrev"}
+
+
+def _write_heartbeat() -> None:
+    """Touch FIRST in run_cycle, before any early return.
+
+    A paused or waiting bot that stops beating looks DEAD to the risk
+    sentinel — the crypto module already fixed this once (whale, Phase
+    A.1) and again when momentum turned out to have no heartbeat at all.
+    """
+    try:
+        _HEARTBEAT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _HEARTBEAT_FILE.touch()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("heartbeat write failed: %s", e)
+
+
+def _is_rebalance_day(d=None) -> bool:
+    """True on the LAST trading session of the month.
+
+    Month-end is the canonical decision point for both Faber trend and
+    Antonacci dual momentum. Deriving it from the calendar (rather than
+    'is it the 31st') is what makes it correct in a month ending on a
+    weekend or a holiday.
+    """
+    import datetime as _dt
+    d = d or _dt.date.today()
+    if not mc.is_trading_day(d):
+        return False
+    probe = d + _dt.timedelta(days=1)
+    for _ in range(10):
+        if probe.month != d.month:
+            return True
+        if mc.is_trading_day(probe):
+            return False
+        probe += _dt.timedelta(days=1)
+    return False
+
+
+def sleep_seconds(now=None) -> float:
+    """Poll interval while open; sleep to the bell when shut.
+
+    Capped so a long weekend still wakes periodically — a daemon that
+    sleeps 65 hours straight cannot heartbeat, and a silent heartbeat
+    is indistinguishable from a dead process.
+    """
+    if mc.is_market_open(now):
+        return float(STOCK_POLL_INTERVAL_SECONDS)
+    try:
+        nxt = mc.next_open(now)
+        ref = now or datetime.now(tz=mc.ET)
+        delta = (nxt - ref).total_seconds()
+        return float(max(60.0, min(delta, 3600.0 * 4)))
+    except Exception:  # noqa: BLE001
+        return float(STOCK_POLL_INTERVAL_SECONDS)
+
+
+def _sleeve_blocked(sleeve: str) -> bool:
+    # Gate first: a sleeve that failed S2 must not be able to trade even
+    # if someone unpauses the daemon. The trend sleeve is defined and
+    # replayable but NOT approved — this is what makes that stick.
+    if sleeve not in S3_APPROVED_SLEEVES:
+        return True
+    owner = _SLEEVE_OWNER.get(sleeve, "stock")
+    try:
+        st = should_pause(owner)
+    except Exception:  # noqa: BLE001
+        return False
+    if getattr(st, "paused", False):
+        logger.info("[%s] kill switch: %s", sleeve, getattr(st, "reason", ""))
+        return True
+    return False
+
+
+def fill_divergence_pct(signal_price, fill_price):
+    """Percent difference between the price the signal saw and the price
+    we got.
+
+    Alpaca paper matches against real NBBO but models NO fees, NO
+    slippage, NO market impact and NO queue position — it flatters every
+    strategy by roughly our entire cost model. Logging this makes the
+    gap measurable rather than assumed, and it is the Step-5 gate metric
+    in the P4 runbook.
+    """
+    try:
+        s, f = float(signal_price), float(fill_price)
+    except (TypeError, ValueError):
+        return None
+    if s == 0:
+        return None
+    return (f - s) / s * 100.0
+
+
+def _frame(executor, symbol: str, interval: str, bars: int = 400):
+    raw = executor.get_klines(symbol, interval, bars)
+    if not raw:
+        return None
+    return build_dataframe(raw).dropna(subset=["close"])
+
+
+def _state_key(asset_name: str, sleeve: str) -> str:
+    return f"{STOCK_STATE_KEY_PREFIX}{sleeve.upper()}_{asset_name}"
+
+
+def _count_open(state: dict) -> int:
+    return sum(1 for k in (state.get("positions") or {})
+                if k.startswith(STOCK_STATE_KEY_PREFIX))
+
+
+def open_stock_position(executor, state: dict, asset_name: str, cfg: dict,
+                          sleeve: str, price: float) -> None:
+    """Buy whole shares and register the position.
+
+    `bracket_kind="sleeve_exit"` records that the stop is MANAGED BY THE
+    DAEMON rather than resting at the venue: Alpaca rejects bracket
+    orders outside regular hours, and these sleeves decide near the
+    close. Recording it means the risk sentinel can distinguish "no
+    venue stop by design" from "the stop failed to place".
+    """
+    symbol = cfg["symbol"]
+    qty = int(STOCK_MARGIN_PER_TRADE // max(price, 0.01))
+    if qty < 1:
+        logger.info("[%s] %s at %.2f exceeds per-trade size; skipping",
+                     sleeve, symbol, price)
+        return
+    try:
+        executor.open_long(symbol, qty)
+    except Exception as e:  # noqa: BLE001
+        logger.error("[%s] open failed for %s: %s", sleeve, symbol, e)
+        return
+
+    fill = executor.get_symbol_price(symbol) or price
+    register_entry(
+        state, _state_key(asset_name, sleeve),
+        entry_price=fill, atr_at_entry=0.0, quantity=qty,
+        strategy=cfg.get("strategy_name", f"{symbol} {sleeve}"),
+        entry_reason=f"{sleeve} entry", symbol=symbol, direction="LONG",
+        sleeve=sleeve,
+        bracket_kind="sleeve_exit",
+        sl_price=None, tp_price=None,
+        signal_price=price,
+        fill_divergence_pct=fill_divergence_pct(price, fill),
+    )
+    logger.info("[%s] OPEN %s x%d @ %.2f (signal %.2f)",
+                 sleeve, symbol, qty, fill, price)
+
+
+def close_stock_position(executor, state: dict, key: str, reason: str) -> None:
+    pos = (state.get("positions") or {}).get(key)
+    if not pos:
+        return
+    symbol = pos.get("symbol", "")
+    exit_price = executor.get_symbol_price(symbol) or pos.get("entry_price")
+    try:
+        executor.close_long_full(symbol)
+        executor.cancel_pending_orders(symbol)
+    except Exception as e:  # noqa: BLE001
+        logger.error("[%s] close failed: %s", key, e)
+        return
+    register_exit(state, key)
+    try:
+        log_trade(
+            symbol=symbol, direction="LONG",
+            entry_price=pos["entry_price"],
+            exit_price=exit_price or pos["entry_price"],
+            quantity=float(pos.get("quantity") or 0), leverage=1,
+            strategy=pos.get("strategy", "StockTrend"),
+            entry_reason=pos.get("entry_reason", ""), exit_reason=reason,
+            date_closed=datetime.now(timezone.utc),
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.error("[%s] log_trade failed: %s", key, e)
+    logger.info("[%s] CLOSE %s — %s", key, symbol, reason)
+
+
+def _exit_reason_for(executor, pos: dict) -> str | None:
+    """Delegate to the sleeve's own live exit rule."""
+    sleeve = pos.get("sleeve", "rev")
+    symbol = pos.get("symbol")
+    df = _frame(executor, symbol, "1d")
+    if df is None or len(df) < 10:
+        return None
+    if sleeve == "trend":
+        cfg = next((c for c in STOCK_TREND_ASSETS.values()
+                     if c["symbol"] == symbol), {"sma_period": 200})
+        return ss.check_trend_exit(df, cfg)
+    if sleeve == "rev":
+        cfg = next((c for c in STOCK_REV_ASSETS.values()
+                     if c["symbol"] == symbol), {})
+        return ss.check_reversion_exit(
+            df, cfg, bars_held=int(pos.get("bars_held") or 0),
+            entry_price=float(pos.get("entry_price") or 0))
+    return None          # dual exits by rotation, handled in the entry pass
+
+
+def run_cycle(executor, state: dict) -> None:
+    _write_heartbeat()
+
+    # 1. Exits run even when paused or shut — an open position must
+    #    always be manageable. (Orders placed outside hours simply queue.)
+    for key, pos in list((state.get("positions") or {}).items()):
+        if not key.startswith(STOCK_STATE_KEY_PREFIX):
+            continue
+        try:
+            reason = _exit_reason_for(executor, pos)
+        except Exception as e:  # noqa: BLE001
+            logger.error("[%s] exit check failed: %s", key, e)
+            continue
+        if reason:
+            close_stock_position(executor, state, key, reason)
+
+    if not mc.is_market_open():
+        save_state(state, owner="stock")
+        return
+    if STOCK_PAUSED:
+        logger.info("STOCK_PAUSED=true — no new entries")
+        save_state(state, owner="stock")
+        return
+    if _count_open(state) >= MAX_STOCK_POSITIONS:
+        save_state(state, owner="stock")
+        return
+
+    status = state.setdefault("stock_signal_status", {})
+    now_iso = datetime.now(timezone.utc).isoformat()
+    rebalance = _is_rebalance_day()
+
+    # 2. Reversion — daily cadence
+    if not _sleeve_blocked("rev"):
+        for name, cfg in STOCK_REV_ASSETS.items():
+            key = _state_key(name, "rev")
+            if key in (state.get("positions") or {}):
+                continue
+            df = _frame(executor, cfg["symbol"], "1d")
+            if df is None:
+                continue
+            sig = ss.analyze_reversion_entry(df, cfg)
+            status[name] = {"sleeve": "rev", "symbol": cfg["symbol"],
+                             "checked_at": now_iso, **sig}
+            if sig["would_enter"]:
+                open_stock_position(executor, state, name, cfg, "rev",
+                                      float(df["close"].iloc[-2]))
+
+    # 3. Trend — month-end only
+    if rebalance and not _sleeve_blocked("trend"):
+        for name, cfg in STOCK_TREND_ASSETS.items():
+            key = _state_key(name, "trend")
+            if key in (state.get("positions") or {}):
+                continue
+            df = _frame(executor, cfg["symbol"], "1d")
+            if df is None:
+                continue
+            sig = ss.analyze_trend_entry(df, cfg)
+            status[name] = {"sleeve": "trend", "symbol": cfg["symbol"],
+                             "checked_at": now_iso, **sig}
+            if sig["would_enter"]:
+                open_stock_position(executor, state, name, cfg, "trend",
+                                      float(df["close"].iloc[-2]))
+
+    # 4. Dual momentum — month-end rotation
+    if rebalance and not _sleeve_blocked("dual"):
+        try:
+            needed = (list(STOCK_DUAL_CONFIG["risk_assets"])
+                       + [STOCK_DUAL_CONFIG["safe_asset"],
+                          STOCK_DUAL_CONFIG["cash_asset"]])
+            frames = {s: _frame(executor, s, "1d") for s in needed}
+            if all(f is not None for f in frames.values()):
+                vote = ss.dual_momentum_vote(frames, STOCK_DUAL_CONFIG)
+                status["GEM"] = {"sleeve": "dual", "checked_at": now_iso,
+                                  "would_enter": bool(vote.get("winner")),
+                                  "blocked_by": vote.get("blocked_by"),
+                                  "winner": vote.get("winner"),
+                                  "agreement": vote.get("ensemble_agreement")}
+                winner = vote.get("winner")
+                if winner:
+                    held = [k for k in (state.get("positions") or {})
+                             if k.startswith(f"{STOCK_STATE_KEY_PREFIX}DUAL_")]
+                    holding = (state["positions"][held[0]].get("symbol")
+                                if held else None)
+                    if holding != winner:
+                        for k in held:
+                            close_stock_position(executor, state, k,
+                                                   f"Rotate -> {winner}")
+                        cfg = {"symbol": winner,
+                                "strategy_name":
+                                    f"GEM 1M {STOCK_DUAL_CONFIG['strategy_name'].split()[-1]}"}
+                        px = executor.get_symbol_price(winner)
+                        if px:
+                            open_stock_position(executor, state, winner,
+                                                  cfg, "dual", float(px))
+        except Exception as e:  # noqa: BLE001
+            logger.error("dual sleeve failed: %s", e)
+
+    save_state(state, owner="stock")
+
+
+def run() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    from stock_executor import StockExecutor
+    from config import DRY_RUN
+
+    logger.info("Stock daemon starting. PAUSED=%s DRY_RUN=%s calendar=%s",
+                 STOCK_PAUSED, DRY_RUN, mc.backend_note())
+    executor = StockExecutor(dry_run=DRY_RUN, paper=True)
+    state = load_state()
+    while True:
+        started = time.time()
+        try:
+            run_cycle(executor, state)
+        except Exception as e:  # noqa: BLE001
+            logger.error("cycle errored: %s", e, exc_info=True)
+        time.sleep(max(1.0, sleep_seconds() - (time.time() - started)))
+
+
+if __name__ == "__main__":
+    run()
