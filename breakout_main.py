@@ -282,6 +282,55 @@ def _add_pyramid_leg(executor: Executor, state: dict, state_key: str,
                   asset_name, len(legs), leg_qty, leg_price, len(legs))
 
 
+def move_stop_to_breakeven(executor, asset_name: str, pos: dict) -> None:
+    """Replace the resting exchange stop with one AT the entry price.
+
+    The L.3.1 ratchet used to flip a boolean that only
+    check_breakout_exit read, leaving the venue holding the original
+    entry -/+ sl_mult x ATR order. That made "breakeven" a soft stop
+    evaluated on the bar CLOSE — and a bar that closes at or below entry
+    has already traded below it, so the exit could never be flat (the
+    journal shows BE Hit at -$1.58 against ~-$0.20 of costs). Worse, in
+    the gap between ratchet and soft exit the only real protection was
+    the WIDE original stop, so an intrabar collapse would fill there.
+
+    Failure is not swallowed into a success: if the venue refuses, the
+    position keeps its old sl_price and is NOT marked as protected at
+    breakeven. Believing in a stop that is not resting is the defect
+    this function exists to remove, and a half-applied fix would
+    recreate it.
+    """
+    if pos.get("breakeven_stop_placed"):
+        return
+    symbol = pos.get("symbol")
+    qty = float(pos.get("quantity") or 0)
+    entry = float(pos.get("entry_price") or 0)
+    if not symbol or qty <= 0 or entry <= 0:
+        logger.warning("[%s] breakeven stop skipped — qty=%s entry=%s",
+                        asset_name, qty, entry)
+        return
+
+    is_short = str(pos.get("direction", "LONG")).upper() == "SHORT"
+    trigger, qty_str = f"{entry:.6f}", f"{qty}"
+    try:
+        executor.cancel_pending_orders(symbol)
+        # place_sl_order hardcodes positionSide=LONG, so a SHORT must go
+        # through the short primitive or it closes the wrong side.
+        if is_short:
+            executor.place_sl_order_short(symbol, trigger, qty_str)
+        else:
+            executor.place_sl_order(symbol, trigger, qty_str)
+    except Exception as e:  # noqa: BLE001
+        logger.error("[%s] breakeven stop placement FAILED (%s) — position "
+                      "keeps its original stop", asset_name, e)
+        return
+
+    pos["sl_price"] = entry          # the sentinel reads this
+    pos["bracket_kind"] = "breakeven"
+    pos["breakeven_stop_placed"] = True
+    logger.info("[%s] resting stop moved to breakeven @ %s", asset_name, trigger)
+
+
 def close_breakout_position(
     executor: Executor, state: dict, state_key: str, reason: str,
 ) -> None:
@@ -403,6 +452,7 @@ def run_cycle(executor: Executor, state: dict) -> None:
                         current_close, entry_price, atr_at_entry,
                         direction, cfg):
                     pos["breakeven_triggered"] = True
+                    move_stop_to_breakeven(executor, asset_name, pos)
                     logger.info("[%s] breakeven ratchet triggered "
                                   "(close=%.6f, entry=%.6f, +%.2f ATR)",
                                   asset_name, current_close, entry_price,

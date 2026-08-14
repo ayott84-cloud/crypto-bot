@@ -159,7 +159,14 @@ def _frame(executor, symbol: str, interval: str, bars: int = 400):
     raw = executor.get_klines(symbol, interval, bars)
     if not raw:
         return None
-    return build_dataframe(raw).dropna(subset=["close"])
+    df = build_dataframe(raw).dropna(subset=["close"])
+    # Today's session is absent until the vendor publishes it after the
+    # close. Append it at the live price so iloc[-2] is the same
+    # decision bar the replay uses.
+    try:
+        return append_forming_bar(df, executor.get_symbol_price(symbol))
+    except Exception:  # noqa: BLE001
+        return df
 
 
 def _state_key(asset_name: str, sleeve: str) -> str:
@@ -237,6 +244,82 @@ def close_stock_position(executor, state: dict, key: str, reason: str) -> None:
     except Exception as e:  # noqa: BLE001
         logger.error("[%s] log_trade failed: %s", key, e)
     logger.info("[%s] CLOSE %s — %s", key, symbol, reason)
+
+
+# ─── Fill alignment (Aug 14 2026) ────────────────────────────────────────
+#
+# First live entry: OPEN QQQ @ 730.70 on a 723.70 signal — about 1% on a
+# sleeve whose whole edge is a small snap-back. Two structural
+# mismatches against replay_stock_rev, which decides on bar i-1 and
+# fills at bar i's CLOSE.
+#
+#   1. An end-of-day vendor has published only through yesterday, so the
+#      live frame ends at D-1 and iloc[-2] lands on D-2 — a session
+#      older than the replay's decision bar. Today, the fill bar, is
+#      absent entirely. Appending it at the live price restores the
+#      replay's exact shape.
+#   2. The daemon polls on a fixed interval, and with the per-bar
+#      cadence gate it acted on the first poll after the OPEN — the
+#      furthest point in the session from the close it is measured
+#      against. Entries now run only in the closing window.
+
+STOCK_CLOSING_WINDOW_MINUTES = 20
+
+
+def append_forming_bar(df, price, session=None):
+    """Add today's in-progress session at the live price.
+
+    Every sleeve reads iloc[-2], and a trailing rolling window evaluated
+    at -2 spans [-n-1:-1], so the appended row is structurally excluded
+    from any indicator the decision depends on. It exists to shift the
+    decision bar onto D-1 and to represent the bar the fill belongs to.
+    """
+    import pandas as _pd
+    if df is None or not len(df) or price is None:
+        return df
+    try:
+        ts = _pd.Timestamp(session if session is not None
+                            else _dt.date.today()).normalize()
+        # build_dataframe hands back a tz-AWARE UTC index. A naive
+        # timestamp raises "cannot compare tz-naive and tz-aware" inside
+        # sort_index, which the guard below would swallow — the append
+        # would silently no-op and the decision bar would stay a session
+        # too old, which is the exact bug this function removes.
+        frame_tz = getattr(df.index, "tz", None)
+        if frame_tz is not None and ts.tz is None:
+            ts = ts.tz_localize(frame_tz)
+        elif frame_tz is None and ts.tz is not None:
+            ts = ts.tz_localize(None)
+        if ts in df.index:
+            return df                      # vendor already published it
+        p = float(price)
+        row = {c: p for c in ("open", "high", "low", "close")}
+        for col in df.columns:
+            row.setdefault(col, df[col].iloc[-1])
+        out = _pd.concat([df, _pd.DataFrame([row], index=[ts])])
+        return out.sort_index()
+    except Exception:  # noqa: BLE001
+        return df
+
+
+def in_closing_window(now=None, minutes: int = None) -> bool:
+    """True inside the last `minutes` of a live session.
+
+    Derived from the calendar's own close, never a constant: a window
+    hardcoded to 15:45 would open three hours after a 13:00 half-day
+    close and the sleeve would simply never trade that day.
+    """
+    span = int(minutes or STOCK_CLOSING_WINDOW_MINUTES)
+    try:
+        ref = now or datetime.now(tz=mc.ET)
+        if not mc.is_market_open(ref):
+            return False
+        _open_ts, close_ts = mc.session_bounds(ref.astimezone(mc.ET).date())
+        return (close_ts - ref.astimezone(mc.ET)).total_seconds() <= span * 60
+    except Exception:  # noqa: BLE001
+        # Fail shut: a missed day costs one skipped signal, while a
+        # mistimed entry books the drift this whole change removes.
+        return False
 
 
 # ─── Bar cadence (Aug 14 2026) ───────────────────────────────────────────
@@ -361,6 +444,14 @@ def run_cycle(executor, state: dict) -> None:
     status = state.setdefault("stock_signal_status", {})
     now_iso = datetime.now(timezone.utc).isoformat()
     rebalance = _is_rebalance_day()
+
+    # Entries only near the bell. The replay fills at the session close;
+    # entering at whatever moment a poll lands books an intraday drift
+    # the backtest never paid. Exits above are deliberately outside this
+    # gate — an open position must stay manageable all session.
+    if not in_closing_window():
+        save_state(state, owner="stock")
+        return
 
     # 2. Reversion — daily cadence
     if not _sleeve_blocked("rev"):
