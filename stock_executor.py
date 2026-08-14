@@ -30,6 +30,7 @@ filter that has no meaning for equities.
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import logging
 import os
@@ -43,6 +44,13 @@ from typing import List, Optional
 BOT_DIR = Path(__file__).resolve().parent
 
 logger = logging.getLogger("crypto_bot.stock_executor")
+
+# One fetcher, not two. The live daemon and the backtest now read equity
+# bars through the same ranged, paginated, completeness-checked path.
+from tools._equity_bars import (          # noqa: E402
+    fetch_daily as _fetch_daily,
+    to_positional_rows as _to_positional_rows,
+)
 
 PAPER_BASE = "https://paper-api.alpaca.markets"
 LIVE_BASE = "https://api.alpaca.markets"
@@ -176,32 +184,67 @@ class StockExecutor:
                      limit: int = 300) -> list:
         """Bars in the WEEX 11-column positional shape.
 
+        Delegates to tools/_equity_bars.fetch_daily rather than issuing
+        its own request. This used to send Alpaca a bare `limit` with no
+        start/end and no cursor pagination, which came back far short of
+        `limit` — Module 2 sat at blocked_by="insufficient_history" for
+        the twelve days after it was unpaused, because the reversion
+        sleeve needs sma_period + 2 = 202 daily bars and never got them.
+
+        The validated fetcher has done ranged, paginated, completeness-
+        checked requests since S1. Keeping a second, weaker fetcher in
+        the live path IS the defect — so there is now only one.
+
         signals.build_dataframe reads df["close_time"] unconditionally,
         so the 11-column layout is mandatory, and rows must be
         chronological because every replay and indicator assumes it.
         """
-        tf = _INTERVAL_TO_TIMEFRAME.get(str(interval).lower())
-        if tf is None:
-            raise ValueError(f"unsupported equity interval {interval!r}")
-        payload = _http("GET", f"{DATA_BASE}/{symbol.upper()}/bars",
-                         headers=self._headers,
-                         params={"timeframe": tf, "limit": int(limit),
-                                  "adjustment": "all"})
-        bars = (payload or {}).get("bars") or []
-        rows = []
-        for b in bars:
+        if str(interval).lower() not in ("1d", "1day", "d"):
+            # S5 has not built the intraday path. A short series would
+            # read as data; refusing says what is actually true.
+            raise NotImplementedError(
+                f"equity interval {interval!r} needs the S5 intraday "
+                f"fetcher — only daily bars are wired today")
+
+        want = int(limit)
+        end = _dt.date.today()
+        # 252 trading days per calendar year: asking for `want` sessions
+        # over `want` CALENDAR days lands ~40% short. Pad on top of the
+        # ratio so holidays cannot eat into the requested count.
+        span = int(want * 365 / 252) + 15
+        start = end - _dt.timedelta(days=span)
+
+        # Tiingo first, matching the S2 validation runs exactly — using a
+        # different vendor live than in the backtest is the divergence
+        # this delegation exists to kill. Alpaca free tier also answers
+        # recent daily bars with HTTP 403 ("subscription does not permit
+        # querying recent SIP data"), so it cannot be the primary for a
+        # daemon that asks for data up to today.
+        df = None
+        errors = []
+        for provider in ("tiingo", "alpaca"):
             try:
-                import datetime as _dt
-                ts = _dt.datetime.fromisoformat(
-                    str(b["t"]).replace("Z", "+00:00"))
-                open_ms = int(ts.timestamp() * 1000)
-                rows.append([
-                    open_ms, str(b["o"]), str(b["h"]), str(b["l"]),
-                    str(b["c"]), str(b.get("v") or 0),
-                    open_ms + 86_399_999, "0", "0", "0", "0",
-                ])
-            except (KeyError, TypeError, ValueError):
-                continue
+                df = _fetch_daily(symbol.upper(), start, end,
+                                    provider=provider, verify_complete=True)
+                if df is not None and len(df):
+                    break
+                errors.append(f"{provider}: empty")
+            except Exception as e:  # noqa: BLE001
+                errors.append(f"{provider}: {e}")
+                df = None
+        if df is None or not len(df):
+            # The daemon reads [] as "skip this symbol this cycle". An
+            # exception here would take the whole cycle down with it.
+            logger.warning("equity bar fetch failed for %s — %s",
+                            symbol, "; ".join(errors))
+            return []
+
+        rows = _to_positional_rows(df, "1d")
+        if len(rows) < want:
+            # The silence that hid this bug for twelve days.
+            logger.warning(
+                "SHORT equity series for %s: got %d of %d requested bars "
+                "(%s..%s)", symbol, len(rows), want, start, end)
         rows.sort(key=lambda r: r[0])
         return rows
 

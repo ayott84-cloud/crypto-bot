@@ -86,16 +86,28 @@ def test_dry_run_blocks_every_mutating_call(monkeypatch):
 
 
 def test_dry_run_still_allows_reads(monkeypatch):
+    """The DRY_RUN guard gates mutations only. Reads must pass through,
+    or a paper daemon is blind as well as harmless."""
     calls = []
 
-    def fake_http(method, url, headers=None, params=None, body=None):
-        calls.append(method)
-        return {"bars": []}
+    def fake_fetch(symbol, start, end, provider="tiingo",
+                     verify_complete=True):
+        calls.append(provider)
+        return _bars_frame(5)
 
-    monkeypatch.setattr(se, "_http", fake_http)
-    ex = se.StockExecutor(dry_run=True)
-    ex.get_klines("SPY", "1d", 5)
-    assert calls and all(m == "GET" for m in calls)
+    monkeypatch.setattr(se, "_fetch_daily", fake_fetch)
+    rows = se.StockExecutor(dry_run=True).get_klines("SPY", "1d", 5)
+    assert calls, "DRY_RUN suppressed a read"
+    assert len(rows) == 5
+
+
+def _bars_frame(n: int):
+    """Minimal OHLCV frame in the shape tools/_equity_bars returns."""
+    import pandas as pd
+    idx = pd.bdate_range("2026-01-02", periods=n)
+    v = [float(i) + 100.0 for i in range(n)]
+    return pd.DataFrame({"open": v, "high": v, "low": v, "close": v,
+                          "volume": [1e6] * n}, index=idx)
 
 
 # ─── Safety: long/flat only ───────────────────────────────────────────────
@@ -110,13 +122,13 @@ def test_short_methods_refuse():
 # ─── Kline shape (the harness contract) ──────────────────────────────────
 
 def test_get_klines_returns_the_11_column_positional_shape(monkeypatch):
-    payload = {"bars": [
-        {"t": "2026-07-29T04:00:00Z", "o": 100.0, "h": 101.0, "l": 99.0,
-          "c": 100.5, "v": 1_000_000},
-        {"t": "2026-07-30T04:00:00Z", "o": 100.5, "h": 102.0, "l": 100.0,
-          "c": 101.5, "v": 1_100_000},
-    ], "next_page_token": None}
-    monkeypatch.setattr(se, "_http", lambda *a, **kw: payload)
+    import pandas as pd
+    frame = pd.DataFrame(
+        {"open": [100.0, 100.5], "high": [101.0, 102.0],
+         "low": [99.0, 100.0], "close": [100.5, 101.5],
+         "volume": [1_000_000, 1_100_000]},
+        index=pd.to_datetime(["2026-07-29", "2026-07-30"]))
+    monkeypatch.setattr(se, "_fetch_daily", lambda *a, **kw: frame)
     rows = se.StockExecutor(dry_run=True).get_klines("SPY", "1d", 2)
     assert all(len(r) == 11 for r in rows)
     from signals import build_dataframe
@@ -126,11 +138,14 @@ def test_get_klines_returns_the_11_column_positional_shape(monkeypatch):
 
 
 def test_get_klines_is_chronological(monkeypatch):
-    payload = {"bars": [
-        {"t": "2026-07-30T04:00:00Z", "o": 2, "h": 2, "l": 2, "c": 2, "v": 1},
-        {"t": "2026-07-29T04:00:00Z", "o": 1, "h": 1, "l": 1, "c": 1, "v": 1},
-    ]}
-    monkeypatch.setattr(se, "_http", lambda *a, **kw: payload)
+    """Every replay and indicator assumes oldest-first, so a vendor
+    handing back reverse order must not survive the boundary."""
+    import pandas as pd
+    frame = pd.DataFrame(
+        {"open": [2.0, 1.0], "high": [2.0, 1.0], "low": [2.0, 1.0],
+         "close": [2.0, 1.0], "volume": [1, 1]},
+        index=pd.to_datetime(["2026-07-30", "2026-07-29"]))
+    monkeypatch.setattr(se, "_fetch_daily", lambda *a, **kw: frame)
     rows = se.StockExecutor(dry_run=True).get_klines("SPY", "1d", 2)
     assert rows[0][0] < rows[1][0], "bars not sorted oldest-first"
 

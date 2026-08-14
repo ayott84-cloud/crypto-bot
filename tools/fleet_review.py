@@ -26,10 +26,18 @@ if str(BOT_DIR) not in sys.path:
 # ─── Pure aggregation helpers ──────────────────────────────────────────────
 
 def _closed_in_window(trades: list, days: int) -> list:
+    """Closed trades inside the window, falling back to open time.
+
+    Momentum's close paths never stamped date_closed (fixed Aug 14), so
+    `(t.get("date_closed") or "") >= cutoff` dropped every momentum trade
+    from every --days query and the fleet read as n=0 for the bot with
+    the longest history. Falling back to date_opened keeps a legacy row
+    visible; the residual error only ever ages a trade OUT.
+    """
     cutoff = (datetime.now() - timedelta(days=days)).isoformat()
     return [t for t in trades or []
             if t.get("result") in ("WIN", "LOSS")
-            and (t.get("date_closed") or "") >= cutoff]
+            and (t.get("date_closed") or t.get("date_opened") or "") >= cutoff]
 
 
 def bot_stats(trades: list, days: int = 14) -> dict:

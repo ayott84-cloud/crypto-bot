@@ -447,6 +447,7 @@ def run():
                                 strategy=cfg["strategy_name"],
                                 entry_reason=pos.get("entry_reason", ""),
                                 exit_reason=exit_reason,
+                                date_closed=datetime.now(timezone.utc),
                                 notes=f"Partial close ({cfg['tp1_close_pct']*100:.0f}%). "
                                       f"Remaining: {remaining_str}",
                             )
@@ -492,6 +493,7 @@ def run():
                                 strategy=cfg["strategy_name"],
                                 entry_reason=pos.get("entry_reason", ""),
                                 exit_reason=exit_reason,
+                                date_closed=datetime.now(timezone.utc),
                                 notes=f"Full close after {bars} bars. "
                                       f"Phase: {pos['phase']}",
                             )
@@ -573,6 +575,7 @@ def run():
                                     strategy=rot_pos.get("strategy", ""),
                                     entry_reason=rot_pos.get("entry_reason", ""),
                                     exit_reason=f"Rotated out for new {asset_name} signal",
+                                    date_closed=datetime.now(timezone.utc),
                                     notes="Position slot rotation",
                                 )
 

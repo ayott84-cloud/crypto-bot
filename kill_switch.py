@@ -134,7 +134,29 @@ def _filter_to_owner(trades: List[dict], owner: str) -> List[dict]:
 
 
 def _parse_close_time(t: dict) -> Optional[datetime]:
+    """Close time for windowing, falling back to open time.
+
+    Aug 14 2026: this returned None whenever date_closed was missing, and
+    _trailing_pnl SKIPS trades with no time — so the 24h daily-drawdown
+    breaker silently excluded every momentum trade, because main.py's
+    three close paths never stamped date_closed. The fleet's oldest bot
+    was invisible to its primary risk backstop.
+
+    The root cause is fixed at the write side, but a risk breaker must
+    not depend on that staying fixed. date_opened is a sound lower bound
+    — a trade cannot close before it opens — so a recent unstamped close
+    now counts toward the window instead of disappearing. The residual
+    error is one-directional and safe: a long-held position could be
+    aged out, never wrongly aged in.
+    """
     raw = t.get("date_closed")
+    if not raw:
+        raw = t.get("date_opened")
+        if raw:
+            logger.warning(
+                "closed trade %s (%s) has no date_closed — windowing on "
+                "date_opened; the bot's close path is not stamping it",
+                t.get("id"), t.get("strategy") or "?")
     if not raw:
         return None
     try:
