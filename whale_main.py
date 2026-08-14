@@ -770,6 +770,35 @@ def _save_snapshot(snapshot: dict) -> None:
         logger.warning("Failed to save snapshot for next cycle: %s", e)
 
 
+# whale_filters embeds live numbers in its reason strings ("1D trend up
+# (ema_fast 1883.05 >= ema_slow 1864.59)"). Those move every cycle, so
+# using the raw reason as a funnel key mints a new bucket each poll and
+# nothing ever aggregates. The verbatim reason still goes to the log,
+# where the numbers are what you want; the funnel gets a stable name.
+_FILTER_LABELS = (
+    ("1d trend",      "multi_tf_trend"),
+    ("crowded",       "funding_crowded"),
+    ("regime gate",   "regime"),
+    ("entry trigger", "entry_trigger"),
+    ("persistence",   "persistence"),
+)
+
+
+def filter_label(reason) -> str:
+    """Stable, low-cardinality name for a filter-stack rejection."""
+    text = str(reason or "").strip().lower()
+    if not text:
+        return "filter"
+    for needle, label in _FILTER_LABELS:
+        if text.startswith(needle):
+            return label
+    # An unlabelled new filter must not reintroduce unbounded keys, so
+    # strip anything variable and cap the length.
+    words = [w for w in text.replace(":", " ").split()
+              if w.isalpha()][:3]
+    return ("_".join(words) or "filter")[:40]
+
+
 def _bump_entry(funnel: dict, key: str) -> None:
     funnel[key] = funnel.get(key, 0) + 1
 
@@ -992,7 +1021,7 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
                 logger.info("[%s %s] filtered: %s",
                              sig.coin, sig.direction, " · ".join(reasons))
                 for r in (reasons or ["filter"]):
-                    _bump_entry(entry_funnel, f"filter:{str(r).split(':')[0]}")
+                    _bump_entry(entry_funnel, f"filter:{filter_label(r)}")
                 continue
 
         # Phase W.E.2 — optional Arkham CEX-flow gate (opt-in via config

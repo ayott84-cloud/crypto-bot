@@ -247,21 +247,37 @@ def completeness_report(symbol: str, df: pd.DataFrame,
     Absence BEFORE the first returned bar is not a defect — a symbol
     that listed mid-window has no earlier bars to give. Only INTERIOR
     holes count.
+
+    Absence at the LIVE EDGE is the same kind of non-defect. An
+    end-of-day vendor publishes a session's bar after that session
+    closes, so today's bar is legitimately missing while the market is
+    open and for some lag after. The live daemon polls continuously, so
+    counting it produced a WARNING on every single cycle — and a warning
+    that always fires is one nobody reads, which is how a real gap gets
+    missed.
+
+    Only TODAY is excused, and it is reported as `pending` rather than
+    silently dropped. Excusing yesterday as well would hide a genuine
+    one-day vendor outage, which is exactly what this check is for.
     """
     expected = [d for d in _daterange(start, end) if mc.is_trading_day(d)]
     got = set(pd.DatetimeIndex(df.index).date) if len(df) else set()
+    today = date.today()
+    pending = [d for d in expected if d >= today and d not in got]
+    expected_settled = [d for d in expected if d < today]
     leading = 0
     if got:
         first = min(got)
-        leading = sum(1 for d in expected if d < first)
-        interior = [d for d in expected if d >= first and d not in got]
+        leading = sum(1 for d in expected_settled if d < first)
+        interior = [d for d in expected_settled if d >= first and d not in got]
     else:
-        interior = list(expected)
+        interior = list(expected_settled)
     return {
         "symbol": symbol,
         "expected": len(expected),
         "got": len(got),
         "leading_absent": leading,
+        "pending": len(pending),
         "missing": interior,
         "complete": len(interior) <= _MAX_INTERIOR_MISSING,
     }
