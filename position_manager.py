@@ -86,7 +86,8 @@ _CROSSOVER_TOPLEVEL = {"crossover_cooldowns"}
 # Module 2: stock daemon's own re-entry cooldowns + per-sleeve signal
 # diagnostics (kept separate from momentum's "signal_status" so the two
 # modules never overwrite each other's why-silent panel)
-_STOCK_TOPLEVEL = {"stock_cooldowns", "stock_signal_status"}
+_STOCK_TOPLEVEL = {"stock_cooldowns", "stock_signal_status",
+                    "stock_last_bar"}
 
 # Per-bot top-level key sets — used by _merge_state to preserve other bots'
 # top-level state when one bot saves.

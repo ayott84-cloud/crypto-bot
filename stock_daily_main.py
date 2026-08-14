@@ -172,7 +172,8 @@ def _count_open(state: dict) -> int:
 
 
 def open_stock_position(executor, state: dict, asset_name: str, cfg: dict,
-                          sleeve: str, price: float) -> None:
+                          sleeve: str, price: float,
+                          bar_id: str | None = None) -> None:
     """Buy whole shares and register the position.
 
     `bracket_kind="sleeve_exit"` records that the stop is MANAGED BY THE
@@ -204,6 +205,7 @@ def open_stock_position(executor, state: dict, asset_name: str, cfg: dict,
         sl_price=None, tp_price=None,
         signal_price=price,
         fill_divergence_pct=fill_divergence_pct(price, fill),
+        entry_bar=bar_id,
     )
     logger.info("[%s] OPEN %s x%d @ %.2f (signal %.2f)",
                  sleeve, symbol, qty, fill, price)
@@ -237,12 +239,84 @@ def close_stock_position(executor, state: dict, key: str, reason: str) -> None:
     logger.info("[%s] CLOSE %s — %s", key, symbol, reason)
 
 
+# ─── Bar cadence (Aug 14 2026) ───────────────────────────────────────────
+#
+# Every sleeve reads iloc[-2], the last COMPLETED daily bar, which does
+# not change for a whole session. The daemon polls far more often than
+# that, so without a gate it re-decides an identical bar every cycle.
+# On the day the data layer was fixed, QQQ_REV opened and closed fifteen
+# times in ninety minutes: enter (oversold on bar D) -> exit (close(D)
+# above its 5-day mean) -> enter again. Both conditions can hold on the
+# same bar, and a paper venue that models no fees reported the loop as
+# a 4.38 profit factor.
+#
+# A daily sleeve acts at most once per completed daily bar.
+
+def completed_bar_id(df) -> str | None:
+    """Stable identity of the bar the sleeves actually read."""
+    try:
+        if df is None or len(df) < 2:
+            return None
+        ts = df.index[-2]
+        return str(ts.date() if hasattr(ts, "date") else ts)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def should_act_on_bar(state: dict, asset_name: str, bar_id) -> bool:
+    """True only when this asset has not been acted on for this bar.
+
+    An unknown bar id refuses: we cannot prove the bar is new, and a
+    daily sleeve skipping one cycle costs nothing while churning costs
+    real money.
+    """
+    if not bar_id:
+        return False
+    return (state.get("stock_last_bar") or {}).get(asset_name) != bar_id
+
+
+def mark_bar_acted(state: dict, asset_name: str, bar_id) -> None:
+    if bar_id:
+        state.setdefault("stock_last_bar", {})[asset_name] = bar_id
+
+
+def bars_held_since(df, entry_bar) -> int:
+    """Completed bars between entry and now.
+
+    Replaces pos["bars_held"], which was read by check_reversion_exit
+    but written by nothing, so max_hold_bars was dead code. Unknown
+    entry bar returns 0 — that delays a time stop rather than firing
+    one at random on a legacy position.
+    """
+    if not entry_bar or df is None or len(df) < 2:
+        return 0
+    try:
+        ids = [str(t.date() if hasattr(t, "date") else t) for t in df.index]
+        return max(0, (len(ids) - 1) - 1 - ids.index(entry_bar))
+    except (ValueError, AttributeError):
+        return 0
+
+
+def can_exit_on_bar(pos: dict, bar_id) -> bool:
+    """A position never exits on the bar it entered on.
+
+    Positions opened before this change carry no entry_bar and stay
+    exitable — trapping one would be worse than the churn it prevents.
+    """
+    entry_bar = (pos or {}).get("entry_bar")
+    if not entry_bar or not bar_id:
+        return True
+    return entry_bar != bar_id
+
+
 def _exit_reason_for(executor, pos: dict) -> str | None:
     """Delegate to the sleeve's own live exit rule."""
     sleeve = pos.get("sleeve", "rev")
     symbol = pos.get("symbol")
     df = _frame(executor, symbol, "1d")
     if df is None or len(df) < 10:
+        return None
+    if not can_exit_on_bar(pos, completed_bar_id(df)):
         return None
     if sleeve == "trend":
         cfg = next((c for c in STOCK_TREND_ASSETS.values()
@@ -252,7 +326,7 @@ def _exit_reason_for(executor, pos: dict) -> str | None:
         cfg = next((c for c in STOCK_REV_ASSETS.values()
                      if c["symbol"] == symbol), {})
         return ss.check_reversion_exit(
-            df, cfg, bars_held=int(pos.get("bars_held") or 0),
+            df, cfg, bars_held=bars_held_since(df, pos.get("entry_bar")),
             entry_price=float(pos.get("entry_price") or 0))
     return None          # dual exits by rotation, handled in the entry pass
 
@@ -298,11 +372,15 @@ def run_cycle(executor, state: dict) -> None:
             if df is None:
                 continue
             sig = ss.analyze_reversion_entry(df, cfg)
+            bar_id = completed_bar_id(df)
             status[name] = {"sleeve": "rev", "symbol": cfg["symbol"],
-                             "checked_at": now_iso, **sig}
+                             "checked_at": now_iso, "bar": bar_id, **sig}
+            if not should_act_on_bar(state, name, bar_id):
+                continue
             if sig["would_enter"]:
+                mark_bar_acted(state, name, bar_id)
                 open_stock_position(executor, state, name, cfg, "rev",
-                                      float(df["close"].iloc[-2]))
+                                      float(df["close"].iloc[-2]), bar_id)
 
     # 3. Trend — month-end only
     if rebalance and not _sleeve_blocked("trend"):
