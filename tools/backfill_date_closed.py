@@ -5,17 +5,26 @@ rotation) never passed date_closed to log_trade, so every momentum trade
 ever closed carries exit_price + exit_reason but a NULL close time.
 Fixed at the write side in the same commit; this repairs history.
 
-The exact close instant is NOT recoverable — nothing recorded it. What
-IS recoverable is a bound: rows are INSERTed in close order under an
-AUTOINCREMENT id, so an unstamped row closed at or after the newest
-stamped row before it, and at or before the oldest stamped row after it.
-We take the midpoint of that bracket and mark it estimated. When only a
-lower neighbour exists we take it directly; when neither exists we fall
-back to date_opened, which is a hard lower bound because a trade cannot
-close before it opens.
+The close instant IS recoverable for these rows, exactly.
 
-Every estimate is tagged in `notes` so no future reader mistakes an
-interpolation for a record.
+journal.log_trade defaults date_opened to datetime.now() AT INSERT, and
+no bot has ever passed date_opened explicitly. Momentum, and the legacy
+whale close path, insert a row only when the position closes -- so on an
+unstamped close row, date_opened is the close timestamp, to the second.
+It was never an open time at all.
+
+A first version of this tool ignored that and interpolated between the
+id-ordered stamped neighbours. Against the real journal that put every
+April and May close at 2026-06-05: five-week holds on a 4H strategy,
+which is plainly false. Recorded data beats inference, so date_opened is
+used directly, clamped only so a row cannot close after a later-inserted
+row already had.
+
+Interpolation survives as the fallback for a row with no date_opened at
+all, and only those rows are tagged as estimates. Rows recovered from
+the insert timestamp are labelled recovered, because that is what they
+are -- mislabelling them would make the journal less trustworthy, not
+more.
 
 Dry-run by default. --apply writes, and always backs up first.
 
@@ -37,6 +46,7 @@ if str(BOT_DIR) not in sys.path:
     sys.path.insert(0, str(BOT_DIR))
 
 ESTIMATED_TAG = "[date_closed estimated by backfill]"
+RECOVERED_TAG = "[date_closed recovered from insert timestamp]"
 
 
 def _mid(a: str, b: str) -> str:
@@ -46,8 +56,13 @@ def _mid(a: str, b: str) -> str:
     return (da + (db - da) / 2).isoformat()
 
 
+def is_estimate(basis: str) -> bool:
+    """True when the value was inferred rather than read off a record."""
+    return basis.startswith("estimated")
+
+
 def plan_backfill(rows: list) -> list:
-    """[(id, estimated_iso, basis)] for the rows needing a stamp.
+    """[(id, close_iso, basis)] for the rows needing a stamp.
 
     `rows` is every trade as {id, date_opened, date_closed, exit_price,
     strategy}, ordered by id ascending.
@@ -57,23 +72,31 @@ def plan_backfill(rows: list) -> list:
     for r in rows:
         if r.get("date_closed") or r.get("exit_price") is None:
             continue          # open row, or already stamped
-        lower = max((ts for rid, ts in stamped if rid < r["id"]), default=None)
         upper = min((ts for rid, ts in stamped if rid > r["id"]), default=None)
+
+        opened = r.get("date_opened")
+        if opened:
+            # log_trade stamps date_opened at INSERT, and a close-only
+            # insert means that instant IS the close. Recorded, not
+            # inferred, so it wins over any interpolation.
+            est, basis = opened, "insert time (close-only row)"
+            if upper and est > upper:
+                # A row inserted earlier cannot have closed after a row
+                # inserted later. Trust the ordering over the clock.
+                est, basis = upper, "clamped to next stamped close"
+            out.append((r["id"], est, basis))
+            continue
+
+        # No date_opened at all: fall back to the id-ordered bracket.
+        lower = max((ts for rid, ts in stamped if rid < r["id"]), default=None)
         if lower and upper:
-            est, basis = _mid(lower, upper), "bracketed by neighbours"
+            est, basis = _mid(lower, upper), "estimated: bracketed"
         elif lower:
-            est, basis = lower, "lower neighbour"
+            est, basis = lower, "estimated: lower neighbour"
         elif upper:
-            est, basis = upper, "upper neighbour"
-        elif r.get("date_opened"):
-            est, basis = r["date_opened"], "date_opened (hard lower bound)"
+            est, basis = upper, "estimated: upper neighbour"
         else:
             continue          # nothing to reason from; leave it alone
-        # An estimate that precedes the open is impossible. Clamp rather
-        # than write a contradiction into the journal.
-        opened = r.get("date_opened")
-        if opened and est < opened:
-            est, basis = opened, "clamped to date_opened"
         out.append((r["id"], est, basis))
     return out
 
@@ -111,13 +134,16 @@ def main() -> int:
     print(f"{len(plan)} closed rows are missing date_closed:")
     for s, n in sorted(per_strategy.items(), key=lambda kv: -kv[1]):
         print(f"  {n:4d}  {s}")
-    print("\nfirst 10 estimates:")
+
+    n_est = sum(1 for _r, _e, b in plan if is_estimate(b))
+    print(f"\n  {len(plan) - n_est} recovered exactly from the insert "
+           f"timestamp, {n_est} interpolated")
+
+    print("\nfirst 10:")
     for rid, est, basis in plan[:10]:
         r = by_id[rid]
         sym = r.get("symbol") or "?"
-        print(f"  id={rid:5d} {sym:10s} "
-               f"opened={str(r.get('date_opened'))[:19]} -> "
-               f"est={est[:19]}  ({basis})")
+        print(f"  id={rid:5d} {sym:10s} -> {est[:19]}  ({basis})")
 
     if not args.apply:
         print(f"\nDRY RUN - {len(plan)} rows would be updated. "
@@ -132,7 +158,8 @@ def main() -> int:
     with sqlite3.connect(db) as c:
         for rid, est, basis in plan:
             note = (by_id[rid].get("notes") or "").strip()
-            note = f"{note} {ESTIMATED_TAG} ({basis})".strip()
+            tag = ESTIMATED_TAG if is_estimate(basis) else RECOVERED_TAG
+            note = f"{note} {tag} ({basis})".strip()
             c.execute("UPDATE trades SET date_closed=?, notes=? WHERE id=?",
                        (est, note, rid))
         c.commit()

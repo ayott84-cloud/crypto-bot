@@ -770,6 +770,22 @@ def _save_snapshot(snapshot: dict) -> None:
         logger.warning("Failed to save snapshot for next cycle: %s", e)
 
 
+def _bump_entry(funnel: dict, key: str) -> None:
+    funnel[key] = funnel.get(key, 0) + 1
+
+
+def _log_entry_funnel(funnel: dict) -> None:
+    """Append the entry funnel to the signal log, beside the
+    classification funnel, so one file answers the whole pipeline."""
+    try:
+        with open(WHALE_SIGNAL_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "type": "entry_funnel", **funnel}) + "\n")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("entry funnel log failed: %s", e)
+
+
 def classify_all(smart_stats: dict, rekt_stats: dict,
                    weex_whitelist) -> tuple:
     """Classify every coin in the cohort, recording the rejection funnel.
@@ -935,15 +951,25 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
         apply_filter_stack = None
 
     # 6. Attempt entries (top-ranked signals first)
+    #
+    # The classification funnel explains 175 coins -> N signals. Until
+    # Aug 14 nothing explained N signals -> 0 trades: every rejection
+    # below just logged a line and continued, so a 30-day soak at n=0
+    # could not say WHICH gate was doing the work. Same telemetry
+    # discipline, applied to the half that was still dark.
+    entry_funnel = {"signals": len(signals)}
     for sig in signals:
         if not can_open_new_position(state):
             logger.info("No more slots available (8/8 open) — stopping entry loop.")
+            _bump_entry(entry_funnel, "no_slots")
             break
         key = _state_key(sig.coin)
         if key in state.get("positions", {}):
+            _bump_entry(entry_funnel, "already_open")
             continue
         if is_on_cooldown(state, sig.coin):
             logger.info("%s on cooldown, skipping", sig.coin)
+            _bump_entry(entry_funnel, "cooldown")
             continue
 
         # Phase W.B filter stack — U.1+U.2 now source real 1D + regime
@@ -965,6 +991,8 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
             if not ok:
                 logger.info("[%s %s] filtered: %s",
                              sig.coin, sig.direction, " · ".join(reasons))
+                for r in (reasons or ["filter"]):
+                    _bump_entry(entry_funnel, f"filter:{str(r).split(':')[0]}")
                 continue
 
         # Phase W.E.2 — optional Arkham CEX-flow gate (opt-in via config
@@ -983,6 +1011,7 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
                 if not ok_flow:
                     logger.info("[%s %s] Arkham gate: %s",
                                  sig.coin, sig.direction, reason_flow)
+                    _bump_entry(entry_funnel, "arkham_flow")
                     continue
             except Exception as e:  # noqa: BLE001
                 logger.debug("Arkham gate check failed (allowing entry): %s", e)
@@ -992,6 +1021,7 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
         atr = compute_atr(klines, WHALE_ATR_PERIOD)
         if atr is None or atr <= 0:
             logger.warning("%s: could not compute ATR, skipping", sig.weex_symbol)
+            _bump_entry(entry_funnel, "no_atr")
             continue
 
         # Phase W.2.13 — price-action entry trigger. Whale consensus is
@@ -1007,8 +1037,10 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
             if not trigger_ok:
                 logger.info("[%s %s] %s — waiting for price confirmation",
                              sig.coin, sig.direction, trigger_reason)
+                _bump_entry(entry_funnel, "awaiting_trigger")
                 continue
 
+        _bump_entry(entry_funnel, "opened")
         open_whale_position(executor, state, sig, atr)
 
         # Phase W.C — record this signal for decay tracking
@@ -1020,6 +1052,10 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
                               entry_price, int(time.time()))
         except Exception as e:
             logger.warning("decay record_signal failed: %s", e)
+
+    _ws.LAST_ENTRY_FUNNEL = entry_funnel
+    logger.info("Whale entry funnel: %s", entry_funnel)
+    _log_entry_funnel(entry_funnel)
 
     # Phase W.C — persist filter + decay state for next cycle / next restart
     _save_w_state()
