@@ -71,6 +71,27 @@ def symbol_stats(trades: list, bot: str, days: int = 14) -> list:
     return rows
 
 
+def merged_signal_status(state: dict) -> dict:
+    """Every bot's per-asset signal_status, across owner namespaces.
+
+    position_manager._TOPLEVEL_BY_BOT namespaces top-level state keys per
+    owner, so Module 2's daemon writes "stock_signal_status" rather than
+    clobbering the crypto fleet's "signal_status" on merge. That is the
+    right call on the write side — but the Entry-blockers panel read only
+    the crypto key, so from Aug 2 (unpause) to Aug 14 the review could
+    not say whether the equity sleeves were evaluating at all.
+
+    Non-dict values are skipped rather than raised on: a corrupt state
+    file should degrade this panel, not the whole review.
+    """
+    out: dict = {}
+    for key in ("signal_status", "stock_signal_status"):
+        section = (state or {}).get(key)
+        if isinstance(section, dict):
+            out.update(section)
+    return out
+
+
 def blocked_by_rows(signal_status: dict, max_age_h: float = 24.0,
                       now=None) -> list:
     """Group per-asset signal_status into [{reason, n, assets}] rows,
@@ -333,15 +354,20 @@ def main() -> int:
     # 8.5. Entry blockers — why are quiet bots quiet?
     try:
         from position_manager import load_state as _ls
-        rows = blocked_by_rows((_ls().get("signal_status") or {}))
+        rows = blocked_by_rows(merged_signal_status(_ls()))
+        print("\n-- Entry blockers (signal_status, checked <24h) --")
         if rows:
-            print("\n-- Entry blockers (signal_status, checked <24h) --")
             for r in rows:
                 names = ", ".join(r["assets"][:6])
                 extra = f" +{r['n'] - 6} more" if r["n"] > 6 else ""
                 print(f"  {r['reason']:22s} n={r['n']:2d}  {names}{extra}")
-    except Exception:  # noqa: BLE001
-        pass
+        else:
+            print("  (none) — no bot recorded a signal check in the last 24h")
+    except Exception as e:  # noqa: BLE001
+        # This used to `pass`. A swallowed failure here reads exactly like
+        # "no bot is blocked", which is the most misleading thing this
+        # panel could say.
+        print(f"\n-- Entry blockers -- unavailable: {e}")
 
     # 9. Pipeline stages
     try:

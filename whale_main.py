@@ -50,6 +50,9 @@ from position_manager import (
     register_entry, register_exit, can_open_new_position,
 )
 from journal import log_trade
+# Module-level so classify_all can publish LAST_FUNNEL on the same module
+# object the writer reads. log_signals_jsonl used to import it locally.
+import whale_signals as _ws
 from whale_signals import (
     generate_signals, aggregate_cohort, fetch_cohorts,
     compute_dominant_pct, hl_coin_to_weex_symbol,
@@ -767,6 +770,49 @@ def _save_snapshot(snapshot: dict) -> None:
         logger.warning("Failed to save snapshot for next cycle: %s", e)
 
 
+def classify_all(smart_stats: dict, rekt_stats: dict,
+                   weex_whitelist) -> tuple:
+    """Classify every coin in the cohort, recording the rejection funnel.
+
+    Aug 14 2026: this used to be an inline loop inside run_cycle that
+    called classify() WITHOUT funnel=. The Jul 30 telemetry work
+    instrumented whale_signals.generate_signals(), which the daemon
+    never calls — so a 30-day soak ended at n=0 trades with zero funnel
+    records and no way to tell whether the filters were working as
+    designed or the stack was wedged.
+
+    Extracted here so the live path is the tested path. Returns
+    (signals, funnel) and publishes the funnel on whale_signals so
+    log_signals_jsonl can append it.
+    """
+    all_coins = set(smart_stats.keys()) | set(rekt_stats.keys())
+    funnel = {"coins": len(all_coins)}
+    out = []
+    for coin in sorted(all_coins):
+        weex_sym = hl_coin_to_weex_symbol(coin, weex_whitelist)
+        if weex_sym is None:
+            # hl_coin_to_weex_symbol folds TWO rejections into one None:
+            # not listed on WEEX, and pruned by the top-100 market-cap
+            # filter. They point at completely different fixes — the
+            # top-100 filter is what starved the funding bot (Phase C.1),
+            # so a funnel that can't tell them apart is half-useless.
+            if hl_coin_to_weex_symbol(coin, weex_whitelist,
+                                        check_top100=False) is not None:
+                key = "not_top100"
+            else:
+                key = "not_on_weex"
+            funnel[key] = funnel.get(key, 0) + 1
+            continue
+        smart = smart_stats.get(coin, CoinStats(coin=coin))
+        rekt = rekt_stats.get(coin, CoinStats(coin=coin))
+        sig = classify(coin, smart, rekt, weex_sym, funnel=funnel)
+        if sig:
+            out.append((coin, sig))
+    _ws.LAST_FUNNEL = funnel
+    logger.info("Whale funnel: %s", funnel)
+    return out, funnel
+
+
 def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
     """One poll cycle: fetch whales, manage open positions, open new ones.
 
@@ -802,19 +848,12 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
     # 2. Manage existing whale positions (signal-flip + SL/TP)
     manage_open_positions(executor, state, smart_stats)
 
-    # 3. Generate signals, enriching each with confluence data
-    all_coins = set(smart_stats.keys()) | set(rekt_stats.keys())
+    # 3. Generate signals, enriching each with confluence data.
+    #    classify_all records WHY each coin was rejected — without it a
+    #    zero-signal cycle is indistinguishable from a wedged one.
+    classified, _funnel = classify_all(smart_stats, rekt_stats, weex_whitelist)
     signals = []
-    for coin in all_coins:
-        weex_sym = hl_coin_to_weex_symbol(coin, weex_whitelist)
-        if weex_sym is None:
-            continue
-        smart = smart_stats.get(coin, CoinStats(coin=coin))
-        rekt = rekt_stats.get(coin, CoinStats(coin=coin))
-        sig = classify(coin, smart, rekt, weex_sym)
-        if not sig:
-            continue
-
+    for coin, sig in classified:
         # Confluence enrichment: funding + liq cluster + recency
         hl_ctx = hl_ctx_map.get(coin)
         current_price = hl_ctx.mark_price if hl_ctx else 0.0
