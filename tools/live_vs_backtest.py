@@ -91,22 +91,41 @@ def verdict(wins: int, n: int, expected_wr_pct: float,
 
 
 def _stats_tables() -> dict:
-    """{strategy_name: validated_stats} across every bot that has them."""
+    """{strategy_name: validated_stats} across every bot that has them.
+
+    Candidate and demoted asset dicts are included deliberately: an
+    asset that was demoted still trades out its open positions, and its
+    rows land in the window. Skipping them reported "no validated win
+    rate on file" for a strategy whose evidence is the very reason it
+    was demoted.
+    """
     out = {}
-    try:
-        from breakout_config import BREAKOUT_ASSETS, BREAKOUT_BACKTEST_STATS
-        for key, cfg in BREAKOUT_ASSETS.items():
-            st = BREAKOUT_BACKTEST_STATS.get(key)
-            if st:
-                out[cfg.get("strategy_name", key)] = st
-    except Exception:  # noqa: BLE001
-        pass
+    sources = (
+        ("breakout_config", ("BREAKOUT_ASSETS", "BREAKOUT_CANDIDATE_ASSETS"),
+          "BREAKOUT_BACKTEST_STATS"),
+        ("scalp_config",    ("SCALP_ASSETS", "SCALP_CANDIDATE_ASSETS"),
+          "SCALP_BACKTEST_STATS"),
+        ("crossover_config", ("CROSSOVER_ASSETS",), "CROSSOVER_BACKTEST_STATS"),
+        ("stock_config",    ("STOCK_REV_ASSETS", "STOCK_TREND_ASSETS"),
+          "STOCK_BACKTEST_STATS"),
+    )
+    for module, asset_names, stats_name in sources:
+        try:
+            mod = __import__(module)
+            stats = getattr(mod, stats_name, {}) or {}
+            for asset_name in asset_names:
+                for key, cfg in (getattr(mod, asset_name, {}) or {}).items():
+                    st = stats.get(key)
+                    if st:
+                        out.setdefault(cfg.get("strategy_name", key), st)
+        except Exception:  # noqa: BLE001
+            continue
     try:
         from config import ASSETS
         for key, cfg in ASSETS.items():
             st = cfg.get("backtest_stats")
-            if st and st.get("wr"):
-                out[cfg.get("strategy_name", key)] = st
+            if st:
+                out.setdefault(cfg.get("strategy_name", key), st)
     except Exception:  # noqa: BLE001
         pass
     return out
@@ -137,9 +156,17 @@ def main() -> int:
         rows = by_strategy[name]
         wins = sum(1 for t in rows if t.get("result") == "WIN")
         st = tables.get(name)
-        if not st or not st.get("wr"):
+        if not st:
             print(f"  {name:24s} n={len(rows):3d} wins={wins:3d}  "
-                   f"-> no validated win rate on file")
+                   f"-> no validated stats on file")
+            continue
+        if not st.get("wr"):
+            # Distinct from "no stats": StockRev's 25-year S2 run recorded
+            # PF, drawdown and DSR but never a win rate, so the gap is in
+            # the validation record, not in this tool.
+            print(f"  {name:24s} n={len(rows):3d} wins={wins:3d}  "
+                   f"-> stats on file (PF {st.get('pf', '—')}) but NO win "
+                   f"rate recorded — cannot compare")
             continue
         v = verdict(wins, len(rows), float(st["wr"]))
         pv = f"{v['p_value']:.3f}" if v["p_value"] is not None else "—"

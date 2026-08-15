@@ -121,3 +121,40 @@ def test_the_window_that_parked_scalp_still_indicts():
     check so conservative that nothing is ever actionable."""
     v = verdict(wins=6, n=60, expected_wr_pct=40.0)
     assert v["verdict"] == "DIVERGENT"
+
+
+# ─── Stats resolution (Aug 14, from the first live run) ──────────────────
+#
+# The first run reported "no validated win rate on file" for INJ 1H
+# Breakout, BTC 15m Scalp, ETH 15m Scalp and QQQ 1D StockRev. Three of
+# those were gaps in this tool; the fourth was a gap in the validation
+# record itself, and conflating them hid both.
+
+def test_live_breakout_assets_resolve():
+    from tools.live_vs_backtest import _stats_tables
+    assert _stats_tables().get("ETH 4H Breakout", {}).get("wr") == 42.1
+
+
+def test_demoted_assets_still_resolve():
+    """A demoted asset trades out its open positions, so its rows land in
+    the window. Reporting 'no evidence' for a strategy whose evidence is
+    the reason it was demoted is backwards."""
+    from tools.live_vs_backtest import _stats_tables
+    assert _stats_tables().get("INJ 1H Breakout", {}).get("wr") == 34.0
+
+
+def test_parked_bots_resolve():
+    """Scalp is parked, not deleted — the standing rule is park with
+    evidence, and the evidence has to stay reachable."""
+    from tools.live_vs_backtest import _stats_tables
+    assert _stats_tables().get("BTC 15m Scalp", {}).get("wr") == 51.1
+
+
+def test_stock_sleeves_resolve_even_without_a_win_rate():
+    """Module 2's 25-year S2 run recorded PF, drawdown and DSR but never
+    a win rate. The stats must still resolve so the report can say WHICH
+    thing is missing."""
+    from tools.live_vs_backtest import _stats_tables
+    st = _stats_tables().get("QQQ 1D StockRev")
+    assert st is not None and st.get("pf") == 1.64
+    assert not st.get("wr")

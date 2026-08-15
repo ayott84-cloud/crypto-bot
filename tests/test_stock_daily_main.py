@@ -91,6 +91,15 @@ def _isolate(tmp_path, monkeypatch):
     # default: market open, mid-month (so monthly sleeves stay quiet)
     monkeypatch.setattr(sdm.mc, "is_market_open", lambda ts=None: True)
     monkeypatch.setattr(sdm, "_is_rebalance_day", lambda *a, **kw: False)
+    # ...and inside the closing window. Stubbing is_market_open alone
+    # was not enough: in_closing_window derives the bell from
+    # mc.session_bounds, which raises on a non-trading date, and that
+    # helper fails SHUT by design. So these tests passed on a weekday
+    # afternoon and failed the same evening and all weekend.
+    # The real function keeps its coverage in
+    # test_stock_fill_alignment.py, which drives it with explicit
+    # timestamps (including the 13:00 half-day close).
+    monkeypatch.setattr(sdm, "in_closing_window", lambda *a, **kw: True)
 
 
 # ─── Heartbeat comes first, always ───────────────────────────────────────
