@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS trades (
     exit_reason         TEXT,
     notes               TEXT,
     btc_trend_at_entry  TEXT,
-    atr_regime_at_entry TEXT
+    atr_regime_at_entry TEXT,
+    fill_divergence_pct REAL
 );
 CREATE INDEX IF NOT EXISTS idx_trades_date_closed ON trades(date_closed);
 CREATE INDEX IF NOT EXISTS idx_trades_strategy    ON trades(strategy);
@@ -170,11 +171,41 @@ def _conn():
                 if not _initialized:
                     conn.executescript("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")
                     conn.executescript(_SCHEMA)
+                    _migrate_columns(conn)
                     _import_legacy_jsonl(conn)
                     _initialized = True
         yield conn
     finally:
         conn.close()
+
+
+# Columns added after the original schema shipped. CREATE TABLE IF NOT
+# EXISTS is a no-op against a journal that already exists, so a new
+# column needs an explicit ALTER — without one the droplet's live
+# journal would keep silently dropping the value.
+_ADDED_COLUMNS = (
+    ("fill_divergence_pct", "REAL"),
+)
+
+
+def _migrate_columns(conn) -> None:
+    """Add any column the running code expects but the file lacks.
+
+    Idempotent: sqlite raises on a duplicate ADD COLUMN, so existing
+    names are checked first rather than caught afterwards.
+    """
+    try:
+        have = {r[1] for r in conn.execute("PRAGMA table_info(trades)")}
+    except sqlite3.Error:
+        return
+    for name, decl in _ADDED_COLUMNS:
+        if name in have:
+            continue
+        try:
+            conn.execute(f"ALTER TABLE trades ADD COLUMN {name} {decl}")
+            logger.info("journal: added column %s", name)
+        except sqlite3.Error as e:
+            logger.warning("journal: could not add column %s: %s", name, e)
 
 
 def _import_legacy_jsonl(conn) -> None:
@@ -259,6 +290,7 @@ def log_trade(
     date_closed: Optional[datetime] = None,
     btc_trend_at_entry: Optional[str] = None,
     atr_regime_at_entry: Optional[str] = None,
+    fill_divergence_pct: Optional[float] = None,
 ) -> bool:
     """Insert one trade row. Returns True on success.
 
@@ -274,8 +306,9 @@ def log_trade(
             c.execute(
                 "INSERT INTO trades (date_opened, date_closed, symbol, direction, "
                 "entry_price, exit_price, quantity, leverage, fees, strategy, bot, "
-                "entry_reason, exit_reason, notes, btc_trend_at_entry, atr_regime_at_entry) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "entry_reason, exit_reason, notes, btc_trend_at_entry, atr_regime_at_entry, "
+                "fill_divergence_pct) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     (date_opened or datetime.now()).isoformat(),
                     date_closed.isoformat() if date_closed else None,
@@ -293,6 +326,8 @@ def log_trade(
                     notes,
                     btc_trend_at_entry,
                     atr_regime_at_entry,
+                    (float(fill_divergence_pct)
+                      if fill_divergence_pct is not None else None),
                 ),
             )
         logger.info("Logged trade: %s %s %s @ %s -> %s",

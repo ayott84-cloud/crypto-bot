@@ -240,6 +240,10 @@ def close_stock_position(executor, state: dict, key: str, reason: str) -> None:
             strategy=pos.get("strategy", "StockTrend"),
             entry_reason=pos.get("entry_reason", ""), exit_reason=reason,
             date_closed=datetime.now(timezone.utc),
+            # Measured at entry and stored on the position; without this
+            # it died with the position and tools/fill_divergence.py saw
+            # nothing on a journal that had just booked a 0.97% gap.
+            fill_divergence_pct=pos.get("fill_divergence_pct"),
         )
     except Exception as e:  # noqa: BLE001
         logger.error("[%s] log_trade failed: %s", key, e)
