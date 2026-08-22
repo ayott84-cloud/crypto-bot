@@ -28,13 +28,26 @@ DEFAULT_ACCURACY_THRESHOLD = 50.0            # below 50%, alarm
 
 
 def record_signal(decay_state: dict, coin: str, direction: str,
-                   entry_price: float, cycle_ts: int) -> None:
-    """Append a pending signal to the decay tracker."""
+                   entry_price: float, cycle_ts: int,
+                   traded: bool = False) -> None:
+    """Append a pending signal to the decay tracker.
+
+    Aug 22 2026: `traded` exists because this used to be called only
+    AFTER open_whale_position, so the tracker saw nothing whenever the
+    entry gates blocked everything — which over the 30-day soak was
+    every single signal. Cohort accuracy is a property of the SIGNAL,
+    not of whether execution let it through, and the decision it informs
+    (loosen the entry trigger or not) depends entirely on scoring the
+    signals the trigger rejected.
+
+    Defaults False: most signals never become trades.
+    """
     decay_state.setdefault("pending", []).append({
         "coin":        coin,
         "direction":   direction,
         "entry_price": float(entry_price),
         "ts":          int(cycle_ts),
+        "traded":      bool(traded),
     })
 
 
@@ -83,18 +96,30 @@ def finalize_signals(decay_state: dict, current_prices: dict,
             "direction": sig["direction"],
             "ts":       int(current_ts),
             "outcome":  bool(outcome),
+            "traded":   bool(sig.get("traded", False)),
         })
     decay_state["pending"] = still_pending
 
 
 def cohort_accuracy_30d(decay_state: dict, now_ts: int,
-                         window_s: int = DEFAULT_ROLLING_WINDOW_S) -> float:
-    """Returns rolling-window accuracy percentage in [0, 100]."""
+                         window_s: int = DEFAULT_ROLLING_WINDOW_S,
+                         traded_only: bool = False) -> float:
+    """Rolling-window accuracy percentage in [0, 100].
+
+    Scores every recorded signal by default, traded or not. Restricting
+    to traded signals measures the executed subset, which is a different
+    and much smaller question — and was the only thing measurable before
+    Aug 22.
+    """
     resolved = decay_state.get("resolved", [])
     if not resolved:
         return 0.0
     cutoff = now_ts - window_s
     recent = [r for r in resolved if int(r.get("ts", 0)) >= cutoff]
+    if traded_only:
+        # Records written before the `traded` flag existed were all
+        # trades by construction: the call site sat after the open.
+        recent = [r for r in recent if r.get("traded", True)]
     if not recent:
         return 0.0
     wins = sum(1 for r in recent if r.get("outcome"))

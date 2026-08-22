@@ -62,6 +62,7 @@ from whale_signals import (
     DIVERGENCE_LONG, DIVERGENCE_SHORT, CONSENSUS_LONG, CONSENSUS_SHORT,
 )
 from whale_hl_data import fetch_meta_and_ctxs
+from whale_decay import record_signal
 
 try:
     from notifier import notify_trade_opened, notify_trade_closed
@@ -799,6 +800,19 @@ def filter_label(reason) -> str:
     return ("_".join(words) or "filter")[:40]
 
 
+def _mark_signal_traded(decay_state: dict, coin: str, direction: str) -> None:
+    """Flag the most recent pending record for this (coin, direction).
+
+    Signals are recorded before the gates, so the one that just opened is
+    already pending; this separates "the cohort was right" from "we were
+    able to act on it".
+    """
+    for rec in reversed(decay_state.get("pending", []) or []):
+        if rec.get("coin") == coin and rec.get("direction") == direction:
+            rec["traded"] = True
+            return
+
+
 def _bump_entry(funnel: dict, key: str) -> None:
     funnel[key] = funnel.get(key, 0) + 1
 
@@ -987,6 +1001,25 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
     # could not say WHICH gate was doing the work. Same telemetry
     # discipline, applied to the half that was still dark.
     entry_funnel = {"signals": len(signals)}
+
+    # Phase W.C — record EVERY signal for decay tracking, before any
+    # entry gate. This used to sit after open_whale_position, so across
+    # the 30-day soak (286 signals, 0 opens) the tracker recorded
+    # nothing at all. Cohort accuracy is a property of the signal, not
+    # of whether execution let it through — and the open question is
+    # whether the trigger blocking 80% of them is saving money or
+    # costing it, which is unanswerable from the executed subset.
+    for sig in signals:
+        try:
+            ctx = hl_ctx_map.get(sig.coin)
+            px = float(getattr(ctx, "mark_price", 0) or 0)
+            if px > 0:
+                record_signal(_decay_state, sig.coin, sig.direction,
+                                px, int(time.time()))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("decay record_signal failed for %s: %s",
+                            sig.coin, e)
+
     for sig in signals:
         if not can_open_new_position(state):
             logger.info("No more slots available (8/8 open) — stopping entry loop.")
@@ -1071,16 +1104,9 @@ def run_cycle(executor: Executor, state: dict, weex_whitelist: set) -> None:
 
         _bump_entry(entry_funnel, "opened")
         open_whale_position(executor, state, sig, atr)
-
-        # Phase W.C — record this signal for decay tracking
-        try:
-            from whale_decay import record_signal
-            entry_price = hl_ctx_map.get(sig.coin).mark_price if hl_ctx_map.get(sig.coin) else 0
-            if entry_price > 0:
-                record_signal(_decay_state, sig.coin, sig.direction,
-                              entry_price, int(time.time()))
-        except Exception as e:
-            logger.warning("decay record_signal failed: %s", e)
+        # Every signal was already recorded above; flag the ones that
+        # actually traded so executed accuracy stays separable.
+        _mark_signal_traded(_decay_state, sig.coin, sig.direction)
 
     _ws.LAST_ENTRY_FUNNEL = entry_funnel
     logger.info("Whale entry funnel: %s", entry_funnel)
