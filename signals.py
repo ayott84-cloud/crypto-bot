@@ -6,9 +6,17 @@ Uses pandas-ta for indicators, with manual PMO implementation.
 
 from __future__ import annotations
 
+import logging
+
 import pandas as pd
 import pandas_ta as ta
 from typing import Optional, Tuple
+
+# This module is pure computation, so it has never needed a logger. It
+# needs one now for exactly one purpose: a filter that fails OPEN must
+# say so. A gate that silently stops existing is the defect shape that
+# ran for three weeks on Aug 22.
+logger = logging.getLogger("crypto_bot.signals")
 
 
 def build_dataframe(raw_klines: list) -> pd.DataFrame:
@@ -816,7 +824,14 @@ def ema200_alignment_ok(df, direction: str) -> bool:
         if ema != ema:  # NaN
             return True
         return close > ema if direction == "LONG" else close < ema
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        # Missing data passing the filter is deliberate (handled above,
+        # and silently, because it is an expected state). An unexpected
+        # FAILURE is different: it also passes, so the gate stops
+        # existing, and that must be visible. A filter degrading quietly
+        # is how you learn months later it was never running.
+        logger.warning("ema200 alignment check failed (%s: %s) — passing "
+                        "the filter for this bar", type(e).__name__, e)
         return True
 
 

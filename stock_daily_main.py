@@ -129,7 +129,14 @@ def _sleeve_blocked(sleeve: str) -> bool:
     owner = _SLEEVE_OWNER.get(sleeve, "stock")
     try:
         st = should_pause(owner)
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        # Fail OPEN deliberately: a breaker that cannot be read must not
+        # halt the fleet. But never silently — a silent fail-open means
+        # running an unguarded sleeve for weeks without knowing, which
+        # is the shape of every defect found on Aug 22.
+        logger.warning("[%s] kill-switch check FAILED (%s: %s) — allowing "
+                        "entries unguarded this cycle",
+                        sleeve, type(e).__name__, e)
         return False
     if getattr(st, "paused", False):
         logger.info("[%s] kill switch: %s", sleeve, getattr(st, "reason", ""))
