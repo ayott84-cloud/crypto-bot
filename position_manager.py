@@ -219,13 +219,31 @@ def _merge_state(ours: dict, disk: dict, owner: str) -> dict:
             merged_positions[k] = v
     result["positions"] = merged_positions
 
-    # Top-level keys: preserve other bots' top-level keys from disk
-    for bot, keys in _TOPLEVEL_BY_BOT.items():
-        if bot == owner:
-            continue
-        for k in keys:
-            if k in disk:
-                result[k] = disk[k]
+    # Top-level keys: preserve everything this owner does NOT own.
+    #
+    # This used to walk _TOPLEVEL_BY_BOT and re-add only the keys it
+    # recognised — a whitelist. Bots are long-running processes that
+    # import this module once and hold _TOPLEVEL_BY_BOT for days, and
+    # load_state also runs once at startup, so a key added AFTER a bot
+    # started was in neither `ours` nor its whitelist. Every save by that
+    # bot silently deleted it.
+    #
+    # That is how stock_last_bar (the churn guard, added Aug 14) was
+    # written correctly on Aug 19 and absent from disk by Aug 22: the
+    # crypto bots had been up since before it was registered. The rule
+    # made adding any state key depend on restarting the entire fleet,
+    # and skipping one bot caused quiet data loss instead of an error.
+    #
+    # Inverted: keep whatever we do not own. A key belonging to a newer
+    # version of another bot is then safe by default, which is the only
+    # version-skew-proof direction for this to fail in.
+    owner_keys = _TOPLEVEL_BY_BOT.get(owner, set())
+    for k, v in disk.items():
+        if k == "positions":
+            continue          # merged above by its own ownership rules
+        if k in owner_keys:
+            continue          # ours wins, including deliberate clears
+        result[k] = v
 
     return result
 
