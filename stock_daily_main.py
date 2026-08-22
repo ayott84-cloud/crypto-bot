@@ -31,6 +31,7 @@ every crypto bot follows: nothing trades until it has earned it.
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import logging
 import sys
@@ -164,9 +165,21 @@ def _frame(executor, symbol: str, interval: str, bars: int = 400):
     # close. Append it at the live price so iloc[-2] is the same
     # decision bar the replay uses.
     try:
-        return append_forming_bar(df, executor.get_symbol_price(symbol))
-    except Exception:  # noqa: BLE001
-        return df
+        out = append_forming_bar(df, executor.get_symbol_price(symbol))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[%s] forming-bar append raised: %s", symbol, e)
+        out = df
+    # A no-op here is invisible and expensive: the decision bar silently
+    # stays a session older, so the sleeve decides on D-2 while filling
+    # at D. That is what produced a 1.83% gap between QQQ's signal price
+    # (729.87) and its fill (716.53) on Aug 19 — read as slippage, it was
+    # actually a stale decision bar. Say so out loud.
+    if out is df:
+        logger.warning(
+            "[%s] forming bar NOT appended — decision bar is %s while the "
+            "session is %s; signal price will lag the fill",
+            symbol, completed_bar_id(df), _dt.date.today())
+    return out
 
 
 def _state_key(asset_name: str, sleeve: str) -> str:
