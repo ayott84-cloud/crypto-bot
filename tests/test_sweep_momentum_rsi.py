@@ -94,5 +94,107 @@ def test_warnings_are_carried_through():
         profit_factor = 1.1
         max_drawdown_pct = 5.0
         total_return_pct = 3.0
+        gross_profit = 33.0
+        gross_loss = 30.0
         warnings = ["TRUNCATED: 400 of 5000 bars"]
-    assert summarize(_R())["warnings"] == ["TRUNCATED: 400 of 5000 bars"]
+    s = summarize(_R())
+    assert s["warnings"] == ["TRUNCATED: 400 of 5000 bars"]
+    # gp/gl are carried so pooling sums real profits rather than
+    # back-solving them out of n/wr/pf/ret.
+    assert s["gp"] == 33.0 and s["gl"] == 30.0
+
+
+# ─── Pooled comparison ───────────────────────────────────────────────────
+#
+# The per-asset run returned INSUFFICIENT on all ten assets: no baseline
+# reached 20 trades in 5000 bars. Pooling gives enough sample to compare.
+# These criteria were fixed BEFORE the pooled numbers were seen, which is
+# the only thing that makes them criteria rather than a rationalisation.
+
+from tools.sweep_momentum_rsi import (          # noqa: E402
+    POOLED_MIN_N, compare_pooled, pool_arm)
+
+
+def _asset(n=14, wr=71.4, pf=2.76, dd=17.3, gp=100.0, gl=36.0):
+    return {"n": n, "wr": wr, "pf": pf, "dd": dd, "ret": 42.7,
+            "gp": gp, "gl": gl, "warnings": []}
+
+
+def test_pooled_pf_is_a_ratio_of_sums_not_an_average_of_ratios():
+    """A 3-trade asset with a lucky PF must not weigh the same as a
+    40-trade one — that is how a thin asset hijacks a fleet conclusion."""
+    thin = _asset(n=3, gp=90.0, gl=1.0)      # PF 90 on 3 trades
+    fat = _asset(n=40, gp=100.0, gl=100.0)   # PF 1.0 on 40 trades
+    pooled = pool_arm([thin, fat])
+    assert pooled["pf"] == pytest.approx(190.0 / 101.0, abs=0.01)
+    assert pooled["pf"] < 5.0, "the 3-trade asset dominated the pool"
+
+
+def test_pooling_sums_trade_counts():
+    assert pool_arm([_asset(n=14), _asset(n=35)])["n"] == 49
+
+
+def test_drawdown_is_reported_as_mean_and_max_never_pooled():
+    """Each asset has its own equity curve. A single 'pooled drawdown'
+    would describe a portfolio that never existed."""
+    p = pool_arm([_asset(dd=10.0), _asset(dd=40.0)])
+    assert p["dd_mean"] == pytest.approx(25.0)
+    assert p["dd_max"] == pytest.approx(40.0)
+    assert "dd" not in p
+
+
+def test_empty_and_zero_trade_assets_are_skipped():
+    assert pool_arm([])["n"] == 0
+    assert pool_arm([_asset(n=0), None])["n"] == 0
+
+
+# ─── The pre-registered verdict ──────────────────────────────────────────
+
+def _pooled(pf, dd_mean=20.0, dd_max=30.0, n=140):
+    return {"n": n, "wr": 50.0, "pf": pf, "dd_mean": dd_mean,
+            "dd_max": dd_max, "assets": 10}
+
+
+def test_a_thin_pool_still_refuses():
+    out = compare_pooled({"crossover": _pooled(1.5, n=POOLED_MIN_N - 1)}, {})
+    assert out.startswith("INSUFFICIENT")
+
+
+def test_a_small_pf_lift_is_rejected_with_its_reason():
+    pooled = {"crossover": _pooled(1.50), "range": _pooled(1.60)}
+    out = compare_pooled(pooled, {})
+    assert "KEEP crossover" in out and "PF lift" in out
+
+
+def test_a_pf_lift_bought_with_drawdown_is_rejected():
+    pooled = {"crossover": _pooled(1.50, dd_mean=20.0, dd_max=30.0),
+              "off": _pooled(2.00, dd_mean=30.0, dd_max=50.0)}
+    out = compare_pooled(pooled, {})
+    assert "KEEP crossover" in out
+    assert "mean DD" in out and "max DD" in out
+
+
+def test_an_arm_that_loses_on_most_assets_is_rejected():
+    """Pooled PF can be carried by one asset while the arm is worse
+    nearly everywhere else."""
+    pooled = {"crossover": _pooled(1.50), "range": _pooled(2.00)}
+    per_asset = {"crossover": {f"A{i}": 2.0 for i in range(10)},
+                 "range": {f"A{i}": 1.0 for i in range(10)}}
+    out = compare_pooled(pooled, per_asset)
+    assert "worse on 10 assets" in out
+
+
+def test_a_clean_win_is_reported_as_a_candidate():
+    pooled = {"crossover": _pooled(1.50), "range": _pooled(1.90)}
+    per_asset = {"crossover": {f"A{i}": 1.0 for i in range(10)},
+                 "range": {f"A{i}": 2.0 for i in range(10)}}
+    out = compare_pooled(pooled, per_asset)
+    assert out.startswith("CANDIDATE range")
+
+
+def test_the_verdict_always_shows_its_reasoning():
+    """A bare verdict invites trusting it; the reasons invite checking."""
+    pooled = {"crossover": _pooled(1.50), "range": _pooled(1.55),
+              "off": _pooled(1.40)}
+    out = compare_pooled(pooled, {})
+    assert "range:" in out and "off:" in out
