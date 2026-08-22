@@ -310,9 +310,18 @@ def report(rows, frames=None, since=None) -> int:
         any_pass = any_pass or verdict == "PASS"
         warn = "  ⚠ " + "; ".join(rep.warnings) if rep.warnings else ""
         print(f"\n{r['sleeve']:6s} {r['asset']:12s} {yrs:5.1f}yr  "
-               f"total={rep.total_return_pct:+8.1f}%  → {verdict}{warn}")
+               f"total={rep.total_return_pct:+8.1f}%  WR={rep.win_rate:.1f}%"
+               f"  → {verdict}{warn}")
         print("       " + "  ".join(
             f"{n}={v}{'✓' if ok else '✗'}({bar})" for n, v, ok, bar in checks))
+
+        # Paste-ready row for STOCK_BACKTEST_STATS. The first S2
+        # run recorded PF, drawdown and DSR but no win rate: the
+        # summary never printed one and transcription was by
+        # hand, which left tools/live_vs_backtest.py unable to
+        # test any equity sleeve. Emitting the whole dict removes
+        # the step where a field can quietly go missing.
+        print("       " + stats_row(rep, shp, dd, pf, dsr, pbo, yrs))
 
         # Alpha-or-beta: what holding the thing would have done instead.
         bsym = benchmark_symbol(r["sleeve"], r["asset"])
@@ -335,6 +344,22 @@ def report(rows, frames=None, since=None) -> int:
     print("multiple-testing haircut (DSR) and spec-selection test (PBO).")
     print(f"Calendar backend: {mc.backend_note()}")
     return 0 if any_pass else 1
+
+
+def stats_row(rep, sharpe, dd, pf, dsr, pbo, yrs) -> str:
+    """One paste-ready STOCK_BACKTEST_STATS entry.
+
+    Every field the gates and the live-vs-validated check
+    consume, so none can be lost between the run and the config.
+    """
+    return ('"stats": {'
+            f'"pf": {pf:.2f}, "wr": {rep.win_rate:.1f}, '
+            f'"trades": {rep.n_trades}, "dd_pct": {dd:.1f}, '
+            f'"sharpe": {sharpe:.2f}, '
+            f'"dsr": {(dsr or {}).get("dsr", 0):.3f}, '
+            f'"pbo": {((pbo or {}).get("pbo") or 0):.2f}, '
+            f'"years": {yrs:.1f}'
+            '}')
 
 
 def main() -> int:
