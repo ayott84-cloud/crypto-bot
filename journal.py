@@ -339,6 +339,46 @@ def log_trade(
         return False
 
 
+# ─── Defect-attributed trades ────────────────────────────────────────────
+#
+# Some rows are real fills that measure a BUG rather than a strategy —
+# StockRev's 15 QQQ round trips on Aug 14, booked in 90 minutes while the
+# sleeves re-decided a frozen daily bar every poll. Left in, they report
+# as the fleet's best performer (PF 4.38) for a month.
+#
+# Excluding trades is the easiest way to flatter a record, so the rules
+# are deliberately awkward:
+#   * exclusion requires a written reason, stored on the row;
+#   * every tool that filters MUST report the count and the reasons —
+#     a silent exclusion is indistinguishable from a dishonest one;
+#   * prices, quantities and PnL are never touched. The fills happened.
+#     Only their attribution to strategy performance is disputed.
+
+EXCLUDED_PREFIX = "[EXCLUDED:"
+
+
+def excluded_reason(trade: dict) -> Optional[str]:
+    """The reason this row is set aside, or None if it counts normally."""
+    notes = (trade or {}).get("notes")
+    if not isinstance(notes, str):
+        return None
+    i = notes.find(EXCLUDED_PREFIX)
+    if i < 0:
+        return None
+    j = notes.find("]", i)
+    if j < 0:
+        return None                      # malformed tag: count it normally
+    return notes[i + len(EXCLUDED_PREFIX):j].strip()
+
+
+def partition_excluded(trades) -> tuple:
+    """(kept, dropped). Callers must report `dropped` — see above."""
+    kept, dropped = [], []
+    for t in trades or []:
+        (dropped if excluded_reason(t) is not None else kept).append(t)
+    return kept, dropped
+
+
 def read_trades(max_rows: int = 5000) -> List[dict]:
     """Read trade records, newest first, with computed gross_pnl/net_pnl/result.
 

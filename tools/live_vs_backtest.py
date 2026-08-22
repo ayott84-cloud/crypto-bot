@@ -136,10 +136,13 @@ def main() -> int:
     ap.add_argument("--days", type=int, default=30)
     args = ap.parse_args()
 
-    from journal import read_trades
+    from journal import (read_trades, partition_excluded,
+                          excluded_reason)
+    rows, excluded = partition_excluded(
+        read_trades(max_rows=10000))
     cutoff = (datetime.now() - timedelta(days=args.days)).isoformat()
     by_strategy = defaultdict(list)
-    for t in read_trades(max_rows=10000):
+    for t in rows:
         if t.get("result") not in ("WIN", "LOSS"):
             continue
         when = t.get("date_closed") or t.get("date_opened") or ""
@@ -148,6 +151,15 @@ def main() -> int:
 
     tables = _stats_tables()
     print(f"=== LIVE vs VALIDATED — last {args.days}d ===\n")
+    if excluded:
+        # Announced, never silent: an exclusion the reader
+        # cannot see is indistinguishable from a dishonest one.
+        from collections import Counter as _C
+        print(f"  excluding {len(excluded)} defect-attributed rows:")
+        for why, n in _C(excluded_reason(t)
+                          for t in excluded).most_common():
+            print(f"    {n:4d}  {why}")
+        print()
     if not by_strategy:
         print("  no closed trades in window")
         return 0

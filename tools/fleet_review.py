@@ -205,11 +205,19 @@ def main() -> int:
     args = ap.parse_args()
     days = args.days
 
-    from journal import read_trades
-    trades = read_trades(max_rows=5000)
+    from journal import read_trades, partition_excluded, excluded_reason
+    trades, _excluded = partition_excluded(read_trades(max_rows=5000))
 
     print(f"=== FLEET REVIEW — last {days}d — "
            f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} ===")
+    # Announced, never silent: an exclusion the reader cannot see is
+    # indistinguishable from one made to flatter the numbers.
+    if _excluded:
+        from collections import Counter as _C
+        print()
+        print(f"-- Excluded from every stat below: {len(_excluded)} rows --")
+        for why, n in _C(excluded_reason(t) for t in _excluded).most_common():
+            print(f"  {n:4d}  {why}")
 
     # 1. Per-bot
     print(f"\n-- Per-bot ({days}d closed) --")
