@@ -162,8 +162,34 @@ def compare_pooled(pooled: dict, per_asset_pf: dict) -> str:
     base = pooled.get("crossover")
     if not base or base["n"] < POOLED_MIN_N:
         got = base["n"] if base else 0
-        return (f"INSUFFICIENT (pooled baseline n={got} "
-                 f"< {POOLED_MIN_N})")
+        head = f"INSUFFICIENT to promote (pooled baseline n={got} < {POOLED_MIN_N})"
+        # A thin BASELINE and no information are different things, and
+        # the first version of this conflated them.
+        #
+        # The n>=100 bar exists to stop a challenger being adopted on
+        # thin evidence. Keeping the incumbent is the default action and
+        # needs no evidence at all. So when the challengers are
+        # well-sampled and WORSE on every axis, that is a real answer to
+        # "should we loosen?" even though the baseline cannot be
+        # promoted or rejected on its own.
+        #
+        # This does not lower the bar: nothing is promoted here. It
+        # reports evidence AGAINST a challenger, which is a different
+        # claim from evidence FOR the incumbent.
+        beaten = []
+        for mode in ("range", "off"):
+            r = pooled.get(mode)
+            if not r or r["n"] < POOLED_MIN_N:
+                continue
+            if r["pf"] < base["pf"] and r["dd_mean"] > base["dd_mean"]:
+                beaten.append(
+                    f"{mode} (n={r['n']}, PF {r['pf']:.2f} vs "
+                    f"{base['pf']:.2f}, mean DD {r['dd_mean']:.1f}% vs "
+                    f"{base['dd_mean']:.1f}%)")
+        if beaten:
+            head += ("\n     ...but NO CASE TO LOOSEN: well-sampled and "
+                      "worse on PF and drawdown — " + "; ".join(beaten))
+        return head
     best, verdicts = "crossover", []
     for mode in ("range", "off"):
         r = pooled.get(mode)

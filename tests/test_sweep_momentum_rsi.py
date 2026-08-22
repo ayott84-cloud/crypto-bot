@@ -198,3 +198,56 @@ def test_the_verdict_always_shows_its_reasoning():
               "off": _pooled(1.40)}
     out = compare_pooled(pooled, {})
     assert "range:" in out and "off:" in out
+
+
+# ─── Thin baseline vs. no information (Aug 22, from the pooled run) ──────
+#
+# The pooled run returned crossover n=91 against a pre-registered bar of
+# 100 — nine trades short. The challengers came in at n=252 and n=341,
+# both worse on PF and on drawdown.
+#
+# The threshold was NOT lowered to get a verdict. It exists to stop a
+# challenger being adopted on thin evidence, and nothing is adopted
+# here. What changed is that the report now distinguishes "cannot
+# promote" from "no information", because evidence AGAINST a challenger
+# is a different claim from evidence FOR the incumbent.
+
+def test_a_thin_baseline_still_refuses_to_promote():
+    pooled = {"crossover": _pooled(2.42, dd_mean=6.1, n=91),
+              "range": _pooled(1.28, dd_mean=17.1, n=252)}
+    assert compare_pooled(pooled, {}).startswith("INSUFFICIENT to promote")
+
+
+def test_a_thin_baseline_still_reports_a_beaten_challenger():
+    """The real pooled numbers: n=91 baseline, well-sampled worse arms."""
+    pooled = {"crossover": _pooled(2.42, dd_mean=6.1, dd_max=17.3, n=91),
+              "range": _pooled(1.28, dd_mean=17.1, dd_max=38.9, n=252),
+              "off": _pooled(1.18, dd_mean=20.3, dd_max=40.8, n=341)}
+    out = compare_pooled(pooled, {})
+    assert "NO CASE TO LOOSEN" in out
+    assert "range" in out and "off" in out
+
+
+def test_a_challenger_is_only_reported_beaten_on_BOTH_axes():
+    """A challenger with a lower PF but BETTER drawdown is a real
+    trade-off, not a defeat. Calling it beaten would be the same
+    single-axis reading this tool exists to prevent."""
+    pooled = {"crossover": _pooled(2.42, dd_mean=20.0, n=91),
+              "range": _pooled(1.28, dd_mean=5.0, n=252)}
+    assert "NO CASE TO LOOSEN" not in compare_pooled(pooled, {})
+
+
+def test_a_thin_challenger_is_not_reported_as_beaten():
+    """Beating a challenger requires the challenger to be measured."""
+    pooled = {"crossover": _pooled(2.42, dd_mean=6.1, n=91),
+              "range": _pooled(1.28, dd_mean=17.1, n=30)}
+    assert "NO CASE TO LOOSEN" not in compare_pooled(pooled, {})
+
+
+def test_nothing_is_ever_promoted_from_a_thin_baseline():
+    """The bar holds in the direction that matters: no challenger can
+    be adopted, however good it looks, when the baseline is thin."""
+    pooled = {"crossover": _pooled(1.00, dd_mean=30.0, n=91),
+              "range": _pooled(9.00, dd_mean=1.0, n=500)}
+    out = compare_pooled(pooled, {})
+    assert "CANDIDATE" not in out
