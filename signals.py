@@ -143,10 +143,9 @@ def check_entry_signal(
     if pd.isna(curr["atr_sma"]) or curr["atr"] <= curr["atr_sma"]:
         return False
 
-    # 4. RSI crossover above its SMA + RSI in range
-    rsi_cross = (curr["rsi"] > curr["rsi_sma"]) and (prev["rsi"] <= prev["rsi_sma"])
-    rsi_in_range = cfg["rsi_min"] <= curr["rsi"] <= cfg["rsi_max"]
-    if not (rsi_cross and rsi_in_range):
+    # 4. RSI gate — strength from cfg["rsi_mode"] (default unchanged).
+    if not rsi_gate_ok(curr["rsi"], prev["rsi"],
+                        curr["rsi_sma"], prev["rsi_sma"], cfg):
         return False
 
     # 5. MACD confirmation
@@ -361,6 +360,56 @@ def reconstruct_position_levels(
     }
 
 
+def rsi_gate_ok(curr_rsi, prev_rsi, curr_sma, prev_sma, cfg,
+                  short: bool = False) -> bool:
+    """The RSI entry gate, in three selectable strengths.
+
+    Aug 22 2026: this was the only filter in the stack with no toggle,
+    so its cost had never been replayed. BTC ran +18.7% over 30 days
+    while rsi_crossover held 8 of 10 momentum configs flat and the trend
+    gate was open — a filter doing exactly what it was configured to do,
+    at a price nobody had measured.
+
+      crossover  RSI crosses its SMA on THIS bar, inside the band.
+                 The default and the historical behaviour. Strict: a
+                 one-bar event that must coincide with trend, close-above
+                 -EMA, ATR regime, MACD, ADX and the BTC filter.
+      range      Inside the band. Momentum confirmed, timing not
+                 demanded — the arm that would enter a move already
+                 under way.
+      off        No RSI gate.
+
+    An unrecognised mode falls back to crossover: a typo in config must
+    never silently loosen a live filter. NaN blocks under both real
+    modes, because a missing indicator must not open a gate.
+    """
+    mode = str((cfg or {}).get("rsi_mode", "crossover")).lower()
+    if mode == "off":
+        return True
+    try:
+        if short:
+            lo = float((cfg or {}).get("rsi_min_short", 30))
+            hi = float((cfg or {}).get("rsi_max_short", 50))
+        else:
+            lo = float(cfg["rsi_min"])
+            hi = float(cfg["rsi_max"])
+        c_rsi, p_rsi = float(curr_rsi), float(prev_rsi)
+        c_sma, p_sma = float(curr_sma), float(prev_sma)
+    except (TypeError, ValueError, KeyError):
+        return False
+    if any(v != v for v in (c_rsi, c_sma)):      # NaN
+        return False
+    in_range = lo <= c_rsi <= hi
+    if mode == "range":
+        return bool(in_range)
+    if any(v != v for v in (p_rsi, p_sma)):
+        return False
+    if short:
+        # Mirror: cross DOWN through the SMA, inverted band.
+        return bool(in_range and c_rsi < c_sma and p_rsi >= p_sma)
+    return bool(in_range and c_rsi > c_sma and p_rsi <= p_sma)
+
+
 def analyze_entry_signal(
     df: pd.DataFrame,
     cfg: dict,
@@ -445,10 +494,10 @@ def analyze_entry_signal(
     if not atr_ok and result["blocked_by"] is None:
         fail("atr_regime")
 
-    # 4. RSI crossover + range
-    rsi_cross = (curr["rsi"] > curr["rsi_sma"]) and (prev["rsi"] <= prev["rsi_sma"])
-    rsi_in_range = cfg["rsi_min"] <= curr["rsi"] <= cfg["rsi_max"]
-    rsi_ok = rsi_cross and rsi_in_range
+    # 4. RSI gate — strength selected by cfg["rsi_mode"] (default
+    #    "crossover", i.e. unchanged). See rsi_gate_ok.
+    rsi_ok = rsi_gate_ok(curr["rsi"], prev["rsi"],
+                          curr["rsi_sma"], prev["rsi_sma"], cfg)
     result["filters"]["rsi_crossover"] = rsi_ok
     if not rsi_ok and result["blocked_by"] is None:
         fail("rsi_crossover")
@@ -632,11 +681,8 @@ def analyze_short_entry_signal(
         fail("atr_regime")
 
     # 4. RSI crossover DOWN through SMA, IN inverted band [rsi_min_short, rsi_max_short]
-    rsi_cross_down = bool((curr["rsi"] < curr["rsi_sma"]) and (prev["rsi"] >= prev["rsi_sma"]))
-    rsi_min_s = cfg.get("rsi_min_short", 30)
-    rsi_max_s = cfg.get("rsi_max_short", 50)
-    rsi_in_range = bool(rsi_min_s <= curr["rsi"] <= rsi_max_s)
-    rsi_ok = bool(rsi_cross_down and rsi_in_range)
+    rsi_ok = rsi_gate_ok(curr["rsi"], prev["rsi"],
+                          curr["rsi_sma"], prev["rsi_sma"], cfg, short=True)
     result["filters"]["rsi_crossover"] = rsi_ok
     if not rsi_ok and result["blocked_by"] is None:
         fail("rsi_crossover")
