@@ -27,3 +27,12 @@ Jinja2==3.1.4
 
 # Test-only (not installed by setup.sh unless dev mode)
 # pytest==9.0.3
+#
+# pyflakes powers tests/test_no_undefined_names.py, which guards the bug
+# class that cost three weeks on Aug 22 2026: append_forming_bar called
+# _dt.date.today() while _dt was imported only inside another function's
+# local scope, so every production call raised NameError into a bare
+# except and silently returned a stale frame. pyflakes finds that in
+# milliseconds. Without it installed the guard SKIPS rather than fails,
+# so install it wherever the suite is meant to be authoritative.
+# pyflakes==3.2.0
