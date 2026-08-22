@@ -315,7 +315,17 @@ def append_forming_bar(df, price, session=None):
             row.setdefault(col, df[col].iloc[-1])
         out = _pd.concat([df, _pd.DataFrame([row], index=[ts])])
         return out.sort_index()
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        # This guard hid a NameError for the whole life of the live
+        # daemon: _dt was imported only inside _is_rebalance_day's local
+        # scope, so `_dt.date.today()` above raised on every call and the
+        # frame came back untouched. The decision bar stayed a session
+        # stale, and the resulting gap between signal price and fill was
+        # read as slippage (QQQ -1.83% on Aug 19). Degrading is still
+        # right; degrading in silence is what cost three weeks.
+        logger.warning("forming-bar append failed (%s: %s) — decision bar "
+                        "stays at %s", type(e).__name__, e,
+                        completed_bar_id(df))
         return df
 
 
