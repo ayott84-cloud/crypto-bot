@@ -484,13 +484,26 @@ def run_cycle(executor, state: dict) -> None:
     if not _sleeve_blocked("rev"):
         for name, cfg in STOCK_REV_ASSETS.items():
             key = _state_key(name, "rev")
-            if key in (state.get("positions") or {}):
-                continue
+            held = key in (state.get("positions") or {})
             df = _frame(executor, cfg["symbol"], "1d")
             if df is None:
                 continue
-            sig = ss.analyze_reversion_entry(df, cfg)
             bar_id = completed_bar_id(df)
+            if held:
+                # Report, then skip. Skipping BEFORE writing status froze
+                # the row for as long as the position was open — QQQ_REV
+                # still read bar=2026-08-17, would_enter=True three days
+                # after it opened. That is the panel an operator uses to
+                # ask whether a sleeve is alive, and a frozen row answers
+                # confidently and wrongly. It also reports the decision
+                # bar, so a held position hid whether the forming-bar fix
+                # had taken.
+                status[name] = {"sleeve": "rev", "symbol": cfg["symbol"],
+                                 "checked_at": now_iso, "bar": bar_id,
+                                 "would_enter": False,
+                                 "blocked_by": "position_open"}
+                continue
+            sig = ss.analyze_reversion_entry(df, cfg)
             status[name] = {"sleeve": "rev", "symbol": cfg["symbol"],
                              "checked_at": now_iso, "bar": bar_id, **sig}
             if not should_act_on_bar(state, name, bar_id):
