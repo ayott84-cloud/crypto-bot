@@ -60,12 +60,35 @@ logger = logging.getLogger("crypto_bot.dashboard")
 
 
 def _read_journal_trades(max_rows: int = 5000) -> List[dict]:
-    """Read trade records from trades.jsonl. PnL fields are computed on
-    the fly by journal.read_trades() so this dashboard doesn't need to
-    know the schema."""
+    """Trade records for PERFORMANCE panels, minus defect-attributed rows.
+
+    PnL fields are computed on the fly by journal.read_trades() so this
+    dashboard doesn't need to know the schema.
+
+    Rows tagged [EXCLUDED: ...] are dropped here because they measure a
+    bug rather than a strategy — StockRev's 15 QQQ round trips booked in
+    90 minutes by a poll loop would otherwise show PF 4.38 on the
+    Overview while fleet_review reports n=0. Two views, two truths, and
+    the prettier one on the page the operator actually looks at.
+
+    RISK panels must NOT use this. The 24h drawdown and the kill-switch
+    breaker read the journal directly and unfiltered: those fills were
+    real and the account really moved, so a breaker blind to them would
+    understate actual losses. See tests/test_exclusion_scope.py.
+
+    The drop is logged, never silent — a filtered view the reader cannot
+    see is indistinguishable from a flattering one.
+    """
     try:
-        from journal import read_trades  # local import to avoid circulars at module load
-        return read_trades(max_rows=max_rows)
+        from journal import read_trades, partition_excluded, excluded_reason
+        kept, dropped = partition_excluded(read_trades(max_rows=max_rows))
+        if dropped:
+            from collections import Counter
+            for why, n in Counter(excluded_reason(t)
+                                    for t in dropped).most_common():
+                logger.info("dashboard excluding %d rows from performance "
+                             "stats: %s", n, why)
+        return kept
     except Exception as e:
         logger.error("Failed to read journal: %s", e)
         return []
