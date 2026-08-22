@@ -144,21 +144,26 @@ _S2_SOURCE = "Aug 1 2026 honest replay, Tiingo adjusted daily, 5bps ETF cost"
 
 STOCK_BACKTEST_STATS = {
     # ── PASSED all pre-registered gates ──
+    # Win rates and rev-sleeve Sharpes transcribed from the Aug 22 2026
+    # re-run. The Aug 1 run computed them and never printed them, so they
+    # could not be transcribed — which left every equity sleeve exempt
+    # from tools/live_vs_backtest.py. The validator now emits a complete
+    # paste-ready row (see stats_row) so a field cannot go missing again.
     "QQQ_REV":  {"pf": 1.64, "trades": 562, "pnl_pct": 173.1, "dd_pct": 17.2,
-                  "wr": 0.0, "years": 25.0, "dsr": 0.996, "pbo": 0.17,
-                  "bh_pnl_pct": 1694.2, "bh_dd_pct": 56.0,
+                  "wr": 62.1, "years": 25.0, "sharpe": 0.83, "dsr": 0.996,
+                  "pbo": 0.17, "bh_pnl_pct": 1694.2, "bh_dd_pct": 56.0,
                   "source": _S2_SOURCE + " — PASS"},
     "SPY_REV":  {"pf": 1.59, "trades": 562, "pnl_pct": 123.9, "dd_pct": 12.2,
-                  "wr": 0.0, "years": 25.0, "dsr": 0.993, "pbo": 0.27,
-                  "bh_pnl_pct": 845.8, "bh_dd_pct": 55.2,
+                  "wr": 61.2, "years": 25.0, "sharpe": 0.75, "dsr": 0.993,
+                  "pbo": 0.27, "bh_pnl_pct": 845.8, "bh_dd_pct": 55.2,
                   "source": _S2_SOURCE + " — PASS"},
-    "GEM":      {"pf": 0.0, "trades": 57, "pnl_pct": 160.8, "dd_pct": 17.7,
-                  "wr": 0.0, "years": 19.1, "sharpe": 0.60, "dsr": 0.987,
+    "GEM":      {"pf": 2.81, "trades": 57, "pnl_pct": 160.8, "dd_pct": 17.7,
+                  "wr": 54.4, "years": 19.1, "sharpe": 0.60, "dsr": 0.987,
                   "pbo": 0.26, "bh_pnl_pct": 845.8, "bh_dd_pct": 55.2,
                   "source": _S2_SOURCE + " — PASS (Sharpe-gated, not PF)"},
     # ── FAILED (kept for candidate-table honesty) ──
-    "SPY_TREND": {"pf": 0.0, "trades": 76, "pnl_pct": 214.7, "dd_pct": 18.7,
-                   "wr": 0.0, "years": 25.0, "sharpe": 0.48, "dsr": 1.000,
+    "SPY_TREND": {"pf": 3.63, "trades": 76, "pnl_pct": 214.7, "dd_pct": 18.7,
+                   "wr": 46.1, "years": 25.0, "sharpe": 0.48, "dsr": 1.000,
                    "pbo": 0.74, "bh_pnl_pct": 845.8, "bh_dd_pct": 55.2,
                    "source": _S2_SOURCE + " — FAIL: Sharpe 0.48<0.50, PBO 0.74"},
     "IWM_REV":  {"pf": 1.33, "trades": 496, "pnl_pct": 97.1, "dd_pct": 25.7,
@@ -167,9 +172,26 @@ STOCK_BACKTEST_STATS = {
     "EFA_REV":  {"pf": 1.02, "trades": 521, "pnl_pct": 6.3, "dd_pct": 48.2,
                   "wr": 0.0, "years": 24.9, "dsr": 0.370, "pbo": 0.21,
                   "source": _S2_SOURCE + " — FAIL: no edge"},
-    "GSG_TREND": {"pf": 0.0, "trades": 88, "pnl_pct": 11.1, "dd_pct": 75.1,
-                   "wr": 0.0, "years": 20.0, "sharpe": 0.03, "dsr": 0.483,
+    "GSG_TREND": {"pf": 1.08, "trades": 88, "pnl_pct": 11.1, "dd_pct": 75.1,
+                   "wr": 27.3, "years": 20.0, "sharpe": 0.03, "dsr": 0.483,
+                   "pbo": 0.87,
                    "source": _S2_SOURCE + " — FAIL: Sharpe 0.03, DD 75%"},
+    # The Aug 22 re-run also covered EFA/AGG/VNQ trend, which the Aug 1
+    # record omitted. All three fail, and their PBO is the reason to
+    # record them: 0.86-0.90 against a 0.60 random baseline says
+    # selecting an SMA period actively HURTS out of sample.
+    "EFA_TREND": {"pf": 3.14, "trades": 86, "pnl_pct": 174.9, "dd_pct": 22.8,
+                   "wr": 48.8, "years": 24.9, "sharpe": 0.47, "dsr": 0.997,
+                   "pbo": 0.90, "bh_pnl_pct": 390.5, "bh_dd_pct": 61.0,
+                   "source": _S2_SOURCE + " — FAIL: Sharpe 0.47, PBO 0.90"},
+    "AGG_TREND": {"pf": 2.81, "trades": 99, "pnl_pct": 49.5, "dd_pct": 8.5,
+                   "wr": 39.4, "years": 22.8, "sharpe": 0.42, "dsr": 0.979,
+                   "pbo": 0.86, "bh_pnl_pct": 96.7, "bh_dd_pct": 18.4,
+                   "source": _S2_SOURCE + " — FAIL: Sharpe 0.42, PBO 0.86"},
+    "VNQ_TREND": {"pf": 1.53, "trades": 103, "pnl_pct": 83.7, "dd_pct": 32.9,
+                   "wr": 36.9, "years": 21.8, "sharpe": 0.21, "dsr": 0.820,
+                   "pbo": 0.39, "bh_pnl_pct": 406.4, "bh_dd_pct": 73.1,
+                   "source": _S2_SOURCE + " — FAIL: Sharpe 0.21, DD 32.9%"},
 }
 
 # The sleeves cleared for Phase S3 paper trading. The trend sleeve is

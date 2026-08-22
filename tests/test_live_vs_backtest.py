@@ -150,11 +150,26 @@ def test_parked_bots_resolve():
     assert _stats_tables().get("BTC 15m Scalp", {}).get("wr") == 51.1
 
 
-def test_stock_sleeves_resolve_even_without_a_win_rate():
-    """Module 2's 25-year S2 run recorded PF, drawdown and DSR but never
-    a win rate. The stats must still resolve so the report can say WHICH
-    thing is missing."""
+def test_stock_sleeves_now_carry_a_win_rate():
+    """Module 2's Aug 1 S2 run computed a win rate and never printed one,
+    so it could not be transcribed and every equity sleeve sat exempt
+    from this check. The Aug 22 re-run surfaced it: QQQ_REV 62.1%,
+    SPY_REV 61.2%, GEM 54.4%.
+
+    This assertion replaces one that pinned the gap. That test was
+    documenting a temporary state, and the state changed — the right
+    outcome for it is to be rewritten, not preserved."""
     from tools.live_vs_backtest import _stats_tables
     st = _stats_tables().get("QQQ 1D StockRev")
     assert st is not None and st.get("pf") == 1.64
-    assert not st.get("wr")
+    assert st.get("wr") == 62.1
+
+
+def test_a_sleeve_without_a_win_rate_still_resolves():
+    """IWM_REV and EFA_REV are failed candidates that were not
+    re-validated, so they still carry wr=0. The stats must resolve
+    anyway, so the report can say WHICH thing is missing rather than
+    reporting them as unknown strategies."""
+    from stock_config import STOCK_BACKTEST_STATS
+    st = STOCK_BACKTEST_STATS["IWM_REV"]
+    assert st.get("pf") == 1.33 and not st.get("wr")
