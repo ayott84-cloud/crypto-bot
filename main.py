@@ -37,6 +37,27 @@ from pathlib import Path as _Path
 _HEARTBEAT_FILE = _Path(__file__).resolve().parent / ".momentum_heartbeat"
 
 
+def _entry_dt(pos):
+    """The position's real entry instant, for log_trade(date_opened=...).
+
+    register_entry has stamped `entry_time` since Phase 0 and no close
+    path ever passed it on, so every journal row had date_opened equal
+    to its insert time — which for a close-only insert IS the close.
+    Holding period was therefore unmeasurable fleet-wide.
+
+    Returns None when absent (legacy positions opened before this), and
+    log_trade then falls back to now() exactly as before.
+    """
+    raw = (pos or {}).get("entry_time")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+
 def _write_heartbeat() -> None:
     try:
         _HEARTBEAT_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -448,6 +469,10 @@ def run():
                                 entry_reason=pos.get("entry_reason", ""),
                                 exit_reason=exit_reason,
                                 date_closed=datetime.now(timezone.utc),
+                                # The REAL entry instant. Without it date_opened defaults to
+                                # now() at insert, which for a close-only insert is the
+                                # close — making holding period unmeasurable.
+                                date_opened=_entry_dt(pos),
                                 notes=f"Partial close ({cfg['tp1_close_pct']*100:.0f}%). "
                                       f"Remaining: {remaining_str}",
                             )
@@ -494,6 +519,10 @@ def run():
                                 entry_reason=pos.get("entry_reason", ""),
                                 exit_reason=exit_reason,
                                 date_closed=datetime.now(timezone.utc),
+                                # The REAL entry instant. Without it date_opened defaults to
+                                # now() at insert, which for a close-only insert is the
+                                # close — making holding period unmeasurable.
+                                date_opened=_entry_dt(pos),
                                 notes=f"Full close after {bars} bars. "
                                       f"Phase: {pos['phase']}",
                             )
@@ -576,6 +605,10 @@ def run():
                                     entry_reason=rot_pos.get("entry_reason", ""),
                                     exit_reason=f"Rotated out for new {asset_name} signal",
                                     date_closed=datetime.now(timezone.utc),
+                                    # The REAL entry instant. Without it date_opened defaults to
+                                    # now() at insert, which for a close-only insert is the
+                                    # close — making holding period unmeasurable.
+                                    date_opened=_entry_dt(rot_pos),
                                     notes="Position slot rotation",
                                 )
 

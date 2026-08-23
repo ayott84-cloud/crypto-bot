@@ -85,6 +85,27 @@ VERSION = "1.0.0"
 
 # ─── Logging + banner ────────────────────────────────────────────────────────
 
+def _entry_dt(pos):
+    """The position's real entry instant, for log_trade(date_opened=...).
+
+    register_entry has stamped `entry_time` since Phase 0 and no close
+    path ever passed it on, so every journal row had date_opened equal
+    to its insert time — which for a close-only insert IS the close.
+    Holding period was therefore unmeasurable fleet-wide.
+
+    Returns None when absent (legacy positions opened before this), and
+    log_trade then falls back to now() exactly as before.
+    """
+    raw = (pos or {}).get("entry_time")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+
 def setup_logging():
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
@@ -307,6 +328,10 @@ def close_funding_position(executor: Executor, state: dict, key: str, reason: st
             strategy=pos.get("strategy", f"{FUNDING_STRATEGY_TAG} {coin}"),
             exit_reason=reason, notes=f"closed at ${exit_price:.4f}",
             date_closed=datetime.now(timezone.utc),
+            # The REAL entry instant. Without it date_opened defaults to
+            # now() at insert, which for a close-only insert is the
+            # close — making holding period unmeasurable.
+            date_opened=_entry_dt(pos),
         )
     except Exception as e:
         logger.error("log_trade failed for %s (state already stripped, "

@@ -41,6 +41,27 @@ logger = logging.getLogger("crypto_bot.breakout_main")
 _HEARTBEAT_FILE = BREAKOUT_HEARTBEAT_FILE
 
 
+def _entry_dt(pos):
+    """The position's real entry instant, for log_trade(date_opened=...).
+
+    register_entry has stamped `entry_time` since Phase 0 and no close
+    path ever passed it on, so every journal row had date_opened equal
+    to its insert time — which for a close-only insert IS the close.
+    Holding period was therefore unmeasurable fleet-wide.
+
+    Returns None when absent (legacy positions opened before this), and
+    log_trade then falls back to now() exactly as before.
+    """
+    raw = (pos or {}).get("entry_time")
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+
 def _write_heartbeat(path: Path) -> None:
     """Touch the heartbeat file so the dashboard shows breakout as LIVE.
 
@@ -380,6 +401,10 @@ def close_breakout_position(
             entry_reason=journal_entry_reason,
             exit_reason=reason,
             date_closed=datetime.now(timezone.utc),
+            # The REAL entry instant. Without it date_opened defaults to
+            # now() at insert, which for a close-only insert is the
+            # close — making holding period unmeasurable.
+            date_opened=_entry_dt(pos),
         )
     except Exception as e:
         logger.error("[%s] log_trade failed: %s — journal will be reconciled",

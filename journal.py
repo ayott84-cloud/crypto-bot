@@ -354,6 +354,42 @@ def log_trade(
 #   * prices, quantities and PnL are never touched. The fills happened.
 #     Only their attribution to strategy performance is disputed.
 
+def holding_hours(trade: dict):
+    """How long the position was held, or None when that is unknowable.
+
+    Aug 23 2026: every row written before this date has
+    date_opened == date_closed, because log_trade defaults date_opened
+    to datetime.now() AT INSERT and the close paths insert once, at the
+    close. register_entry has stamped `entry_time` on every position
+    since Phase 0; no close path ever passed it through.
+
+    Identical timestamps return None, NOT 0.0. Zero would claim an
+    instant round trip, and the truth is that nothing recorded when the
+    position opened. The 46 rows repaired by backfill_date_closed are
+    exactly this case, and a legacy row must not be able to masquerade
+    as a scalp.
+
+    Mixed tz-awareness is normal here: date_opened defaulted to a naive
+    now() while the close paths pass an aware datetime.
+    """
+    o_raw = (trade or {}).get("date_opened")
+    c_raw = (trade or {}).get("date_closed")
+    if not o_raw or not c_raw:
+        return None
+    try:
+        o = datetime.fromisoformat(str(o_raw))
+        c = datetime.fromisoformat(str(c_raw))
+    except (TypeError, ValueError):
+        return None
+    if (o.tzinfo is None) != (c.tzinfo is None):
+        o = o.replace(tzinfo=None)
+        c = c.replace(tzinfo=None)
+    delta = (c - o).total_seconds()
+    if delta <= 0:
+        return None          # identical or impossible: unknown, not zero
+    return delta / 3600.0
+
+
 EXCLUDED_PREFIX = "[EXCLUDED:"
 
 
