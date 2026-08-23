@@ -114,6 +114,37 @@ def holding_rows(trades: list, days: int = 14) -> list:
     return out
 
 
+# Exit-reason diagnostics need enough trades for a ratio to mean
+# anything. On Aug 23 the panel printed "time>40% — entries into drift?"
+# off ONE stale exit in TWO trades. Both warnings read as actionable
+# ("brackets too tight", "entries into drift"), and acting on either at
+# n=2 is the small-sample reflex the rest of this tooling refuses.
+#
+# The RATIOS are unchanged. Only the sample-size requirement is new, and
+# a withheld warning is announced rather than simply absent — silence
+# reads as a clean bill of health.
+EXIT_FLAG_MIN_N = 8
+
+
+def exit_reason_flags(counts: dict) -> tuple:
+    """(flags, withheld) for one bot's exit-reason distribution."""
+    total = sum((counts or {}).values())
+    if not total:
+        return [], False
+    if total < EXIT_FLAG_MIN_N:
+        return [], True
+    sl = sum(n for r, n in counts.items()
+              if r in ("SL Hit", "Emergency SL", "BE Hit"))
+    tl = sum(n for r, n in counts.items()
+              if r in ("Time Limit", "Time Stop", "Stale Exit"))
+    flags = []
+    if sl / total > 0.6:
+        flags.append("SL>60% — brackets too tight?")
+    if tl / total > 0.4:
+        flags.append("time>40% — entries into drift?")
+    return flags, False
+
+
 def merged_signal_status(state: dict) -> dict:
     """Every bot's per-asset signal_status, across owner namespaces.
 
@@ -338,18 +369,18 @@ def main() -> int:
     for bot in sorted(by_bot_reason):
         counts = by_bot_reason[bot]
         total = sum(counts.values())
-        sl = sum(n for r, n in counts.items()
-                  if r in ("SL Hit", "Emergency SL", "BE Hit"))
-        tl = sum(n for r, n in counts.items()
-                  if r in ("Time Limit", "Time Stop", "Stale Exit"))
-        flags = []
-        if total and sl / total > 0.6:
-            flags.append("SL>60% — brackets too tight?")
-        if total and tl / total > 0.4:
-            flags.append("time>40% — entries into drift?")
+        flags, withheld = exit_reason_flags(counts)
         detail = ", ".join(f"{r}:{n}" for r, n in
                             sorted(counts.items(), key=lambda kv: -kv[1]))
-        print(f"  {bot:10s} {detail}" + (f"   ⚠ {'; '.join(flags)}" if flags else ""))
+        if flags:
+            suffix = f"   ⚠ {'; '.join(flags)}"
+        elif withheld:
+            # Announced, not absent: a silently withheld warning reads
+            # as a clean bill of health.
+            suffix = f"   (diagnostics need n>={EXIT_FLAG_MIN_N}, have {total})"
+        else:
+            suffix = ""
+        print(f"  {bot:10s} {detail}{suffix}")
 
     # 5. Kill switch / breaker
     try:
