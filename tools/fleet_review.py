@@ -15,12 +15,16 @@ import argparse
 import json
 import sys
 from collections import defaultdict
+
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BOT_DIR = Path(__file__).resolve().parent.parent
 if str(BOT_DIR) not in sys.path:
     sys.path.insert(0, str(BOT_DIR))
+
+
+from journal import holding_hours  # noqa: E402
 
 
 # ─── Pure aggregation helpers ──────────────────────────────────────────────
@@ -77,6 +81,37 @@ def symbol_stats(trades: list, bot: str, days: int = 14) -> list:
                       "pf": (round(gw / gl, 2) if gl > 0 else (999.0 if gw > 0 else 0.0)),
                       "net": round(sum(pnls), 2)})
     return rows
+
+
+def holding_rows(trades: list, days: int = 14) -> list:
+    """[{bot, n, unknown, median_h}] — how long each bot holds.
+
+    `unknown` is not decoration. Every row written before Aug 23 2026 has
+    an unmeasurable holding period: log_trade defaulted date_opened to
+    the insert time, and a close-only insert put it on the close. A panel
+    that silently averaged the measurable subset would print a confident
+    number derived from almost nothing, which is worse than printing
+    nothing at all.
+
+    Median rather than mean: one 500-hour position should not describe a
+    bot that usually holds four.
+    """
+    out = []
+    by_bot = defaultdict(list)
+    for t in _closed_in_window(trades, days):
+        by_bot[t.get("bot") or "?"].append(t)
+    for bot, rows in sorted(by_bot.items()):
+        held = [h for h in (holding_hours(t) for t in rows) if h is not None]
+        held.sort()
+        median = None
+        if held:
+            mid = len(held) // 2
+            median = (held[mid] if len(held) % 2
+                       else (held[mid - 1] + held[mid]) / 2.0)
+        out.append({"bot": bot, "n": len(rows),
+                     "unknown": len(rows) - len(held),
+                     "median_h": median})
+    return out
 
 
 def merged_signal_status(state: dict) -> dict:
@@ -279,6 +314,21 @@ def main() -> int:
     print(f"\n-- ETH scalp Step-4 gate (PF>=1.3, n>=10) --")
     print(f"  n={len(pnls)}  PF={f'{pf:.2f}' if pf else '—'}  "
            f"net={sum(pnls):+.2f}  ->  {v['verdict']}")
+
+    # 3.5 Holding period. `unknown` is printed always, never folded away:
+    # every row written before Aug 23 2026 has an unmeasurable hold
+    # (date_opened defaulted to the insert time), so a median computed
+    # from the measurable subset alone would be a confident number
+    # derived from almost nothing.
+    hrows = holding_rows(trades, days)
+    if hrows:
+        print(f"\n-- Holding period ({days}d) --")
+        for r in hrows:
+            med = (f"{r['median_h']:.1f}h" if r["median_h"] is not None
+                    else "—")
+            note = (f"   ({r['unknown']}/{r['n']} unmeasurable — closed "
+                     f"before Aug 23)" if r["unknown"] else "")
+            print(f"  {r['bot']:10s} median={med:>8s}  n={r['n']:3d}{note}")
 
     # 4. Exit reasons vs runbook thresholds
     print(f"\n-- Exit reasons ({days}d) --")
